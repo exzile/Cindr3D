@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import * as THREE from 'three';
 import { getOccSync } from '../../../engine/occ/loader';
 import { globalBRepBodyRegistry } from '../../../engine/occ/globalRegistry';
-import { getMeshTessellation } from '../../../engine/occ/picking';
+import { getMeshTessellation, BREP_BODY_ID_KEY } from '../../../engine/occ/picking';
 import { getSelectableEdges } from '../../../engine/occ/ops/selectableEdges';
 import { buildTangentEdgeLineGeometry } from './edgeOp/edgeOpEdgeGeometry';
 
@@ -35,7 +35,8 @@ const TANGENT_EDGE_RENDER_ORDER = 2;
 
 export interface TangentEdgeLinesProps {
   mesh: THREE.Mesh;
-  bodyId: string;
+  /** Optional hint; the authoritative body id is read from mesh.userData. */
+  bodyId?: string;
 }
 
 /**
@@ -45,9 +46,12 @@ export interface TangentEdgeLinesProps {
  * and R3F never reconciles the lines away.
  */
 export default function TangentEdgeLines({ mesh, bodyId }: TangentEdgeLinesProps) {
+  // The OCC registry is keyed by body.id, which createRegisteredOccMesh stamps on
+  // the mesh — NOT the feature-level bodyId. Prefer the mesh's stamped id.
+  const resolvedBodyId = (mesh.userData[BREP_BODY_ID_KEY] as string | undefined) ?? bodyId;
   useEffect(() => {
     const occ = getOccSync();
-    const body = bodyId ? globalBRepBodyRegistry.get(bodyId) : undefined;
+    const body = resolvedBodyId ? globalBRepBodyRegistry.get(resolvedBodyId) : undefined;
     const tess = getMeshTessellation(mesh);
     if (!occ || !body || !tess) return;
 
@@ -72,7 +76,7 @@ export default function TangentEdgeLines({ mesh, bodyId }: TangentEdgeLinesProps
       mesh.remove(lines);
       geometry.dispose();
     };
-  }, [mesh, bodyId]);
+  }, [mesh, resolvedBodyId]);
 
   return null;
 }

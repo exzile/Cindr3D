@@ -96,6 +96,28 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     return false;
   };
 
+  const disposeResultBody = (body: BRepBody): void => {
+    globalBRepBodyRegistry.delete(body.id);
+    body.dispose();
+  };
+
+  const disposeResultMeshAndBody = (mesh: THREE.Mesh | undefined, body: BRepBody): void => {
+    mesh?.geometry.dispose();
+    disposeResultBody(body);
+  };
+
+  const edgeModSizeHint = (
+    tool: "Fillet" | "Chamfer",
+    radius: number | undefined,
+    distance: number | undefined,
+    likelihood: "may" | "likely",
+  ): string => {
+    const requestedSize = tool === "Fillet" ? radius : distance;
+    return typeof requestedSize === "number"
+      ? ` The requested ${tool.toLowerCase()} size (${requestedSize}) ${likelihood} be too large for the selected edge(s) or nearby blends; try a smaller value.`
+      : "";
+  };
+
   const bodyForFeature = (feature: CADState['features'][number] | undefined): BRepBody | undefined => {
     if (!feature) return undefined;
     const meshBodyId =
@@ -256,6 +278,7 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
   ): boolean => {
     const occ = getOccSync();
     if (!occ) {
+      disposeResultBody(resultBody);
       return markOccEdgeModificationError(featureId, tool, "OCC kernel is no longer available");
     }
     const srcFeatureId = srcBody.sourceFeatureId;
@@ -269,6 +292,7 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       newMesh = createRegisteredOccMesh(occ.oc, resultBody, material, featureId);
       copySourceTransformToMesh(srcFeature, newMesh);
     } catch (err) {
+      disposeResultBody(resultBody);
       return markOccEdgeModificationError(featureId, tool, `OCC tessellation failed: ${errorMessage(err, "unknown error")}`);
     }
     const currentFeature = get().features.find((f) => f.id === featureId);
@@ -577,21 +601,16 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       });
     }
     if (!result) {
-      const requestedSize = tool === "Fillet" ? radius : distance;
-      const sizeHint =
-        typeof requestedSize === "number"
-          ? ` The requested ${tool.toLowerCase()} size (${requestedSize}) may be too large for the selected edge(s) or nearby blends; try a smaller value.`
-          : "";
       return markOccEdgeModificationError(
         featureId,
         tool,
-        `OCC operation failed for the selected edge set; kept the previous body unchanged.${sizeHint}`,
+        `OCC operation failed for the selected edge set; kept the previous body unchanged.${edgeModSizeHint(tool, radius, distance, "may")}`,
       );
     }
     if (result.faceIds.size <= srcBody.faceIds.size) {
       const resultFaceCount = result.faceIds.size;
       const sourceFaceCount = srcBody.faceIds.size;
-      result.dispose();
+      disposeResultBody(result);
       return markOccEdgeModificationError(
         featureId,
         tool,
@@ -615,6 +634,7 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       newMesh = createRegisteredOccMesh(occ.oc, result, material, featureId);
       copySourceTransformToMesh(srcFeature, newMesh);
     } catch (err) {
+      disposeResultBody(result);
       return markOccEdgeModificationError(
         featureId,
         tool,
@@ -641,20 +661,13 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       }
       if (!brepValid) {
         const { boundaryDelta, nonManifoldDelta } = meshTopologyFailure;
-        newMesh.geometry.dispose();
-        globalBRepBodyRegistry.delete(result.id);
-        result.dispose();
-        const requestedSize = tool === "Fillet" ? radius : distance;
-        const sizeHint =
-          typeof requestedSize === "number"
-            ? ` The requested ${tool.toLowerCase()} size (${requestedSize}) is likely too large for the selected edge(s) or nearby blends; try a smaller value.`
-            : "";
+        disposeResultMeshAndBody(newMesh, result);
         return markOccEdgeModificationError(
           featureId,
           tool,
           `${tool} produced an open mesh ` +
             `(new boundary edges: ${boundaryDelta}, new non-manifold edges: ${nonManifoldDelta}); ` +
-            `kept the previous body unchanged.${sizeHint}`,
+            `kept the previous body unchanged.${edgeModSizeHint(tool, radius, distance, "likely")}`,
         );
       }
       console.warn(
