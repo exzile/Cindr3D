@@ -100,8 +100,8 @@ export function occExtrudeShapeWithInstance(
   options: OccExtrudeOptions = {},
 ): OccExtrudedShape {
   // Build the prism from a set of (outer + hole) wires.
-  const buildFrom = (wires: { outerWire: unknown; holeWires: unknown[] }): OccExtrudedShape => {
-    const face = wireToFace(oc, wires.outerWire, wires.holeWires, frame);
+  const buildFrom = (wires: { outerWire: unknown; holeWires: unknown[] }, heal = false): OccExtrudedShape => {
+    const face = wireToFace(oc, wires.outerWire, wires.holeWires, frame, heal);
     // takeOccOwnedResources already transfers polygonMaker (which owns outerWire) and
     // holeWire polygonMakers into profileResources. Do NOT push outerWire/holeWires
     // themselves -- they are wrapPointer VIEWs of their respective polygonMaker's
@@ -128,7 +128,7 @@ export function occExtrudeShapeWithInstance(
     if (analyticWires) {
       let analytic: OccExtrudedShape | null = null;
       try {
-        analytic = buildFrom(analyticWires);
+        analytic = buildFrom(analyticWires, true); // heal arc↔line junction gaps before validating
       } catch (e) {
         console.warn('[occExtrude] analytic build threw; using faceted fallback:', e);
         analytic = null;

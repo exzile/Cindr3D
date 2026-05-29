@@ -145,8 +145,8 @@ function buildTopology(verts: VertDef[], edges: EdgeDef[], faces: FaceDef[]): { 
   return { body, oc, bodyShape };
 }
 
-// Two co-filleted edges sharing vertex v2; each edge belongs to 2 faces so the
-// seam guard keeps them. computeSafeFilletRadii caps both at 0.37*min(len)≈1.85.
+// Two co-filleted edges sharing vertex v2. Radius 4 exceeds the old safe-radius
+// cap, so these tests prove the OCC path now uses the requested value verbatim.
 function twoEdgeCorner() {
   return buildTopology(
     [{ ptr: 1, pos: [0, 0, 0] }, { ptr: 2, pos: [10, 0, 0] }, { ptr: 3, pos: [15, 0, 0] }],

@@ -37,7 +37,7 @@ export function getSelectableEdgesForBody(
   try {
     return getSelectableEdges(occ.oc, body);
   } catch (e) {
-    console.warn("[selectableEdges] metadata build failed; using legacy heuristics:", e);
+    console.warn("[selectableEdges] metadata build failed; using mesh heuristics:", e);
     return null;
   }
 }

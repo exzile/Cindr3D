@@ -377,10 +377,33 @@ function detectFullCircleLoop(pts: THREE.Vector2[]): { x: number; y: number; r: 
   return Math.abs(sweep - 2 * Math.PI) < 0.2 ? circ : null;
 }
 
+const CORNER_ANGLE = 0.349; // rad (~20°) — turn above this is a real corner, not a facet
+
+/** Turn angle (rad) at vertex i between edges (i-1→i) and (i→i+1) in a cyclic loop. */
+function turnAngleAt(pts: THREE.Vector2[], i: number): number {
+  const n = pts.length;
+  const p = pts[(i - 1 + n) % n], q = pts[i], r = pts[(i + 1) % n];
+  const v1x = q.x - p.x, v1y = q.y - p.y, v2x = r.x - q.x, v2y = r.y - q.y;
+  const l1 = Math.hypot(v1x, v1y), l2 = Math.hypot(v2x, v2y);
+  if (l1 < 1e-9 || l2 < 1e-9) return 0;
+  return Math.acos(Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / (l1 * l2))));
+}
+
 /**
- * Group a closed polygon's vertices (in order, implicitly closed) into line + arc
- * segments. Rotates the loop to start at the sharpest corner so an arc never
- * straddles the closing seam.
+ * Group a closed polygon's vertices into line + arc segments.
+ *
+ * Strategy: split the loop at REAL corners (turn angle > CORNER_ANGLE), then for
+ * each run between two corners decide line-vs-arc ONCE over the whole run. This
+ * de-facets a circular wall into a SINGLE analytic arc instead of several — the
+ * earlier greedy circumcircle-membership split a clean arc into 2-3 sub-arcs with
+ * slightly different centres (facet-noise sensitivity), which extrude into mismatched
+ * cylindrical faces and produce an invalid solid. One arc per run avoids that.
+ *
+ * A run with ≥ARC_MIN_PTS points that all lie on a common circle (relative tol) and
+ * sweeps ≥ARC_MIN_ANGLE becomes one arc through (start, mid, end). Otherwise the run
+ * is emitted as its constituent line segments (straight sides collapse to one line
+ * because profileGeometry already removed collinear interior points; a faceted spline
+ * stays a polyline rather than being wrongly chorded).
  */
 function refitLoopArcs(pts: THREE.Vector2[]): LoopSegment[] {
   const n = pts.length;
@@ -388,54 +411,47 @@ function refitLoopArcs(pts: THREE.Vector2[]): LoopSegment[] {
     pts.map((p, i) => ({ kind: 'line' as const, a: p, b: pts[(i + 1) % n] }));
   if (n < ARC_MIN_PTS + 1) return allLines();
 
-  // Rotate to start at the sharpest corner (max turn angle).
-  let startIdx = 0, maxTurn = -1;
-  for (let i = 0; i < n; i++) {
-    const p = pts[(i - 1 + n) % n], q = pts[i], r = pts[(i + 1) % n];
-    const v1x = q.x - p.x, v1y = q.y - p.y, v2x = r.x - q.x, v2y = r.y - q.y;
-    const l1 = Math.hypot(v1x, v1y), l2 = Math.hypot(v2x, v2y);
-    if (l1 < 1e-9 || l2 < 1e-9) continue;
-    const turn = Math.acos(Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / (l1 * l2))));
-    if (turn > maxTurn) { maxTurn = turn; startIdx = i; }
-  }
-  const loop: THREE.Vector2[] = [];
-  for (let i = 0; i < n; i++) loop.push(pts[(startIdx + i) % n]);
-  loop.push(loop[0]); // explicit close
+  // Real corners split the loop into runs. Without ≥2 corners we can't bound a run,
+  // so stay safe with plain lines (a full faceted circle is handled by the caller's
+  // detectFullCircleLoop before we get here).
+  const corners: number[] = [];
+  for (let i = 0; i < n; i++) if (turnAngleAt(pts, i) > CORNER_ANGLE) corners.push(i);
+  if (corners.length < 2) return allLines();
 
   const segs: LoopSegment[] = [];
-  const m = loop.length; // n + 1
-  let i = 0;
-  while (i < m - 1) {
-    let arcEnd = -1;
-    for (let k = i + 2; k <= m - 1; k++) {
-      const midIdx = i + Math.floor((k - i) / 2);
-      const circ = circumcircle2D(loop[i], loop[midIdx], loop[k]);
-      if (!circ || circ.r > ARC_MAX_RADIUS) break;
-      let ok = true;
-      for (let j = i + 1; j < k; j++) {
-        if (Math.abs(Math.hypot(loop[j].x - circ.x, loop[j].y - circ.y) - circ.r) > ARC_FIT_TOL) { ok = false; break; }
+  const emitLines = (idxs: number[]) => {
+    for (let k = 0; k + 1 < idxs.length; k++) {
+      const a = pts[idxs[k]], b = pts[idxs[k + 1]];
+      if (a.distanceTo(b) >= SEG_MIN_LEN) segs.push({ kind: 'line', a, b });
+    }
+  };
+
+  for (let c = 0; c < corners.length; c++) {
+    const start = corners[c], end = corners[(c + 1) % corners.length];
+    const idxs: number[] = [];
+    for (let i = start; ; i = (i + 1) % n) { idxs.push(i); if (i === end) break; }
+
+    if (idxs.length < ARC_MIN_PTS) { emitLines(idxs); continue; }
+
+    const a = pts[start], b = pts[end];
+    const mid = pts[idxs[Math.floor(idxs.length / 2)]];
+    const fc = circumcircle2D(a, mid, b);
+    let isArc = false;
+    if (fc && fc.r <= ARC_MAX_RADIUS && fc.r > 1e-6) {
+      const tol = Math.max(ARC_FIT_TOL, fc.r * 5e-3);
+      isArc = idxs.every((id) => Math.abs(Math.hypot(pts[id].x - fc.x, pts[id].y - fc.y) - fc.r) <= tol);
+      if (isArc) {
+        const a1 = Math.atan2(a.y - fc.y, a.x - fc.x);
+        const a2 = Math.atan2(b.y - fc.y, b.x - fc.x);
+        const sweep = Math.abs(Math.atan2(Math.sin(a2 - a1), Math.cos(a2 - a1)));
+        if (sweep < ARC_MIN_ANGLE) isArc = false;
       }
-      if (ok) arcEnd = k; else break;
     }
-    const fc = arcEnd >= 0 ? circumcircle2D(loop[i], loop[i + Math.floor((arcEnd - i) / 2)], loop[arcEnd]) : null;
-    // Subtended angle a→b about the fitted centre. A near-straight run of points
-    // can fit a huge circle within tolerance but subtends almost no angle — those
-    // are NOT arcs (they're a polygon side); only accept a genuine sweep.
-    let arcAngle = 0;
-    if (fc) {
-      const a1 = Math.atan2(loop[i].y - fc.y, loop[i].x - fc.x);
-      const a2 = Math.atan2(loop[arcEnd].y - fc.y, loop[arcEnd].x - fc.x);
-      arcAngle = Math.abs(Math.atan2(Math.sin(a2 - a1), Math.cos(a2 - a1)));
-    }
-    if (arcEnd >= 0 && fc && (arcEnd - i) >= ARC_MIN_PTS - 1 && arcAngle >= ARC_MIN_ANGLE) {
-      const midIdx = i + Math.floor((arcEnd - i) / 2);
-      segs.push({ kind: 'arc', a: loop[i], mid: loop[midIdx], b: loop[arcEnd], centre: { x: fc.x, y: fc.y }, radius: fc.r });
-      i = arcEnd;
+
+    if (isArc && fc) {
+      segs.push({ kind: 'arc', a, mid, b, centre: { x: fc.x, y: fc.y }, radius: fc.r });
     } else {
-      if (loop[i].distanceTo(loop[i + 1]) >= SEG_MIN_LEN) {
-        segs.push({ kind: 'line', a: loop[i], b: loop[i + 1] });
-      }
-      i += 1;
+      emitLines(idxs);
     }
   }
   return segs;
@@ -471,7 +487,13 @@ function buildAnalyticWire(oc: OcctRaw, curves: ThreeCurve[], frame: SketchPlane
     // arc can't close a circle since start≈end).
     const fullCircle = detectFullCircleLoop(pts);
     if (fullCircle) {
-      const normal = reverse ? frame.normal.clone().negate() : frame.normal.clone();
+      // A gp_Circ about +frame.normal parametrises CCW (positive UV area). detectFullCircleLoop
+      // discards the source winding, so we reconstruct it to match targetSign directly — NOT
+      // from `reverse`. A hole (targetSign = outer's sign, so the circle is wound the SAME way
+      // as the outer) is then flipped to inner by wireToFace's .Reversed(). Choosing the normal
+      // from `reverse` instead made the hole CW, which .Reversed() double-negated back to outer
+      // orientation → an invalid face (two same-orientation boundaries).
+      const normal = targetSign >= 0 ? frame.normal.clone() : frame.normal.clone().negate();
       const edge = circleEdgeWorld(oc, uvToWorld3(frame, new THREE.Vector2(fullCircle.x, fullCircle.y)), normal, fullCircle.r);
       if (!edge) { cleanup(); return null; }
       edges.push(edge);
@@ -595,6 +617,7 @@ export function wireToFace(
   outerWire: unknown,
   holeWires: unknown[],
   frame?: SketchPlaneFrame,
+  heal = false,
 ): unknown | null {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const occ = oc as any;
@@ -640,6 +663,35 @@ export function wireToFace(
     ...holeWires.flatMap((holeWire) => takeOccOwnedResources(holeWire)),
     faceMaker,
   ];
+
+  if (heal) {
+    // Analytic profiles refit a faceted arc into a single gp_Circ-based arc edge whose
+    // endpoints are the circle-projections of (slightly noisy) facet points. That leaves
+    // sub-µm gaps at the arc↔line junctions which BRepCheck flags as INVALID once a hole
+    // forces the stricter face checks — even though wire and face build fine. ShapeFix_Shape
+    // sews those gaps (the standard OCC remedy for geometry assembled from imperfect inputs).
+    // Only used on the analytic path; the faceted polygon path is already gap-free.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const occAny = oc as any;
+    try {
+      const fixer = new occAny.ShapeFix_Shape_2(face);
+      const progress = new occAny.Message_ProgressRange_1();
+      fixer.Perform(progress);
+      const fixedFace = fixer.Shape();
+      safeDeleteOcc(progress);
+      // The fixed face is a fresh shape; the original face + its builders + the fixer must
+      // outlive it for cleanup, so carry them all in the fixed face's owned-resources.
+      (fixedFace as { [OCC_OWNED_RESOURCES]?: OccOwnedResource[] })[OCC_OWNED_RESOURCES] = [
+        ...ownedResources,
+        face as OccOwnedResource,
+        fixer,
+      ];
+      return fixedFace;
+    } catch (e) {
+      console.warn('[wireToFace] ShapeFix heal failed; returning unhealed face:', e);
+    }
+  }
+
   (face as { [OCC_OWNED_RESOURCES]?: OccOwnedResource[] })[OCC_OWNED_RESOURCES] = ownedResources;
   return face;
 }

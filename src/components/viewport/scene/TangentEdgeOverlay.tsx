@@ -36,6 +36,10 @@ const TANGENT_EDGE_RENDER_ORDER = 2;
 const TANGENT_EDGE_RETRY_MS = 150;
 const TANGENT_EDGE_MAX_ATTEMPTS = 60; // ~9s: cold OCC WASM load + STEP restore.
 
+function resolveTangentBodyId(mesh: THREE.Mesh, bodyId: string | undefined): string | undefined {
+  return (mesh.userData[BREP_BODY_ID_KEY] as string | undefined) ?? bodyId;
+}
+
 function createTangentLineSegments(mesh: THREE.Mesh, bodyId: string | undefined): THREE.LineSegments | null {
   const occ = getOccSync();
   const body = bodyId ? globalBRepBodyRegistry.get(bodyId) : undefined;
@@ -78,9 +82,6 @@ export interface TangentEdgeLinesProps {
  * and R3F never reconciles the lines away.
  */
 export default function TangentEdgeLines({ mesh, bodyId }: TangentEdgeLinesProps) {
-  // The OCC registry is keyed by body.id, which createRegisteredOccMesh stamps on
-  // the mesh — NOT the feature-level bodyId. Prefer the mesh's stamped id.
-  const resolvedBodyId = (mesh.userData[BREP_BODY_ID_KEY] as string | undefined) ?? bodyId;
   useEffect(() => {
     let lines: THREE.LineSegments | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -94,6 +95,10 @@ export default function TangentEdgeLines({ mesh, bodyId }: TangentEdgeLinesProps
     // polls forever.
     const tryBuild = () => {
       if (cancelled || lines) return; // already built or unmounted
+      // The OCC registry is keyed by body.id, which createRegisteredOccMesh stamps
+      // on the mesh — NOT the feature-level bodyId. Re-read on each retry because
+      // R3F/userData stamping can happen after this effect first runs.
+      const resolvedBodyId = resolveTangentBodyId(mesh, bodyId);
       lines = createTangentLineSegments(mesh, resolvedBodyId);
       if (!lines) {
         if (attempts++ < TANGENT_EDGE_MAX_ATTEMPTS) timer = setTimeout(tryBuild, TANGENT_EDGE_RETRY_MS);
@@ -109,7 +114,7 @@ export default function TangentEdgeLines({ mesh, bodyId }: TangentEdgeLinesProps
       if (lines) mesh.remove(lines);
       lines?.geometry.dispose();
     };
-  }, [mesh, resolvedBodyId]);
+  }, [mesh, bodyId]);
 
   return null;
 }

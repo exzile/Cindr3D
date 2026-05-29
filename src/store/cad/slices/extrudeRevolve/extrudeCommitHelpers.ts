@@ -561,13 +561,13 @@ export function tryBuildAnalyticalExtrudeBody(
     const holeCircleEntity = findMatchingCircleEntityForLoop(sourceSketch, holePoints, frame);
     if (holeCircleEntity) {
       const holeWire = sketchEntitiesToWire(oc as never, [holeCircleEntity], frame);
-      if (!holeWire) { console.log('[analyticalCircle] bail: hole sketchEntitiesToWire returned null (circle matched but wire build failed)'); return null; }
+      if (!holeWire) return null;
       holeWires.push(holeWire);
       analyticalWires.push(holeWire);
       analyticalCount += 1;
     } else {
       const holeWire = pointLoopToWire(oc as never, holePoints.map(toWorld));
-      if (!holeWire) { console.log('[analyticalCircle] bail: polygon hole wire build returned null'); return null; }
+      if (!holeWire) return null;
       holeWires.push(holeWire);
     }
   }
@@ -578,7 +578,7 @@ export function tryBuildAnalyticalExtrudeBody(
 
   try {
     const face = wireToFace(oc as never, outerWire, holeWires, frame);
-    if (!face) { console.log('[analyticalCircle] bail: wireToFace returned null (mixed polygon-outer + analytic-hole face build failed)'); return null; }
+    if (!face) return null;
 
     // takeOccOwnedResources transfers each polygonal wire's polygonMaker (set
     // via OCC_OWNED_RESOURCES inside pointLoopToWire) into profileResources.
@@ -629,20 +629,19 @@ export function tryBuildAnalyticalExtrudeBodyFromEntities(
   options: OccExtrudeOptions,
 ): BRepBody | null {
   // Hole support requires entity-to-loop classification — not yet implemented.
-  if (hasHoles) { console.log('[analyticalArc] bail: hasHoles (hole support not implemented)'); return null; }
+  if (hasHoles) return null;
   const nonConstruction = entities.filter((e) => !e.isConstruction);
   // Only activate when at least one arc is present; other entity types are handled
   // correctly by the polygon path or the circle-detection path.
-  if (!nonConstruction.some((e) => e.type === 'arc')) { console.log('[analyticalArc] bail: no arc entity in profile'); return null; }
+  if (!nonConstruction.some((e) => e.type === 'arc')) return null;
 
   let outerWire: unknown;
   try {
     outerWire = sketchEntitiesToWire(oc as never, nonConstruction, frame);
-  } catch (e) {
-    console.log(`[analyticalArc] bail: sketchEntitiesToWire threw (${nonConstruction.length} entities) —`, e);
+  } catch {
     return null;
   }
-  if (!outerWire) { console.log(`[analyticalArc] bail: sketchEntitiesToWire returned null (${nonConstruction.length} entities, likely not one closed loop)`); return null; }
+  if (!outerWire) return null;
 
   // Follow the same pattern as tryBuildAnalyticalExtrudeBody:
   //   wireToFace → takeOccOwnedResources (gets faceMaker) → add outerWire explicitly
@@ -650,7 +649,6 @@ export function tryBuildAnalyticalExtrudeBodyFromEntities(
   try {
     const face = wireToFace(oc as never, outerWire, [], frame);
     if (!face) {
-      console.log('[analyticalArc] bail: wireToFace returned null (wire not a valid face boundary)');
       (outerWire as { delete?: () => void }).delete?.();
       return null;
     }
@@ -671,8 +669,7 @@ export function tryBuildAnalyticalExtrudeBodyFromEntities(
     } finally {
       if (!consumed) extruded.dispose();
     }
-  } catch (e) {
-    console.log('[analyticalArc] bail: extrude/face build threw —', e);
+  } catch {
     return null;
   }
 }

@@ -388,12 +388,6 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
           best = alive;
         }
       }
-      if (best.id !== resolvedBody.id) {
-        console.log(
-          `[${tool}] upgraded source body: ${resolvedBody.id}` +
-          ` → ${best.id} (feature=${best.sourceFeatureId ?? '?'})`,
-        );
-      }
       return best;
     })();
 
@@ -425,8 +419,8 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     // These sibling sets will be combined with the current operation so the resulting
     // body preserves all prior fillets on this body (handles the reload case where
     // upstream fillet bodies are absent from the registry).
-    const siblingFilletEdgeSets: OccFilletEdgeSet[] = [];
-    if (tool === 'Fillet' && !fullRoundFaces && srcBody.id === resolvedBody.id) {
+    const collectSiblingFilletEdgeSets = (body: BRepBody): OccFilletEdgeSet[] => {
+      const edgeSets: OccFilletEdgeSet[] = [];
       for (let i = 0; i < limit; i++) {
         const f = allFeatures[i];
         if (f.type !== 'fillet' || f.suppressed || f.id === featureId) continue;
@@ -436,12 +430,17 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
         if (sibStoredIds.length === 0) continue;
         const sibSel = parseOccEdgeSelection(sibStoredIds);
         if (!sibSel || sibSel.bodyId !== selection.bodyId) continue;
-        const sibNumericIds = sibSel.edgeIds.filter((id) => srcBody.edgeIds.has(id));
+        const sibNumericIds = sibSel.edgeIds.filter((id) => body.edgeIds.has(id));
         if (sibNumericIds.length === 0) continue;
-        const sibEdgeSets = resolveOccFilletEdgeSets(sibNumericIds, srcBody, f.params as Record<string, unknown>);
-        siblingFilletEdgeSets.push(...sibEdgeSets);
+        edgeSets.push(...resolveOccFilletEdgeSets(sibNumericIds, body, f.params as Record<string, unknown>));
       }
-    }
+      return edgeSets;
+    };
+
+    const siblingFilletEdgeSets =
+      tool === 'Fillet' && !fullRoundFaces && srcBody.id === resolvedBody.id
+        ? collectSiblingFilletEdgeSets(srcBody)
+        : [];
 
     // Build the combined edge-set list (sibling sets prepended, current sets last).
     // Deduplicate: if a sibling set's tangent-chain propagation overlaps with the
@@ -455,10 +454,6 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
         .filter((es) => es.edgeIds.length > 0);
       if (deduplicatedSiblings.length > 0) {
         effectiveFilletEdgeSets = [...deduplicatedSiblings, ...currentFilletEdgeSets];
-        console.log(
-          `[${tool}] combined ${deduplicatedSiblings.length} sibling edge-set(s)` +
-          ` → ${effectiveFilletEdgeSets.length} total applied to base body`,
-        );
       }
     }
 
@@ -499,11 +494,6 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
               occ.oc, srcBody, augmented,
               { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
             );
-            if (result) {
-              console.log(
-                `[${tool}] vertex-neighbor fallback: +${neighborIds.length} neighbor edge(s)`,
-              );
-            }
           }
         }
 
@@ -530,21 +520,7 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
             if (arcBody) {
               // Step 2: Re-map sibling (corner) edge sets to the arc-filleted body.
               // Corner edges are unaffected by the arc fillet, so their IDs survive.
-              const cornerSetsInArcBody: OccFilletEdgeSet[] = [];
-              for (let i = 0; i < limit; i++) {
-                const f = allFeatures[i];
-                if (f.type !== 'fillet' || f.suppressed || f.id === featureId) continue;
-                const mode = f.params.mode as string | undefined;
-                if (mode === 'full-round' || mode === 'rule-fillet') continue;
-                const sibStoredIds = storedEdgeIds(f.params.edgeIds);
-                if (sibStoredIds.length === 0) continue;
-                const sibSel = parseOccEdgeSelection(sibStoredIds);
-                if (!sibSel || sibSel.bodyId !== selection.bodyId) continue;
-                const sibNumericIds = sibSel.edgeIds.filter((id) => arcBody.edgeIds.has(id));
-                if (sibNumericIds.length === 0) continue;
-                const sibEdgeSets = resolveOccFilletEdgeSets(sibNumericIds, arcBody, f.params as Record<string, unknown>);
-                cornerSetsInArcBody.push(...sibEdgeSets);
-              }
+              const cornerSetsInArcBody = collectSiblingFilletEdgeSets(arcBody);
               if (cornerSetsInArcBody.length > 0) {
                 // Step 3: Apply all corner fillets to the arc-filleted body.
                 result = occFilletEdgeSetsWithInstance(
@@ -552,10 +528,6 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
                   { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
                 );
               }
-              console.log(
-                `[${tool}] arc-first fallback: cornerSets=${cornerSetsInArcBody.length}` +
-                ` result=${result ? 'ok' : 'null'}`,
-              );
               if (!result) arcBody.dispose();
             } else {
               console.warn(`[${tool}] arc-first fallback: arc fillet on base body failed`);
@@ -583,10 +555,6 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
             if (seq.body) {
               result = seq.body;
               sequentialSkippedEdges = seq.skippedCount;
-              console.log(
-                `[${tool}] sequential fallback: filleted ${seq.appliedCount} edge(s) individually` +
-                (seq.skippedCount > 0 ? `, ${seq.skippedCount} could not be filleted at the requested radius` : ''),
-              );
             }
           }
         }

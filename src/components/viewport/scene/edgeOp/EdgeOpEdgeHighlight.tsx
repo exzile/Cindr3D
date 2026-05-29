@@ -424,7 +424,7 @@ export default function EdgeOpEdgeHighlight({
         finalDisplay = chainPts;
       }
     } else if (guidePolylines && guidePolylines.size > 1) {
-      // Legacy fallback (flag off / non-OCC mesh body): geometric tangent BFS +
+      // Non-OCC mesh fallback: geometric tangent BFS +
       // Math.min canonical normalization to stabilise repeat clicks on polygon arcs.
       const chainSet = polylineTangentChain(guidePolylines, result.edgeId);
       if (chainSet.size <= 1 && resolvedEdgeId !== result.edgeId) {
@@ -497,7 +497,6 @@ export default function EdgeOpEdgeHighlight({
         line.geometry.dispose();
       }
       const lines: THREE.LineSegments[] = [];
-      let _meshCount = 0, _withOccTess = 0;
       _scene.traverse((obj) => {
         if (!(obj instanceof THREE.Mesh) && !(obj as THREE.Mesh).isMesh) return;
         const mesh = obj as THREE.Mesh;
@@ -506,13 +505,8 @@ export default function EdgeOpEdgeHighlight({
         const bodyId = mesh.userData.brepBodyId as string | undefined;
         if (featureId && !visibleBodyFeatureIds.has(featureId)) return;
         if (!featureId && !bodyId) return;
-        _meshCount++;
         const resolved = resolveMeshOccTessellation(mesh);
-        if (bodyId && !resolved) {
-          // console.log(`[EdgeHighlight] buildLines: mesh featureId=${featureId ?? '—'} bodyId=${bodyId} — no OCC tessellation (body not in registry)`);
-          return;
-        }
-        if (resolved) _withOccTess++;
+        if (bodyId && !resolved) return;
         // OCC-12.B1 — authoritative selectable-edge metadata for this OCC body
         // (filletable filter + chainId). null when the flag is off / OCC body gone.
         const meta = resolved ? getSelectableEdgesForBody(resolved.bodyId) : null;
@@ -600,7 +594,6 @@ export default function EdgeOpEdgeHighlight({
           lines.push(pickLine);
         }
       });
-      // console.log(`[EdgeHighlight] buildLines: ${_meshCount} eligible meshes, ${_withOccTess} with OCC tess, ${lines.length} line objects built`);
       allEdgeLinesRef.current = lines;
       invalidateCanvas();
       return lines.length;
@@ -611,14 +604,8 @@ export default function EdgeOpEdgeHighlight({
         retryHandle = null;
         if (cancelled) return;
         attempts += 1;
-        const occReady = !!getOccSync();
-        // console.log(`[EdgeHighlight] scheduleBuild attempt ${attempts}/${maxFastAttempts}, OCC ready=${occReady}, delay was ${delayMs}ms`);
-        void occReady;
         const lineCount = buildLines();
-        if (lineCount > 0) {
-          // console.log(`[EdgeHighlight] scheduleBuild: success on attempt ${attempts} — ${lineCount} line objects`);
-          return;
-        }
+        if (lineCount > 0) return;
         if (attempts < maxFastAttempts) {
           // Still in the fast-retry window — keep checking at 125 ms.
           scheduleBuild(125);
@@ -626,13 +613,11 @@ export default function EdgeOpEdgeHighlight({
           // OCC WASM is still loading after a cold-start page refresh.
           // Slow-poll at 2 s so orange lines appear as soon as the STEP
           // restore completes, even if the fast window already elapsed.
-          // console.log('[EdgeHighlight] scheduleBuild: fast window exhausted, OCC still loading — slow-polling at 2 s');
           scheduleBuild(2000);
         } else {
           // else: OCC is loaded but lines are still empty (non-OCC body or
           // unrecoverable STEP data). The rehydration-effect triggerRebuildRef
           // callback is the primary async mechanism and may still succeed.
-          // console.log('[EdgeHighlight] scheduleBuild: fast window exhausted, OCC loaded but 0 lines — waiting for rehydration trigger');
         }
       }, delayMs);
     };
@@ -640,13 +625,8 @@ export default function EdgeOpEdgeHighlight({
     initialBuildHandle = window.setTimeout(() => {
       initialBuildHandle = null;
       if (cancelled) return;
-      // console.log('[EdgeHighlight] initial build (250ms delay)');
       const lineCount = buildLines();
-      if (lineCount > 0) {
-        // console.log(`[EdgeHighlight] initial build succeeded — ${lineCount} line objects`);
-        return;
-      }
-      // console.log('[EdgeHighlight] initial build: 0 lines, scheduling retries');
+      if (lineCount > 0) return;
       scheduleBuild(125);
     }, 250);
 
@@ -686,32 +666,16 @@ export default function EdgeOpEdgeHighlight({
         feature.type !== "sketch" &&
         feature.mesh instanceof THREE.Mesh,
     );
-    // console.log(`[EdgeHighlight] rehydration: ${candidates.length} solid feature(s) to restore — ${candidates.map((f) => f.id).join(', ') || 'none'}`);
-    // Pre-flight: log STEP data availability for each candidate so we can tell
-    // apart "no STEP data serialized" from "STEP restore failed at parse time".
-    // for (const f of candidates) {
-    //   const stepData = (f as unknown as { _occStepData?: { bodyId?: string; stepString?: string } })._occStepData;
-    //   const meshBodyId = f.mesh instanceof THREE.Mesh ? (f.mesh.userData['brepBodyId'] as string | undefined) ?? 'none' : 'no-mesh';
-    //   console.log(
-    //     `[EdgeHighlight] rehydration pre-flight: ${f.id} type=${f.type}` +
-    //     ` hasStep=${!!stepData?.stepString} stepBodyId=${stepData?.bodyId ?? 'none'}` +
-    //     ` meshBodyId=${meshBodyId}`,
-    //   );
-    // }
     Promise.all(
       candidates.map((feature) =>
         ensureOccBodyForFeature(feature, features, sketches).then((ok) => {
-          // console.log(`[EdgeHighlight] rehydration: feature ${feature.id} (${feature.type}) → ${ok ? 'restored' : 'skipped/failed'}`);
           return ok;
         }),
       ),
     ).then((results) => {
       if (cancelled) return;
-      // const restoredCount = results.filter(Boolean).length;
-      // console.log(`[EdgeHighlight] rehydration done: ${restoredCount}/${candidates.length} bodies restored`);
       if (!results.some(Boolean)) return;
       // Bodies are now registered — rebuild guide lines so they get brepBodyId set.
-      // console.log('[EdgeHighlight] rehydration: triggering guide line rebuild');
       triggerRebuildRef.current?.();
       invalidateCanvas();
     });
@@ -795,7 +759,7 @@ export default function EdgeOpEdgeHighlight({
         }
         if (guidePolylines && guidePolylines.size > 1) {
           // Authoritative chainId grouping for OCC bodies (chainMap present),
-          // legacy polylineTangentChain geometric BFS for non-OCC mesh bodies.
+          // polylineTangentChain geometric BFS for non-OCC mesh bodies.
           const chainSet = chainMap
             ? expandChainEdges(chainMap, guidePolylines, occHover.edgeId)
             : polylineTangentChain(guidePolylines, occHover.edgeId);
