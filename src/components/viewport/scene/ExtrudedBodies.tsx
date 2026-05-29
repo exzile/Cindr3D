@@ -20,6 +20,8 @@ type PersistHydrationApi = {
   };
 };
 
+type MeshBackedFeature = Feature & { mesh: THREE.Mesh };
+
 function storeHasHydrated(store: PersistHydrationApi): boolean {
   return store.persist?.hasHydrated() ?? true;
 }
@@ -74,6 +76,42 @@ function featureNeedsBody(feature: Feature, bodiesById: ReturnType<typeof useCom
 function cloneWorldGeometry(mesh: THREE.Mesh): THREE.BufferGeometry {
   mesh.updateMatrixWorld(true);
   return GeometryEngine.bakeMeshWorldGeometry(mesh);
+}
+
+function copyPrimitiveFeatureTransformToMesh(parent: Feature | undefined, mesh: THREE.Mesh): void {
+  if (parent?.type !== 'primitive') return;
+  const { params } = parent;
+  mesh.position.set(
+    (params.x as number) || 0,
+    (params.y as number) || 0,
+    (params.z as number) || 0,
+  );
+  mesh.rotation.set(
+    THREE.MathUtils.degToRad((params.rx as number) || 0),
+    THREE.MathUtils.degToRad((params.ry as number) || 0),
+    THREE.MathUtils.degToRad((params.rz as number) || 0),
+  );
+}
+
+function explicitEdgeModSourceFeatureId(feature: Feature): string | undefined {
+  return feature.parentFeatureId ??
+    (feature.params.parentFeatureId as string | undefined) ??
+    (feature.params.sourceFeatureId as string | undefined);
+}
+
+function edgeModificationSourceFeatureId(feature: Feature): string | undefined {
+  const explicit = explicitEdgeModSourceFeatureId(feature);
+  if (explicit) return explicit;
+
+  const selection = parseOccEdgeSelection(storedEdgeIds(feature.params.edgeIds));
+  if (!selection) return undefined;
+  return globalBRepBodyRegistry.get(selection.bodyId)?.sourceFeatureId;
+}
+
+function stampStoredMeshUserData(mesh: THREE.Object3D, featureId: string, bodyId: string | undefined): void {
+  mesh.userData.pickable = true;
+  mesh.userData.featureId = featureId;
+  mesh.userData.bodyId = bodyId;
 }
 
 /**
@@ -194,7 +232,7 @@ export default function ExtrudedBodies() {
     return ids;
   }, [features, rollbackIndex]);
 
-  const isActive = (feature: Feature) => activeFeatureIds.has(feature.id);
+  const isActive = useCallback((feature: Feature) => activeFeatureIds.has(feature.id), [activeFeatureIds]);
 
   // Non-destructive OCC edge modification: when a fillet/chamfer feature has been committed
   // with a mesh (Phase 0 — it stores the result on its own node), the parent
@@ -255,24 +293,22 @@ export default function ExtrudedBodies() {
       }
     }
     return superseded;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [features, rollbackIndex]);
+  }, [features, isActive]);
 
-  function edgeModificationSourceFeatureId(feature: Feature): string | undefined {
-    const explicit =
-      feature.parentFeatureId ??
-      (feature.params.parentFeatureId as string | undefined) ??
-      (feature.params.sourceFeatureId as string | undefined);
-    if (explicit) return explicit;
-
-    const selection = parseOccEdgeSelection(storedEdgeIds(feature.params.edgeIds));
-    if (!selection) return undefined;
-    return globalBRepBodyRegistry.get(selection.bodyId)?.sourceFeatureId;
-  }
-
-  const hasActiveDownstreamEdgeModification = (featureId: string): boolean =>
+  const hasActiveDownstreamEdgeModification = useCallback((featureId: string): boolean =>
     activeDownstreamEdgeModificationSourceIds.has(featureId) ||
-    supersededEdgeModIds.has(featureId);
+    supersededEdgeModIds.has(featureId), [activeDownstreamEdgeModificationSourceIds, supersededEdgeModIds]);
+
+  // Memoised filtered list: every entry is active, visible, not superseded by a
+  // downstream edge-mod result, and carries a real THREE.Mesh.
+  const storedMeshFeaturesFiltered = useMemo(
+    () => features.filter((feature): feature is MeshBackedFeature =>
+      isActive(feature) &&
+      feature.mesh instanceof THREE.Mesh &&
+      !hasActiveDownstreamEdgeModification(feature.id),
+    ),
+    [features, isActive, hasActiveDownstreamEdgeModification],
+  );
 
   // Keep the persistent geometry caches in sync from committed OCC meshes so
   // Prepare/export can resolve body geometry from committed OCC/stored meshes.
@@ -283,10 +319,7 @@ export default function ExtrudedBodies() {
     const liveBodyIds = new Set<string>();
     const byBodyId = new Map<string, THREE.BufferGeometry[]>();
 
-    for (const feature of features) {
-      if (!isActive(feature) || !feature.mesh || hasActiveDownstreamEdgeModification(feature.id)) continue;
-      if (!(feature.mesh instanceof THREE.Mesh)) continue;
-
+    for (const feature of storedMeshFeaturesFiltered) {
       const bodyId = resolveBodyId(feature.id, feature.bodyId);
       const worldGeometry = cloneWorldGeometry(feature.mesh);
       liveFeatureIds.add(feature.id);
@@ -322,63 +355,39 @@ export default function ExtrudedBodies() {
         : (mergeGeometries(geometries, false) ?? geometries[0].clone());
       bodyIdGeometryCache.set(bodyId, merged);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneStoresHydrated, features, rollbackIndex, resolveBodyId, supersededEdgeModIds]);
+  }, [sceneStoresHydrated, storedMeshFeaturesFiltered, resolveBodyId]);
 
   // Register stored-mesh features (fillet/chamfer/sweep/etc.) in liveBodyMeshes
   // so downstream tools and export/slicer caches can locate their geometry.
   useEffect(() => {
     if (!sceneStoresHydrated) return undefined;
     const stored: Array<{ uuid: string }> = [];
-    for (const f of features) {
-      if (!isActive(f) || !f.mesh || hasActiveDownstreamEdgeModification(f.id)) continue;
-      if (!(f.mesh instanceof THREE.Mesh)) continue;
+    for (const f of storedMeshFeaturesFiltered) {
       const m = f.mesh;
       // Stamp userData eagerly so collectPickable / EdgeOpEdgeHighlight's
       // featureId filter can find this mesh before R3F's <primitive> onUpdate
       // fires on the next animation frame. Without this the mesh is in the scene
       // but invisible to the edge picker until the first R3F reconcile after mount.
-      m.userData.pickable = true;
-      m.userData.featureId = f.id;
-      m.userData.bodyId = resolveBodyId(f.id, f.bodyId);
+      stampStoredMeshUserData(m, f.id, resolveBodyId(f.id, f.bodyId));
       // Re-sync the stored mesh's position/rotation to the source primitive's
       // current params on every render — primitives apply their transform at
       // the React mesh level, and the OCC tessellation is in local body
       // space, so without this the rounded body would still display at the
       // primitive's position from fillet-commit time even after a user moves
       // or rotates the primitive.
-      const parentId =
-        f.parentFeatureId ??
-        (f.params.parentFeatureId as string | undefined) ??
-        (f.params.sourceFeatureId as string | undefined);
-      const parent = parentId ? featureById.get(parentId) : undefined;
-      if (parent?.type === 'primitive') {
-        const p = parent.params;
-        m.position.set(
-          (p.x as number) || 0,
-          (p.y as number) || 0,
-          (p.z as number) || 0,
-        );
-        m.rotation.set(
-          THREE.MathUtils.degToRad((p.rx as number) || 0),
-          THREE.MathUtils.degToRad((p.ry as number) || 0),
-          THREE.MathUtils.degToRad((p.rz as number) || 0),
-        );
-      }
+      const parentId = explicitEdgeModSourceFeatureId(f);
+      copyPrimitiveFeatureTransformToMesh(parentId ? featureById.get(parentId) : undefined, m);
       liveBodyMeshes.set(m.uuid, m);
       stored.push({ uuid: m.uuid });
     }
     return () => { stored.forEach(({ uuid }) => liveBodyMeshes.delete(uuid)); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneStoresHydrated, features, rollbackIndex, supersededEdgeModIds]);
+  }, [sceneStoresHydrated, storedMeshFeaturesFiltered, featureById, resolveBodyId]);
 
   // Apply dim / appearance materials on pre-built stored meshes in an effect,
   // never in render, so cleanup is guaranteed when Edit In Place exits.
   useEffect(() => {
     if (!sceneStoresHydrated) return;
-    const storedMeshFeatures = features.filter((f) => isActive(f) && f.mesh && !hasActiveDownstreamEdgeModification(f.id));
-    storedMeshFeatures.forEach((feature) => {
-      if (!(feature.mesh instanceof THREE.Mesh)) return;
+    storedMeshFeaturesFiltered.forEach((feature) => {
       const mesh = feature.mesh;
       const isSurface = feature.bodyKind === 'surface';
       const bodyId = resolveBodyId(feature.id, feature.bodyId);
@@ -386,18 +395,7 @@ export default function ExtrudedBodies() {
       mesh.userData.bodyId = bodyId;
       mesh.material = getMaterial(feature.componentId, bodyId, isSurface);
     });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneStoresHydrated, features, editingInPlace, activeComponentId, rollbackIndex, bodiesById, getMaterial, resolveBodyId, supersededEdgeModIds]);
-
-  // Memoised filtered lists — avoid re-allocating on every render when only unrelated
-  // state changes (e.g. visibility toggles, status messages that bump features ref).
-  // isActive / hasActiveDownstreamEdgeModification close over features + rollbackIndex,
-  // so those two are the only deps needed.
-  const storedMeshFeaturesFiltered = useMemo(
-    () => features.filter((f) => isActive(f) && f.mesh && !hasActiveDownstreamEdgeModification(f.id)),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [features, rollbackIndex, supersededEdgeModIds],
-  );
+  }, [sceneStoresHydrated, storedMeshFeaturesFiltered, editingInPlace, activeComponentId, bodiesById, getMaterial, resolveBodyId]);
 
   if (!sceneStoresHydrated) return null;
 
@@ -408,12 +406,10 @@ export default function ExtrudedBodies() {
       {storedMeshFeaturesFiltered.map((feature) => (
         <primitive
           key={feature.id}
-          object={feature.mesh!}
+          object={feature.mesh}
           onUpdate={(m: THREE.Object3D) => {
-            m.userData.pickable = true;
             const bodyId = resolveBodyId(feature.id, feature.bodyId);
-            m.userData.featureId = feature.id;
-            m.userData.bodyId = bodyId;
+            stampStoredMeshUserData(m, feature.id, bodyId);
           }}
         />
       ))}
@@ -422,7 +418,7 @@ export default function ExtrudedBodies() {
       {storedMeshFeaturesFiltered.map((feature) => (
         <TangentEdgeLines
           key={`tangent-${feature.id}`}
-          mesh={feature.mesh!}
+          mesh={feature.mesh}
           bodyId={resolveBodyId(feature.id, feature.bodyId)}
         />
       ))}

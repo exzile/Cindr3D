@@ -244,10 +244,14 @@ export function buildBatchedEdgeLineGeometry(
  * LineSegments with no pick userData, so the edge picker never selects them — they
  * are purely a visual reference.
  *
- * Selection is the complement of the sharp-edge guide: `filletable === true`
- * (excludes seams / open boundaries) AND `sharpEdge === false` (the sharp edges
- * are already drawn by the silhouette/outline pass). Curved tangent edges (the arc
- * around a rounded corner) are intentionally kept. Returns null when there are none.
+ * Selection: `filletable === true` (excludes seams / open boundaries) AND
+ * `sharpEdge === false` (sharp edges are drawn by the silhouette/outline pass) AND
+ * `adjacentCurvedFace === true` — at least one neighbour is a curved blend face.
+ * That last condition is what separates a real fillet/round tangent boundary from
+ * the facet seams inside a polygon-approximated curved WALL (where both neighbours
+ * are flat facets); without it, a faceted bore/notch draws ~100 spurious iso-lines.
+ * Curved tangent edges (the arc around a rounded corner) are kept. Returns null
+ * when there are none.
  */
 export function buildTangentEdgeLineGeometry(
   tess: BRepTessellation,
@@ -256,7 +260,7 @@ export function buildTangentEdgeLineGeometry(
   const positions: number[] = [];
   for (const [edgeId, polyline] of tess.edgePolylines) {
     const m = meta.get(edgeId);
-    if (!m || m.filletable === false || m.sharpEdge) continue;
+    if (!m || m.filletable === false || m.sharpEdge || !m.adjacentCurvedFace) continue;
     const pointCount = polyline.length / 3;
     if (pointCount < 2) continue;
     for (let index = 0; index < pointCount - 1; index += 1) {

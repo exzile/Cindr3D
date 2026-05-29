@@ -56,6 +56,15 @@ export interface SelectableEdgeMeta {
    * Computed via centroid-difference test: dot(nA, centroidB − centroidA) < 0 → convex.
    */
   convex: boolean | null;
+  /**
+   * True when at least one adjacent face is curved (non-planar) — its averaged
+   * vertex normal magnitude falls below the flat threshold. Distinguishes a real
+   * fillet/round tangent boundary (one neighbour is the curved blend face) from a
+   * facet seam inside a polygon-approximated wall (both neighbours flat facets).
+   * Used to draw Fusion-style tangent reference lines without the facet clutter.
+   * Defaults to false; only set when tessellation data is available.
+   */
+  adjacentCurvedFace: boolean;
   /** Circle / arc only (mm). */
   radius?: number;
 }
@@ -240,8 +249,9 @@ function computeSelectableEdges(oc: OcctRaw, body: BRepBody): Map<number, Select
       adjacentFaceIds,
       chainId: -1, // filled in by A3 below
       filletable,
-      sharpEdge: true,   // refined in A4 below using tessellation face normals
-      convex: null,      // refined in A4 below using centroid-difference test
+      sharpEdge: true,            // refined in A4 below using tessellation face normals
+      convex: null,               // refined in A4 below using centroid-difference test
+      adjacentCurvedFace: false,  // refined in A4 below using per-face normal spread
       ...(radius !== undefined ? { radius } : {}),
     });
   }
@@ -298,12 +308,12 @@ function computeSelectableEdges(oc: OcctRaw, body: BRepBody): Map<number, Select
   const tess = body._tessellation;
   if (tess) {
     // Per-triangle data grouped by face, plus face-level sums for the convex test.
-    type TriData = {
-      nx: number; ny: number; nz: number;  // triangle normal (from vertex 0)
-      cx: number; cy: number; cz: number;  // triangle centroid
+    type VertData = {
+      x: number; y: number; z: number;     // vertex position
+      nx: number; ny: number; nz: number;  // vertex normal
     };
     type FaceData = {
-      tris: TriData[];
+      verts: VertData[];
       snx: number; sny: number; snz: number;  // summed normals (for convex avg)
       cx: number; cy: number; cz: number;      // summed centroids (for convex avg)
       count: number;
@@ -313,35 +323,47 @@ function computeSelectableEdges(oc: OcctRaw, body: BRepBody): Map<number, Select
     for (let tri = 0; tri < numTriangles; tri++) {
       const fid = tess.faceIds[tri];
       let fd = faceData.get(fid);
-      if (!fd) { fd = { tris: [], snx: 0, sny: 0, snz: 0, cx: 0, cy: 0, cz: 0, count: 0 }; faceData.set(fid, fd); }
+      if (!fd) { fd = { verts: [], snx: 0, sny: 0, snz: 0, cx: 0, cy: 0, cz: 0, count: 0 }; faceData.set(fid, fd); }
       const base = tri * 9;
+      // Store all three vertices (position + normal) so localNormal can sample the
+      // true surface normal AT the edge boundary, where a fillet face is G1-tangent.
+      for (let j = 0; j < 3; j++) {
+        const o = base + j * 3;
+        fd.verts.push({
+          x: tess.positions[o], y: tess.positions[o + 1], z: tess.positions[o + 2],
+          nx: tess.normals[o], ny: tess.normals[o + 1], nz: tess.normals[o + 2],
+        });
+      }
       const tnx = tess.normals[base];
       const tny = tess.normals[base + 1];
       const tnz = tess.normals[base + 2];
       const tcx = (tess.positions[base] + tess.positions[base + 3] + tess.positions[base + 6]) / 3;
       const tcy = (tess.positions[base + 1] + tess.positions[base + 4] + tess.positions[base + 7]) / 3;
       const tcz = (tess.positions[base + 2] + tess.positions[base + 5] + tess.positions[base + 8]) / 3;
-      fd.tris.push({ nx: tnx, ny: tny, nz: tnz, cx: tcx, cy: tcy, cz: tcz });
       fd.snx += tnx; fd.sny += tny; fd.snz += tnz;
       fd.cx += tcx;  fd.cy += tcy;  fd.cz += tcz;
       fd.count++;
     }
 
-    // Return the unit normal of the triangle whose centroid is nearest to (px,py,pz).
-    // Used to get the local surface normal right at an edge boundary rather than the
-    // whole-face average (which blurs out curved fillet faces).
+    // Return the unit normal of the VERTEX nearest to (px,py,pz). Vertices lie on
+    // the face boundary, so at a fillet's tangent edge this reads the true G1
+    // boundary normal (≈ the flat neighbour's normal). The previous version used
+    // the nearest triangle CENTROID, which on a coarse curved fillet sits partway
+    // up the arc — its normal is already rotated several degrees off tangent, so
+    // one boundary of a fillet could tip past the 15° sharp threshold while the
+    // other stayed under it, dropping one tangent reference line.
     const localNormal = (fd: FaceData, px: number, py: number, pz: number): [number, number, number] | null => {
-      if (fd.tris.length === 0) return null;
+      if (fd.verts.length === 0) return null;
       let bestDist2 = Infinity;
-      let bestTri = fd.tris[0];
-      for (const t of fd.tris) {
-        const dx = t.cx - px, dy = t.cy - py, dz = t.cz - pz;
+      let best = fd.verts[0];
+      for (const v of fd.verts) {
+        const dx = v.x - px, dy = v.y - py, dz = v.z - pz;
         const d2 = dx * dx + dy * dy + dz * dz;
-        if (d2 < bestDist2) { bestDist2 = d2; bestTri = t; }
+        if (d2 < bestDist2) { bestDist2 = d2; best = v; }
       }
-      const len = Math.sqrt(bestTri.nx * bestTri.nx + bestTri.ny * bestTri.ny + bestTri.nz * bestTri.nz);
+      const len = Math.sqrt(best.nx * best.nx + best.ny * best.ny + best.nz * best.nz);
       if (len < 1e-9) return null;
-      return [bestTri.nx / len, bestTri.ny / len, bestTri.nz / len];
+      return [best.nx / len, best.ny / len, best.nz / len];
     };
 
     for (const [edgeId, m] of meta.entries()) {
@@ -386,6 +408,10 @@ function computeSelectableEdges(oc: OcctRaw, body: BRepBody): Map<number, Select
       const FLAT_THRESHOLD = 0.985;
       const lenAvgA = Math.sqrt(dA.snx * dA.snx + dA.sny * dA.sny + dA.snz * dA.snz) / dA.count;
       const lenAvgB = Math.sqrt(dB.snx * dB.snx + dB.sny * dB.sny + dB.snz * dB.snz) / dB.count;
+
+      // A neighbour with sub-threshold averaged-normal magnitude is a curved face.
+      // Marks fillet/round boundaries apart from facet seams in a faceted wall.
+      m.adjacentCurvedFace = lenAvgA < FLAT_THRESHOLD || lenAvgB < FLAT_THRESHOLD;
 
       if (lenAvgA >= FLAT_THRESHOLD && lenAvgB >= FLAT_THRESHOLD) {
         // Both faces flat → averaged normals give the correct dihedral.
