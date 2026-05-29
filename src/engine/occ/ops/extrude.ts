@@ -38,6 +38,12 @@ export interface OccExtrudeOptions {
    * contains a curve type we don't build analytically (ellipse, spline, bezier).
    */
   profileShape?: THREE.Shape;
+  /**
+   * OCC-15: when true, ONLY a valid analytic solid is accepted — if the analytic
+   * build is unavailable or BRepCheck-invalid, throw instead of faceting. Lets the
+   * caller try a legacy partial-analytic path before falling all the way to faceted.
+   */
+  requireValidAnalytic?: boolean;
   symmetric?: boolean;
   /** When set, also extrude in the opposite direction by this distance and union. */
   twoSideDist?: number;
@@ -136,6 +142,12 @@ export function occExtrudeShapeWithInstance(
         analytic.dispose();
       }
     }
+    // Caller demanded a valid analytic solid and we couldn't produce one.
+    if (options.requireValidAnalytic) {
+      throw new Error('[occExtrude] no valid analytic solid for profileShape');
+    }
+  } else if (options.requireValidAnalytic) {
+    throw new Error('[occExtrude] requireValidAnalytic set but no profileShape provided');
   }
 
   const faceted = sketchProfileToWires(oc, profile, frame);

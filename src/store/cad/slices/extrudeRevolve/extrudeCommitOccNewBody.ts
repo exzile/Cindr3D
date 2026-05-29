@@ -127,16 +127,6 @@ export async function buildOccNewBodyExtrudeMesh({
       : (GeometryEngine.sketchToShape(sourceSketch) ?? shapes[0]);
     if (!firstShape) return { needsStoredMesh: false, occFailureMessage: null };
 
-    // OCC-15: prefer the ANALYTIC whole-sketch shape as the profile source when the
-    // sketch is a single region (then it equals the selected profile). A selected
-    // region's shape comes from Clipper2 POINTS, whose noisy vertices refit into
-    // mismatched sub-arcs and build an INVALID solid; sketchToShape keeps the original
-    // ArcCurve/EllipseCurve so a notch becomes one clean arc. Multi-region sketches
-    // keep the per-region shape (occExtrude validates and falls back to faceted).
-    const analyticWholeShape = GeometryEngine.sketchToShape(sourceSketch);
-    const profileShapeForExtrude =
-      analyticWholeShape && shapes.length <= 1 ? analyticWholeShape : firstShape;
-
     const sketchProfile = makeSketchProfileFromShape(firstShape);
     const frame = createOffsetOccFrame(sketchForOp, extrudeStartType, extrudeStartOffset);
     const { occDistance, occSymmetric, occTwoSideDist } = resolveOccExtrudeDistance(
@@ -148,31 +138,36 @@ export async function buildOccNewBodyExtrudeMesh({
     const extrudeOptions = {
       id: featureId,
       sourceFeatureId: featureId,
-      // OCC-15: build analytic arc/circle edges from the THREE.Shape when buildable;
-      // occExtrude validates the result and falls back to the faceted polygon path
-      // if the analytic solid is invalid or a curve type isn't supported.
-      profileShape: profileShapeForExtrude,
       symmetric: occSymmetric,
       twoSideDist: occTwoSideDist,
       taperAngle: Math.abs(extrudeTaperAngle) > 0.001 ? extrudeTaperAngle : undefined,
       taperAngle2: Math.abs(extrudeTaperAngle2 ?? 0) > 0.001 ? extrudeTaperAngle2 : undefined,
     };
-    // OCC-15: occExtrude with `profileShape` builds analytic edges for the WHOLE
-    // profile — lines, circles (gp_Circ), partial arcs (refit/MakeEdge_10), and
-    // analytic holes — so a rect-with-notch outer no longer facets. It is strictly
-    // better than the legacy circle/arc special paths (which faceted any non-circle
-    // outer), so it is now primary; the legacy paths only run if the analytic build
-    // throws outright.
+    // OCC-15 fallback chain (best → safest):
+    //  1. Fully-analytic extrude (profileShape) — ACCEPTED ONLY if it builds a valid
+    //     solid (requireValidAnalytic throws otherwise). Gives clean arc/circle walls.
+    //  2. Legacy partial-analytic: analytic circular holes + faceted everything else —
+    //     a VALID solid that keeps the bore analytic when the outer can't be cleaned
+    //     (e.g. a circle clipped by the rect edge → a notch whose junctions are noisy).
+    //  3. Pure faceted polygon — always valid for a simple profile.
     const hasHoles = (firstShape.holes?.length ?? 0) > 0;
-    let occBody: BRepBody | null;
+    let occBody: BRepBody | null = null;
     try {
-      occBody = occExtrudeWithInstance(occ.oc, sketchProfile, occDistance, frame, extrudeOptions);
-    } catch (analyticErr) {
-      console.warn('[commitExtrude] analytic extrude threw; trying legacy analytic paths', analyticErr);
+      occBody = occExtrudeWithInstance(occ.oc, sketchProfile, occDistance, frame, {
+        ...extrudeOptions,
+        profileShape: firstShape,
+        requireValidAnalytic: true,
+      });
+    } catch {
+      occBody = null; // analytic unavailable or invalid → try legacy/faceted
+    }
+    if (!occBody) {
       occBody =
         tryBuildAnalyticalExtrudeBody(occ.oc, sourceSketch, firstShape, occDistance, frame, extrudeOptions) ??
         tryBuildAnalyticalExtrudeBodyFromEntities(occ.oc, sourceSketch.entities, hasHoles, occDistance, frame, extrudeOptions);
-      if (!occBody) throw analyticErr;
+    }
+    if (!occBody) {
+      occBody = occExtrudeWithInstance(occ.oc, sketchProfile, occDistance, frame, extrudeOptions);
     }
 
     return {
