@@ -4,7 +4,9 @@ import type { CADState } from "../../state";
 import {
   deserializeFeature,
   deserializeSketch,
+  mergeActiveSketchForPersistence,
   serializeFeature,
+  shouldPersistActiveSketch,
 } from "../../persistence";
 import { useComponentStore } from "../../../componentStore";
 import { createRootComponent, defaultComponentMaterial } from "../../../component/defaults";
@@ -128,14 +130,6 @@ const clearDocumentRuntimeCaches = () => {
   clearFeatureEvaluationCache();
 };
 
-const shouldSaveActiveSketch = (activeSketch: Sketch | null): activeSketch is Sketch => (
-  !!activeSketch && (
-    activeSketch.entities.length > 0 ||
-    activeSketch.constraints.length > 0 ||
-    activeSketch.dimensions.length > 0
-  )
-);
-
 const serializeSketchForDesignFile = (sketch: Sketch): SerializableSketch => ({
   ...sketch,
   planeNormal: sketch.planeNormal
@@ -145,15 +139,6 @@ const serializeSketchForDesignFile = (sketch: Sketch): SerializableSketch => ({
     ? [sketch.planeOrigin.x, sketch.planeOrigin.y, sketch.planeOrigin.z] as [number, number, number]
     : null,
 });
-
-const mergeActiveSketchForDesignFile = (sketches: Sketch[], activeSketch: Sketch | null): Sketch[] => {
-  if (!shouldSaveActiveSketch(activeSketch)) return sketches;
-  const index = sketches.findIndex((sketch) => sketch.id === activeSketch.id);
-  if (index < 0) return [...sketches, activeSketch];
-  const next = [...sketches];
-  next[index] = activeSketch;
-  return next;
-};
 
 const serializeVector = (value: unknown): SerializableVector3 | undefined => {
   if (value instanceof THREE.Vector3) return { x: value.x, y: value.y, z: value.z };
@@ -570,8 +555,8 @@ export function createDocumentActions({ set, get }: CADSliceContext): Partial<CA
 
     getDesignJSON: () => {
       const state = get();
-      const activeSketch = shouldSaveActiveSketch(state.activeSketch) ? state.activeSketch : null;
-      const sketches = mergeActiveSketchForDesignFile(state.sketches, activeSketch);
+      const activeSketch = shouldPersistActiveSketch(state.activeSketch) ? state.activeSketch : null;
+      const sketches = mergeActiveSketchForPersistence(state.sketches, activeSketch);
       const documentSnapshot: DesignDocumentSnapshot = {
         features: state.features.map((f) => serializeFeature(f)),
         sketches: sketches.map(serializeSketchForDesignFile),

@@ -1,7 +1,14 @@
 import type { PersistOptions, PersistStorage } from 'zustand/middleware';
 import type { Feature, Sketch } from '../../types/cad';
 import { useComponentStore } from '../componentStore';
-import { deserializeFeature, deserializeSketch, idbStorage, serializeFeature } from './persistence';
+import {
+  deserializeFeature,
+  deserializeSketch,
+  idbStorage,
+  mergeActiveSketchForPersistence,
+  serializeFeature,
+  shouldPersistActiveSketch,
+} from './persistence';
 import type { CADState } from './state';
 import { PAGEHIDE_FLUSH_KEY } from '../../effects/cadStatePagehideFlush';
 
@@ -50,24 +57,6 @@ function rebuildExtrudeBodies(state: CADState) {
       createdThisRun.add(bodyId);
     }
   }
-}
-
-export function mergeActiveSketchForPersistence(sketches: Sketch[], activeSketch: Sketch | null): Sketch[] {
-  if (!activeSketch) return sketches;
-  const index = sketches.findIndex((sketch) => sketch.id === activeSketch.id);
-  if (index < 0) return [...sketches, activeSketch];
-
-  const next = [...sketches];
-  next[index] = activeSketch;
-  return next;
-}
-
-function shouldPersistActiveSketch(activeSketch: Sketch | null): activeSketch is Sketch {
-  return !!activeSketch && (
-    activeSketch.entities.length > 0 ||
-    activeSketch.constraints.length > 0 ||
-    activeSketch.dimensions.length > 0
-  );
 }
 
 export function createCADPersistConfig(): PersistOptions<CADState, Partial<CADState>> {

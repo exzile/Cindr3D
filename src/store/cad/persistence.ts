@@ -78,6 +78,33 @@ export const deserializeSketch = (sketch: Sketch): Sketch => ({
   planeOrigin: toVector3((sketch as unknown as { planeOrigin: unknown }).planeOrigin, [0, 0, 0]),
 });
 
+/**
+ * True when the active sketch carries content worth persisting (so an empty
+ * scratch sketch isn't written into the saved sketch list). Shared by the .dznd
+ * design-file writer and the IndexedDB autosave so both apply the same rule.
+ */
+export const shouldPersistActiveSketch = (activeSketch: Sketch | null): activeSketch is Sketch => (
+  !!activeSketch && (
+    activeSketch.entities.length > 0 ||
+    activeSketch.constraints.length > 0 ||
+    activeSketch.dimensions.length > 0
+  )
+);
+
+/**
+ * Merge the active sketch into the persisted sketches list: replace the existing
+ * entry by id, or append it. Callers pre-filter with shouldPersistActiveSketch
+ * (passing null when the active sketch is empty/transient).
+ */
+export const mergeActiveSketchForPersistence = (sketches: Sketch[], activeSketch: Sketch | null): Sketch[] => {
+  if (!activeSketch) return sketches;
+  const index = sketches.findIndex((sketch) => sketch.id === activeSketch.id);
+  if (index < 0) return [...sketches, activeSketch];
+  const next = [...sketches];
+  next[index] = activeSketch;
+  return next;
+};
+
 type SerializedMeshData = {
   position: number[] | null;
   index: number[] | null;

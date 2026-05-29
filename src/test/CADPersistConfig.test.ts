@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { createCADPersistConfig, mergeActiveSketchForPersistence } from '../store/cad/persistConfig';
+import { createCADPersistConfig } from '../store/cad/persistConfig';
+import { mergeActiveSketchForPersistence } from '../store/cad/persistence';
 import type { Sketch } from '../types/cad';
 
 const sketch = (id: string, entityCount = 0): Sketch => ({
