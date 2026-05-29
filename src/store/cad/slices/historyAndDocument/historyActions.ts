@@ -114,6 +114,25 @@ export function createHistoryActions({ set, get }: CADSliceContext): Partial<CAD
           activeDesignConfigurationId:
             parsed.activeDesignConfigurationId ??
             state.activeDesignConfigurationId,
+          parameters: (parsed.parameters as CADState['parameters'] | undefined) ?? state.parameters,
+          constructionPlanes:
+            (parsed.constructionPlanes as CADState['constructionPlanes'] | undefined) ?? state.constructionPlanes,
+          constructionAxes:
+            (parsed.constructionAxes as CADState['constructionAxes'] | undefined) ?? state.constructionAxes,
+          constructionPoints:
+            (parsed.constructionPoints as CADState['constructionPoints'] | undefined) ?? state.constructionPoints,
+          jointOrigins:
+            (parsed.jointOrigins as CADState['jointOrigins'] | undefined) ?? state.jointOrigins,
+          contactSets:
+            (parsed.contactSets as CADState['contactSets'] | undefined) ?? state.contactSets,
+          selectionSets:
+            (parsed.selectionSets as CADState['selectionSets'] | undefined) ?? state.selectionSets,
+          canvasReferences:
+            (parsed.canvasReferences as CADState['canvasReferences'] | undefined) ?? state.canvasReferences,
+          formBodies:
+            (parsed.formBodies as CADState['formBodies'] | undefined) ?? state.formBodies,
+          frozenFormVertices: parsed.frozenFormVertices ?? state.frozenFormVertices,
+          units: parsed.units === 'in' || parsed.units === 'mm' ? parsed.units : state.units,
           statusMessage: "Undo",
         });
         // OCC-7.3: restore BRepBodies from STEP snapshot if present, then
@@ -211,6 +230,25 @@ export function createHistoryActions({ set, get }: CADSliceContext): Partial<CAD
           activeDesignConfigurationId:
             parsed.activeDesignConfigurationId ??
             state.activeDesignConfigurationId,
+          parameters: (parsed.parameters as CADState['parameters'] | undefined) ?? state.parameters,
+          constructionPlanes:
+            (parsed.constructionPlanes as CADState['constructionPlanes'] | undefined) ?? state.constructionPlanes,
+          constructionAxes:
+            (parsed.constructionAxes as CADState['constructionAxes'] | undefined) ?? state.constructionAxes,
+          constructionPoints:
+            (parsed.constructionPoints as CADState['constructionPoints'] | undefined) ?? state.constructionPoints,
+          jointOrigins:
+            (parsed.jointOrigins as CADState['jointOrigins'] | undefined) ?? state.jointOrigins,
+          contactSets:
+            (parsed.contactSets as CADState['contactSets'] | undefined) ?? state.contactSets,
+          selectionSets:
+            (parsed.selectionSets as CADState['selectionSets'] | undefined) ?? state.selectionSets,
+          canvasReferences:
+            (parsed.canvasReferences as CADState['canvasReferences'] | undefined) ?? state.canvasReferences,
+          formBodies:
+            (parsed.formBodies as CADState['formBodies'] | undefined) ?? state.formBodies,
+          frozenFormVertices: parsed.frozenFormVertices ?? state.frozenFormVertices,
+          units: parsed.units === 'in' || parsed.units === 'mm' ? parsed.units : state.units,
           statusMessage: "Redo",
         });
         // OCC-7.3 redo: restore BRepBodies from the redo snapshot + reconnect meshes.

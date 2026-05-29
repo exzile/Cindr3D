@@ -44,7 +44,7 @@ export function DesignConfigurationsDialog({ onClose }: { onClose: () => void })
 
   return (
     <div className="tool-panel-overlay">
-      <div className="tool-panel" style={{ width: 360 }}>
+      <div className="tool-panel design-configurations-panel" style={{ width: 360 }}>
         <div className="tp-header">
           <div className="tp-header-icon"><Check size={12} /></div>
           <span className="tp-header-title">Design Configurations</span>

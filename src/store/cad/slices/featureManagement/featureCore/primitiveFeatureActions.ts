@@ -8,6 +8,7 @@ import { errorMessage } from '../../../../../utils/errorHandling';
 import { getOccSync } from '../../../../../engine/occ/loader';
 import { occSphereWithInstance } from '../../../../../engine/occ/ops/sphere';
 import { occTorusWithInstance } from '../../../../../engine/occ/ops/torus';
+import { occCoilWithInstance } from '../../../../../engine/occ/ops/helix';
 import { createRegisteredOccMesh } from '../../../../../engine/occ/registeredMesh';
 import { BODY_MATERIAL, FASTENER_MATERIAL } from '../../../../../components/viewport/scene/bodyMaterial';
 
@@ -26,16 +27,35 @@ export function createPrimitiveFeatureActions({ set, get }: CADSliceContext): Pa
     // For coil we pre-build the mesh so PrimitiveBodies doesn't need to handle it
     let mesh: Feature['mesh'] | undefined;
     if (kind === 'coil') {
-      const geom = GeometryEngine.coilGeometry(
-        (params.outerRadius as number) || 15,
-        (params.wireRadius as number) || 2,
-        (params.pitch as number) || 10,
-        (params.turns as number) || 5,
-      );
-      const m = new THREE.Mesh(geom, BODY_MATERIAL);
-      m.castShadow = true;
-      m.receiveShadow = true;
-      mesh = m;
+      const outerRadius = (params.outerRadius as number) || 15;
+      const wireRadius  = (params.wireRadius  as number) || 2;
+      const pitch       = (params.pitch       as number) || 10;
+      const turns       = (params.turns       as number) || 5;
+
+      // ── OCC-15.5: Try OCC helical sweep ──────────────────────────────────
+      const occ = getOccSync();
+      if (occ) {
+        try {
+          const body = occCoilWithInstance(occ.oc, outerRadius, wireRadius, pitch, turns, {
+            sourceFeatureId: featureId,
+          });
+          const m = createRegisteredOccMesh(occ.oc, body, BODY_MATERIAL, featureId);
+          m.castShadow = true;
+          m.receiveShadow = true;
+          mesh = m;
+        } catch (err) {
+          console.warn(`[addPrimitive coil] OCC path failed (${errorMessage(err, 'unknown')}), falling back to mesh`);
+        }
+      }
+
+      // ── THREE mesh fallback ───────────────────────────────────────────────
+      if (!mesh) {
+        const geom = GeometryEngine.coilGeometry(outerRadius, wireRadius, pitch, turns);
+        const m = new THREE.Mesh(geom, BODY_MATERIAL);
+        m.castShadow = true;
+        m.receiveShadow = true;
+        mesh = m;
+      }
     }
     if (kind === 'sphere' || kind === 'torus') {
       const occ = getOccSync();

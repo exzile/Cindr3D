@@ -41,6 +41,21 @@ export interface SelectableEdgeMeta {
   chainId: number;
   /** adjacentFaceIds.length >= 2. Also governs chamfer; a seam is neither fillet- nor chamfer-able. */
   filletable: boolean;
+  /**
+   * True when adjacent faces meet at a dihedral angle ≥ SHARP_THRESHOLD (15°).
+   * Smooth surface edges on polygon-approximated curves (e.g. iso-lines on a
+   * cylinder body) have dihedral ~3–5° and are false — same as Fusion 360's
+   * edge-visibility rule. Boundary/seam edges (< 2 adjacent faces) default to true.
+   */
+  sharpEdge: boolean;
+  /**
+   * Convexity of the edge — true = convex (material on the outside of the bend),
+   * false = concave (material on the inside), null = indeterminate (boundary/seam
+   * or degenerate centroid data). Matches Fusion 360 BRepBody.convexEdges() /
+   * concaveEdges() and drives RuleFilletTopologyTypes (RoundsOnly / FilletsOnly).
+   * Computed via centroid-difference test: dot(nA, centroidB − centroidA) < 0 → convex.
+   */
+  convex: boolean | null;
   /** Circle / arc only (mm). */
   radius?: number;
 }
@@ -225,6 +240,8 @@ function computeSelectableEdges(oc: OcctRaw, body: BRepBody): Map<number, Select
       adjacentFaceIds,
       chainId: -1, // filled in by A3 below
       filletable,
+      sharpEdge: true,   // refined in A4 below using tessellation face normals
+      convex: null,      // refined in A4 below using centroid-difference test
       ...(radius !== undefined ? { radius } : {}),
     });
   }
@@ -256,6 +273,154 @@ function computeSelectableEdges(oc: OcctRaw, body: BRepBody): Map<number, Select
       if (m) {
         m.chainId = chainId;
         grouped.add(edgeId);
+      }
+    }
+  }
+
+  // A4 — sharpEdge + convex: compute dihedral angle and convexity between adjacent
+  // faces using tessellation data in a single pass.
+  //
+  // Layout reminder (see tessellate.ts): faceIds is per-TRIANGLE; normals/positions
+  // are per-VERTEX (3 verts × 3 components per triangle → 9 floats at tri*9).
+  //
+  // sharpEdge: |dot(nA_local, nB_local)| ≤ cos(15°) → faces differ by ≥ 15° → edge is sharp.
+  //   Uses LOCAL normals — the nearest triangle to the edge midpoint — instead of the
+  //   whole-face averaged normal. Averaged normals mislead for curved fillet faces: a
+  //   quarter-cylinder fillet face averages to ~45° from both neighbours even though the
+  //   boundary is G1-tangent (0° dihedral). The nearest-triangle normal at the boundary
+  //   correctly reads ~0° because the fillet tessellation is G1 by construction.
+  //   Uses Math.abs so either-pointing normals both give the right result.
+  //
+  // convex: centroid-difference test — dot(nA_avg_unit, centroidB − centroidA) < 0
+  //   → convex (face B curves away from nA direction). Still uses averaged normals +
+  //   centroids — approximate face orientation is fine for this coarse sign test.
+  const SHARP_DOT_THRESHOLD = Math.cos(Math.PI * 15 / 180); // cos(15°) ≈ 0.9659
+  const tess = body._tessellation;
+  if (tess) {
+    // Per-triangle data grouped by face, plus face-level sums for the convex test.
+    type TriData = {
+      nx: number; ny: number; nz: number;  // triangle normal (from vertex 0)
+      cx: number; cy: number; cz: number;  // triangle centroid
+    };
+    type FaceData = {
+      tris: TriData[];
+      snx: number; sny: number; snz: number;  // summed normals (for convex avg)
+      cx: number; cy: number; cz: number;      // summed centroids (for convex avg)
+      count: number;
+    };
+    const faceData = new Map<number, FaceData>();
+    const numTriangles = tess.faceIds.length;
+    for (let tri = 0; tri < numTriangles; tri++) {
+      const fid = tess.faceIds[tri];
+      let fd = faceData.get(fid);
+      if (!fd) { fd = { tris: [], snx: 0, sny: 0, snz: 0, cx: 0, cy: 0, cz: 0, count: 0 }; faceData.set(fid, fd); }
+      const base = tri * 9;
+      const tnx = tess.normals[base];
+      const tny = tess.normals[base + 1];
+      const tnz = tess.normals[base + 2];
+      const tcx = (tess.positions[base] + tess.positions[base + 3] + tess.positions[base + 6]) / 3;
+      const tcy = (tess.positions[base + 1] + tess.positions[base + 4] + tess.positions[base + 7]) / 3;
+      const tcz = (tess.positions[base + 2] + tess.positions[base + 5] + tess.positions[base + 8]) / 3;
+      fd.tris.push({ nx: tnx, ny: tny, nz: tnz, cx: tcx, cy: tcy, cz: tcz });
+      fd.snx += tnx; fd.sny += tny; fd.snz += tnz;
+      fd.cx += tcx;  fd.cy += tcy;  fd.cz += tcz;
+      fd.count++;
+    }
+
+    // Return the unit normal of the triangle whose centroid is nearest to (px,py,pz).
+    // Used to get the local surface normal right at an edge boundary rather than the
+    // whole-face average (which blurs out curved fillet faces).
+    const localNormal = (fd: FaceData, px: number, py: number, pz: number): [number, number, number] | null => {
+      if (fd.tris.length === 0) return null;
+      let bestDist2 = Infinity;
+      let bestTri = fd.tris[0];
+      for (const t of fd.tris) {
+        const dx = t.cx - px, dy = t.cy - py, dz = t.cz - pz;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 < bestDist2) { bestDist2 = d2; bestTri = t; }
+      }
+      const len = Math.sqrt(bestTri.nx * bestTri.nx + bestTri.ny * bestTri.ny + bestTri.nz * bestTri.nz);
+      if (len < 1e-9) return null;
+      return [bestTri.nx / len, bestTri.ny / len, bestTri.nz / len];
+    };
+
+    for (const [edgeId, m] of meta.entries()) {
+      if (m.adjacentFaceIds.length < 2) {
+        // Boundary / seam — no dihedral available; keep defaults (sharpEdge=true, convex=null).
+        continue;
+      }
+      const dA = faceData.get(m.adjacentFaceIds[0]);
+      const dB = faceData.get(m.adjacentFaceIds[1]);
+      if (!dA || !dB || dA.count === 0 || dB.count === 0) continue;
+
+      // Edge midpoint: middle vertex of the polyline stored in the tessellation.
+      // This is the query point for nearest-triangle lookup on each adjacent face.
+      let emx = 0, emy = 0, emz = 0;
+      const poly = tess.edgePolylines?.get(edgeId);
+      if (poly && poly.length >= 3) {
+        // poly is a flat Float32Array of (x,y,z) triples; pick the middle triple.
+        const midIdx = Math.floor(poly.length / 6) * 3;
+        emx = poly[midIdx];
+        emy = poly[midIdx + 1];
+        emz = poly[midIdx + 2];
+      } else {
+        // No polyline data — fall back to face A's averaged centroid.
+        emx = dA.cx / dA.count;
+        emy = dA.cy / dA.count;
+        emz = dA.cz / dA.count;
+      }
+
+      // sharpEdge: hybrid dihedral check.
+      //
+      // For flat-flat edges (both adjacent faces have uniform normals — |avg| ≈ 1):
+      //   Use the averaged face normals. This is identical to the pre-OCC-12.D2 code
+      //   and is always correct for planar-to-planar 90° extrude corners.
+      //
+      // For curved-to-anything edges (one or both faces have varying normals, e.g.
+      //   a cylindrical fillet face): use the LOCAL normal from the nearest triangle
+      //   to the edge midpoint. Averaged normals mislead here — a quarter-cylinder's
+      //   average normal points ~45° from both flat neighbours even though the
+      //   boundary is G1-tangent. The nearest-boundary-triangle normal reads ~0°.
+      //
+      // FLAT_THRESHOLD = cos(10°) ≈ 0.985. |avg unit normal| ≥ this → planar face.
+      const FLAT_THRESHOLD = 0.985;
+      const lenAvgA = Math.sqrt(dA.snx * dA.snx + dA.sny * dA.sny + dA.snz * dA.snz) / dA.count;
+      const lenAvgB = Math.sqrt(dB.snx * dB.snx + dB.sny * dB.sny + dB.snz * dB.snz) / dB.count;
+
+      if (lenAvgA >= FLAT_THRESHOLD && lenAvgB >= FLAT_THRESHOLD) {
+        // Both faces flat → averaged normals give the correct dihedral.
+        if (lenAvgA >= 1e-9 && lenAvgB >= 1e-9) {
+          const dot =
+            (dA.snx * dB.snx + dA.sny * dB.sny + dA.snz * dB.snz) /
+            (dA.count * dB.count * lenAvgA * lenAvgB);
+          m.sharpEdge = Math.abs(dot) <= SHARP_DOT_THRESHOLD;
+        }
+      } else {
+        // At least one curved face → use local normals near the edge midpoint.
+        const nA = localNormal(dA, emx, emy, emz);
+        const nB = localNormal(dB, emx, emy, emz);
+        if (nA && nB) {
+          const dot = nA[0] * nB[0] + nA[1] * nB[1] + nA[2] * nB[2];
+          m.sharpEdge = Math.abs(dot) <= SHARP_DOT_THRESHOLD;
+        }
+      }
+
+      // convex: dot(nA_avg_unit, centroidB − centroidA).
+      //   < 0 → face B is behind nA's outward direction → edge is convex (outside corner).
+      //   > 0 → face B is ahead of nA's outward direction → edge is concave (inside corner).
+      // lenAvgA/B already computed above for the sharpEdge hybrid check.
+      if (lenAvgA >= 1e-9 && lenAvgB >= 1e-9) {
+        const centDx = dB.cx / dB.count - dA.cx / dA.count;
+        const centDy = dB.cy / dB.count - dA.cy / dA.count;
+        const centDz = dB.cz / dB.count - dA.cz / dA.count;
+        const nAux = dA.snx / (dA.count * lenAvgA);
+        const nAuy = dA.sny / (dA.count * lenAvgA);
+        const nAuz = dA.snz / (dA.count * lenAvgA);
+        const signDot = nAux * centDx + nAuy * centDy + nAuz * centDz;
+        if (Math.abs(signDot) > 1e-6) {
+          m.convex = signDot < 0;
+        }
+        // else: leave convex=null — degenerate (co-planar adjacent faces).
       }
     }
   }

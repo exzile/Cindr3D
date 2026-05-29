@@ -30,11 +30,12 @@ Drives which dialog controls are live vs. labelled. Update this file when a stat
 |---|---|---|
 | Constant radius | SUPPORTED | `Add_2(radius, edge)` |
 | Variable radius (start → end) | SUPPORTED | `Add_3(startR, endR, edge)` |
-| Variable radius, N interior mid-points | UNSUPPORTED | opencascade.js binds only start+end; `Law_Function`/`TColgp_Array1OfPnt2d` overloads unbound (FILLET-9). Caller must collapse mid-radii to a piecewise approximation. |
+| Variable radius, N interior mid-points | SUPPORTED | **OCC-14.3 DONE:** `Add_5(TColgp_Array1OfPnt2d, edge)` with `TColgp_Array1OfPnt2d_2(lo,hi)` + `gp_Pnt2d_3(u,r)` radius law. `OccFilletEdgeSet.midRadii[]` + dialog "Add Mid-point" rows. Falls back to Add_3 if binding absent. |
 | Chord-length | APPROXIMATED | dihedral-angle → equivalent radius, then `Add_2`. Falls back to 90° (`chord/√2`) when topology walk fails. |
-| Asymmetric (per-face two distances) | APPROXIMATED | `Add_4(d1, d2, edge, face)` when the binding exposes it; otherwise averaged to a symmetric `Add_2`. |
+| Asymmetric (per-face two distances) | APPROXIMATED (averaged only) | **OCC-14.2 DECIDED**: there is NO per-face two-distance fillet overload in OCC. Available overloads: `Add_1(E)`, `Add_2(R,E)`, `Add_3(R1,R2,E)` (start→end), `Add_4(Law_Function,E)`, `Add_5(TColgp_Array1OfPnt2d,E)`. Per-face asymmetry is a *chamfer* concept. Decision: option (a) — averages startR/endR to symmetric `Add_2` (fillet.ts ~653). Users get a fillet; the radius is averaged. Dialog may show "Asymmetric mode: averaged (OCC limitation)" hint. |
 | Continuity = Tangent (G1) | SUPPORTED | `ChFi3d_Rational` surface form (OCC default). |
 | Continuity = Curvature (G2) | APPROXIMATED | `ChFi3d_Polynomial` surface form + best-effort `SetContinuity(GeomAbs_C2)` when bound. Not bit-identical to ASM's G2. |
+| Continuity = Connected (G0) | ROUND-TRIP-ONLY (APPROXIMATED≈G1) | **OCC-14.4**: `BRepFilletAPI_MakeFillet` always produces ≥G1. No C0-only surface form exists. G0 maps to `ChFi3d_Rational` (same as G1). Accepted in `OccFilletOptions.continuity` for Fusion file round-trip; not exposed in dialog UI (no-op control would mislead). |
 | tangencyWeight (0.1–2.0) | ROUND-TRIP-ONLY | no per-edge weight API on `BRepFilletAPI_MakeFillet` in the WASM build. |
 | isRollingBallCorner | ROUND-TRIP-ONLY | **OCC-13.1**: this is the vertex corner *solution* (rolling-ball vs setback), which OCC computes automatically and exposes no toggle for. It does **not** select the surface form (that's continuity). Previously mis-mapped to `ChFi3d_QuasiAngular`. |
 | Setback corner + setbackDistance | ROUND-TRIP-ONLY (≈UNSUPPORTED) | OCC has no per-vertex setback API. Only the rolling-ball corner solution is produced. |
@@ -42,6 +43,7 @@ Drives which dialog controls are live vs. labelled. Update this file when a stat
 | Full-round fillet (`FullRoundFilletFaceSets`) | APPROXIMATED | `occFullRoundFilletWithInstance`; auto side-face inference is best-effort 2-coloring of the center face's neighbours. |
 | Rule fillet — AllEdges | SUPPORTED | `occRuleFilletAllEdgesWithInstance` (collects every edge of the face(s)). |
 | Rule fillet — BetweenFaces | SUPPORTED | `occRuleFilletBetweenFacesWithInstance` (shared edges between two face groups). |
+| Rule fillet — RuleFilletTopologyTypes (RoundsOnly / FilletsOnly / RoundsAndFillets) | SUPPORTED | **OCC-14.1 (2026-05-28):** `convex: boolean\|null` added to `SelectableEdgeMeta` via centroid-difference test. `topologyFilter` option on both rule-fillet wrappers; wired through `FilletParams.ruleFilletTopology` + dialog Topology selector. |
 | Multi-edge corner at a shared vertex | APPROXIMATED | **OCC-13.3**: all edges go into one `Build()` pass so the kernel blends the corner in a single solve. **OCC-13.2** clamps an over-large radius to local topology (0.95× a non-filleted neighbour chord, ~0.49× a co-filleted connector) so the blend shrinks to a valid value instead of throwing. Hard ASM-only vertex blends still fail → previous body preserved with a clear message. |
 
 ## Chamfer (`occChamferWithInstance`)
@@ -50,7 +52,7 @@ Drives which dialog controls are live vs. labelled. Update this file when a stat
 |---|---|---|
 | EqualDistance | SUPPORTED | `Add_2(distance, edge)` |
 | TwoDistances | SUPPORTED | `Add_3(d1, d2, edge, refFace)` (reference face resolved via `findAdjacentFace`). |
-| DistanceAndAngle | APPROXIMATED | **OCC-13.6**: converted to `d2 = distance·tan(angle)` and applied via the `Add_3` two-distance path. (`AddDA` is not used; the conversion assumes the reference face is the angle datum.) |
+| DistanceAndAngle | SUPPORTED | **OCC-14.6**: uses `AddDA(distance, angleRad, edge, refFace)` directly (binding confirmed). Degrades to `Add_2` (equal-distance) when no reference face can be resolved. |
 | ThreeFace | UNSUPPORTED | not implemented; dialog shows a hint and `commitChamfer` rejects with a message. |
 | Flip faces (`isFlipped`) | SUPPORTED | swaps (d1, d2). |
 | Tangent-chain propagation | SUPPORTED | `collectTangentChainEdges`. |
@@ -73,5 +75,6 @@ non-manifold edge counts (open-mesh guard) and keeps the previous body on failur
   approximation is worth adding. Requires interactive 3D QA.
 - **OCC-12.D2 / C2** — flip-the-flag manual verification and deletion of the legacy
   selection heuristics for OCC bodies remain gated on browser QA (see TaskLists.txt).
-- AddDA-based DistanceAndAngle (exact angle datum) is a possible future upgrade over
-  the tan-conversion if/when the binding is confirmed.
+- AddDA-based DistanceAndAngle: **OCC-14.6 DONE** — switched to `AddDA`; row upgraded to SUPPORTED.
+- ThreeFace chamfer: confirmed no 3-face overload exists in this build (only Add_1/2/3 +
+  AddDA) — stays UNSUPPORTED (OCC-14.5 investigation closed).

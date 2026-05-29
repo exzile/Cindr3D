@@ -81,7 +81,29 @@ export function BodyContextMenu({
   const body                 = useComponentStore((s) => s.bodies[menu.bodyId]);
 
   const setStatusMessage       = useCADStore((s) => s.setStatusMessage);
+  const removeFeature          = useCADStore((s) => s.removeFeature);
   const setActiveDialog        = useCADStore((s) => s.setActiveDialog);
+
+  // Collect all features to remove when deleting this body:
+  // body.featureIds (direct features) + all transitive descendants via parentFeatureId.
+  const collectBodyFeatureChain = (): string[] => {
+    const all = useCADStore.getState().features;
+    const toRemove = new Set<string>(body?.featureIds ?? []);
+    // Walk forward through parentFeatureId links (fillet/chamfer → source)
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const f of all) {
+        const parentId = f.parentFeatureId ?? (f.params.parentFeatureId as string | undefined);
+        if (!toRemove.has(f.id) && parentId && toRemove.has(parentId)) {
+          toRemove.add(f.id);
+          changed = true;
+        }
+      }
+    }
+    // Return in reverse timeline order so leaf features are removed first
+    return all.filter((f) => toRemove.has(f.id)).map((f) => f.id).reverse();
+  };
   const setDialogPayload       = useCADStore((s) => s.setDialogPayload);
   const triggerBodyExport      = useCADStore((s) => s.triggerBodyExport);
   const setWorkspaceMode       = useCADStore((s) => s.setWorkspaceMode);
@@ -176,12 +198,14 @@ export function BodyContextMenu({
       icon: <Trash2 size={13} />,
       danger: true,
       onClick: () => {
-        removeBody(menu.bodyId);
+        // Remove the full feature chain (extrude + downstream fillets/chamfers)
+        // then ensure the component-store body is gone too.
+        for (const featureId of collectBodyFeatureChain()) removeFeature(featureId);
+        removeBody(menu.bodyId); // no-op if removeFeature already cleaned it up
         setStatusMessage(`Deleted ${bodyName}`);
         onClose();
       },
     },
-    { label: 'Remove', icon: <Trash2 size={13} />, danger: true, onClick: () => { removeBody(menu.bodyId); setStatusMessage(`Removed ${bodyName}`); onClose(); } },
     {
       label: 'Rename',
       icon: <MoreHorizontal size={13} />,

@@ -8,11 +8,17 @@ export const DEFAULT_FILLET_RADIUS = 2;
 export const DEFAULT_CHAMFER_DISTANCE = 2;
 
 export function resolveOccFilletOptions(params?: Record<string, unknown>): {
-  continuity?: 'G1' | 'G2';
+  continuity?: 'G1' | 'G2' | 'G0';
   tangencyWeight?: number;
   isRollingBallCorner?: boolean;
 } {
-  const continuity: 'G1' | 'G2' = params?.isG2 === true ? 'G2' : 'G1';
+  // OCC-14.4: G0 is round-trip-only (APPROXIMATED as G1 in geometry).
+  // Params may store continuity as isG2 (boolean) from older dialogs or as a
+  // continuity string from Fusion 360 round-trip imports.
+  const continuity: 'G1' | 'G2' | 'G0' =
+    params?.isG2 === true ? 'G2' :
+    params?.continuity === 'G0' ? 'G0' :
+    'G1';
   const tangencyWeight = (continuity === 'G2' && typeof params?.tangencyWeight === 'number')
     ? params.tangencyWeight
     : undefined;
@@ -104,7 +110,14 @@ export function resolveOccFilletEdgeSets(
   if (mode === 'variable') {
     const start = typeof params.startRadius === 'number' ? params.startRadius : fallbackR;
     const end = typeof params.endRadius === 'number' ? params.endRadius : start;
-    return [{ edgeIds: expandedTopLevelIds, startRadius: start, endRadius: end }];
+    // OCC-14.3: thread mid-radius control points through when present.
+    const rawMid = Array.isArray(params.midRadii) ? params.midRadii as Array<Record<string, unknown>> : [];
+    const midRadii = rawMid
+      .filter((m) => typeof m.position === 'number' && typeof m.radius === 'number')
+      .map((m) => ({ position: m.position as number, radius: m.radius as number }));
+    const edgeSet: OccFilletEdgeSet = { edgeIds: expandedTopLevelIds, startRadius: start, endRadius: end };
+    if (midRadii.length > 0) edgeSet.midRadii = midRadii;
+    return [edgeSet];
   }
   return [{ edgeIds: expandedTopLevelIds, radius: fallbackR }];
 }

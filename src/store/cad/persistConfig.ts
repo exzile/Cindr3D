@@ -3,6 +3,7 @@ import type { Feature, Sketch } from '../../types/cad';
 import { useComponentStore } from '../componentStore';
 import { deserializeFeature, deserializeSketch, idbStorage, serializeFeature } from './persistence';
 import type { CADState } from './state';
+import { PAGEHIDE_FLUSH_KEY } from '../../effects/cadStatePagehideFlush';
 
 function rebuildExtrudeBodies(state: CADState) {
   const componentStore = useComponentStore.getState();
@@ -92,6 +93,11 @@ export function createCADPersistConfig(): PersistOptions<CADState, Partial<CADSt
         ...state,
         designConfigurations: state.designConfigurations ?? currentState.designConfigurations,
         activeDesignConfigurationId: state.activeDesignConfigurationId ?? currentState.activeDesignConfigurationId,
+        constructionPlanes: state.constructionPlanes ?? currentState.constructionPlanes,
+        constructionAxes: state.constructionAxes ?? currentState.constructionAxes,
+        constructionPoints: state.constructionPoints ?? currentState.constructionPoints,
+        contactSets: state.contactSets ?? currentState.contactSets,
+        selectionSets: state.selectionSets ?? currentState.selectionSets,
         activeSketch: state.activeSketch ? deserializeSketch(state.activeSketch as Sketch) : currentState.activeSketch,
         sketches: (state.sketches ?? currentState.sketches).map((s) => deserializeSketch(s as Sketch)),
         features: (state.features ?? currentState.features).map((f) => deserializeFeature(f as Feature)),
@@ -99,6 +105,24 @@ export function createCADPersistConfig(): PersistOptions<CADState, Partial<CADSt
     },
     onRehydrateStorage: () => (state: CADState | undefined) => {
       if (!state) return;
+
+      // Guard against the IDB async-write race: if the user pressed Ctrl+Z then
+      // immediately Ctrl+R, the IDB write may not have committed before the reload.
+      // cadStatePagehideFlush.ts writes the true last-known feature IDs to
+      // localStorage synchronously on pagehide.  Filter the IDB-loaded features
+      // to only those present in the flush snapshot.
+      try {
+        const flush = localStorage.getItem(PAGEHIDE_FLUSH_KEY);
+        if (flush) {
+          const { featureIds } = JSON.parse(flush) as { featureIds: string[] };
+          const allowed = new Set<string>(featureIds);
+          state.features = state.features.filter((f) => allowed.has(f.id));
+        }
+      } catch {
+        // Malformed flush or localStorage unavailable — proceed with IDB state.
+      } finally {
+        try { localStorage.removeItem(PAGEHIDE_FLUSH_KEY); } catch { /* ignore */ }
+      }
 
       // Sanity-clamp array-typed fields that the merge step can leave
       // as `undefined` if a persisted blob explicitly stored undefined
@@ -112,6 +136,11 @@ export function createCADPersistConfig(): PersistOptions<CADState, Partial<CADSt
         'features',
         'sketches',
         'designConfigurations',
+        'constructionPlanes',
+        'constructionAxes',
+        'constructionPoints',
+        'contactSets',
+        'selectionSets',
       ];
       const s = state as unknown as Record<string, unknown>;
       for (const key of ARRAY_FIELDS) {
@@ -159,6 +188,11 @@ export function createCADPersistConfig(): PersistOptions<CADState, Partial<CADSt
       designConfigurations: state.designConfigurations,
       activeDesignConfigurationId: state.activeDesignConfigurationId,
       parameters: state.parameters,
+      constructionPlanes: state.constructionPlanes,
+      constructionAxes: state.constructionAxes,
+      constructionPoints: state.constructionPoints,
+      contactSets: state.contactSets,
+      selectionSets: state.selectionSets,
       frozenFormVertices: state.frozenFormVertices,
       featureGroups: state.featureGroups,
       canvasReferences: state.canvasReferences,

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import type { Feature, Sketch, SketchDimension, SketchEntity } from '../types/cad';
+import type { ConstructionGeometry, Feature, Sketch, SketchDimension, SketchEntity } from '../types/cad';
 
 const mkSketch = (entities: SketchEntity[] = [], dimensions: SketchDimension[] = []): Sketch => ({
   id: 'active-case-sketch',
@@ -35,6 +35,7 @@ describe('history and document undo/redo', () => {
       selectedBodyId: null,
       components: { [rootComponentId]: { ...rootComponent, bodyIds: [], childIds: [], sketchIds: [] } },
       bodies: {},
+      constructions: {},
     });
     useCADStore.setState({
       features: [],
@@ -128,5 +129,38 @@ describe('history and document undo/redo', () => {
     expect(useCADStore.getState().features).toHaveLength(1);
     expect(Object.keys(useComponentStore.getState().bodies)).toEqual([bodyId]);
     expect(useComponentStore.getState().bodies[bodyId]?.featureIds).toEqual([feature.id]);
+  });
+
+  it('reloads component construction vectors as Vector3 instances', async () => {
+    const [{ useCADStore }, { useComponentStore }] = await Promise.all([
+      import('../store/cadStore'),
+      import('../store/componentStore'),
+    ]);
+    const rootComponentId = useComponentStore.getState().rootComponentId;
+    const construction: ConstructionGeometry = {
+      id: 'construction-plane-1',
+      name: 'Offset Plane',
+      type: 'plane',
+      componentId: rootComponentId,
+      visible: true,
+      planeNormal: new THREE.Vector3(0, 0, 1),
+      planeOrigin: new THREE.Vector3(10, 20, 30),
+      planeSize: 75,
+      definition: { method: 'offset-plane', referencePlane: 'XY', distance: 30 },
+    };
+    useComponentStore.setState({
+      constructions: { [construction.id]: construction },
+    });
+
+    const json = useCADStore.getState().getDesignJSON();
+    useComponentStore.setState({ constructions: {} });
+    useCADStore.getState().loadFromFile(json);
+
+    const restored = useComponentStore.getState().constructions[construction.id];
+    expect(restored?.planeNormal).toBeInstanceOf(THREE.Vector3);
+    expect(restored?.planeOrigin).toBeInstanceOf(THREE.Vector3);
+    expect(restored?.planeNormal?.toArray()).toEqual([0, 0, 1]);
+    expect(restored?.planeOrigin?.toArray()).toEqual([10, 20, 30]);
+    expect(restored?.definition).toEqual(construction.definition);
   });
 });

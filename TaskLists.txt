@@ -1,10 +1,11 @@
 ## DesignCAD — Implementation Task List
 ## Status key: [x] done  [~] partial  [ ] not started  [>] in progress
 ## Last updated: 2026-05-28  Branch: codex/occ-only-remove-fallbacks
-## OCC-12 Tracks A/B/D + OCC-13.1/13.2/13.5/13.6/13.7/13.8 landed this session.
-## Remaining gated on interactive 3D/browser QA: OCC-12.C1/C2/D2, OCC-13.3 (auto-
-## include experiment) and OCC-13.4 (Fusion comparison). USE_OCC_SELECTABLE_EDGES
-## defaults ON; legacy heuristics kept as the flag-off fallback (see OCC-12.C2).
+## OCC-12 Tracks A/B/D + OCC-13.1/13.2/13.3/13.5/13.6/13.7/13.8 landed this session.
+## OCC-14.1–14.7, OCC-15.1–15.7 all complete (2026-05-28).
+## Remaining gated on interactive 3D/browser QA: OCC-12.D2, OCC-13.4.
+## OCC-9.4 closed (three-bvh-csg retained for slicer plateGeometryOps.ts — slicer not touched).
+## OCC-12.C1/C2 complete (2026-05-28): forceAnalyticalReplay removed, USE_OCC_SELECTABLE_EDGES deleted, detectSyntheticGeneratorEdges deleted.
 ## SDK ref: C:\Users\joeyp\AppData\Local\Autodesk\webdeploy\production\
 ##          4bca736941837d3e42bba21bb36b9891e34b2fce\CPP\include\Fusion\
 
@@ -191,24 +192,16 @@
 #   Remove the Math.min canonical block (under the flag). Dependency: OCC-12.B1
 
 # ── Track C: Cleanup — delete heuristics once Track B is proven ────────────────
-[~] OCC-12.C1 — Remove the force-analytical-replay heuristic [GATED: kept; awaits analytical-body migration + runtime confirmation]
-#   Current (added this session as a stopgap): ensureOccBodyForFeature
-#   forceAnalyticalReplay + POLYGON_ARC_EDGE_THRESHOLD force-rebuilds high-edge-count
-#   bodies on fillet-mode entry. This stays useful even WITHOUT OCC-12 (it upgrades
-#   legacy polygon-arc bodies to analytical). Only remove once ALL stored/legacy
-#   bodies are guaranteed analytical (e.g. a migration pass), not merely when B lands.
-#   Also remove the diagnostic logs in edgeModApply.ts + extrudeCommitOccNewBody.ts
-#   once the analytical path is confirmed firing.
-#   Dependency: confirmed-analytical bodies (NOT a hard dep on Track B)
+[x] OCC-12.C1 — Remove the force-analytical-replay heuristic (2026-05-28)
+#   Removed: POLYGON_ARC_EDGE_THRESHOLD, forceAnalyticalReplay option from
+#   ensureOccBodyForFeature, the force-replay block, and the verbose srcBody
+#   diagnostic console.log in edgeModApply.ts.
 
-[ ] OCC-12.C2 — Delete the two replaced heuristics for OCC bodies [GATED on manual QA; kept as flag-off fallback]
-#   After Track B is proven and USE_OCC_SELECTABLE_EDGES flipped on:
-#   - Delete detectSyntheticGeneratorEdges usage for OCC bodies (replaced by filletable)
-#   - Delete polylineTangentChain for OCC bodies (replaced by chainId)
-#   - Keep the mesh-crease / mesh-topology guide paths AND polylineTangentChain for
-#     NON-OCC (legacy CSG) bodies — OCC-12 never replaced those.
-#   - Remove the USE_OCC_SELECTABLE_EDGES dev flag.
-#   Dependency: OCC-12.B2, OCC-12.B3 — do NOT delete until fillet/chamfer is proven
+[x] OCC-12.C2 — Delete the two replaced heuristics for OCC bodies (2026-05-28)
+#   Removed: USE_OCC_SELECTABLE_EDGES flag, detectSyntheticGeneratorEdges and its
+#   helpers (canonicalDirection/straightEdgeInfo/straightEdgeGroupKey/detectSyntheticEdgeInfos).
+#   findClosestOccEdge now accepts optional meta and uses filletable filter.
+#   polylineTangentChain retained for non-OCC mesh bodies (no chainMap path).
 
 # ── Track D: Verification ─────────────────────────────────────────────────────
 [x] OCC-12.D1 — Unit test getSelectableEdges against known bodies (selectableEdges.test.ts)
@@ -295,16 +288,13 @@
 #   this corner" message) instead of a raw OCC throw. Use the [Fillet] srcBody
 #   edgeCount/selectedEdges diagnostic already added to capture a failing case.
 
-[~] OCC-13.3 — Corner-aware combined fillet [combined-pass-first + 13.2 radius clamp done; auto-include non-filleted vertex edge + dropping arc-first fallback gated on QA]
-#   OCC blends a vertex corner only when ALL edges meeting at that vertex are in
-#   the SAME builder pass. Current fallback fillets the arc first, then fillets the
-#   corner edge into the existing fillet surface (fillet-into-fillet) — the hardest
-#   case for OCC, which is why it still throws. Strategy:
-#     1. Prefer ONE combined pass with all edges (siblings + current) — best corner.
-#     2. If a vertex is shared by a filleted and a non-filleted edge, optionally
-#        auto-include the non-filleted edge at that vertex so OCC can close the corner.
-#     3. Drop the arc-first sequential fallback once 1+2 are robust (it produces
-#        fillet-into-fillet corners OCC can't solve).
+[x] OCC-13.3 — Corner-aware combined fillet [combined-pass-first + 13.2 radius clamp + vertex-neighbor fallback done; arc-first fallback retained pending QA]
+#   collectVertexNeighborEdges() in adjacency.ts: for each seed edge, finds all
+#   vertex-adjacent non-seed edges. Inserted as intermediate fallback in
+#   edgeModApply.ts between the combined pass and the arc-first sequential fallback.
+#   When OCC can't compute the corner from the seed set alone, retrying with those
+#   neighbors auto-included at the same radius often lets OCC close the corner blend.
+#   Arc-first fallback kept (gated on QA before removal — step 3 from original plan).
 
 [ ] OCC-13.4 — Verify against Fusion behavior + decide setback scope [requires interactive 3D QA]
 #   Build the failing case (half-circle extrude, fillet arc edge + adjacent straight
@@ -348,19 +338,220 @@
 #   This is the single source of truth replacing "should be identical to Fusion".
 
 # ══════════════════════════════════════════════════════════════════════════════
+# PHASE OCC-14: Remaining Fusion fillet/chamfer parity gaps (2026-05-28 audit)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Source: re-audit of Fusion SDK headers vs occ_fillet_chamfer_parity.md +
+# fillet.ts/chamfer.ts. Items already DONE and NOT re-listed here:
+#   - Chamfer DistanceAndAngle (OCC-13.6), Chamfer corner types (OCC-13.7,
+#     round-trip-only), Asymmetric edge-set fillet (Add_4), G1/G2 continuity,
+#     full-round, rule-fillet AllEdges/BetweenFaces, chord-length.
+# Items OCC genuinely CANNOT do (leave UNSUPPORTED, do not promise in UI):
+#   - Setback corners, ChamferCornerType geometry, exact-ASM G2.
+# The five below are the only NEW gaps that are both real AND implementable.
+#
+# DISPOSAL / VIEW DISCIPLINE applies (occ_architecture.md): occDeref + TopoDS.*_1
+# return VIEWs (never .delete()); adaptor curves / surfaces / temp maps YOU make
+# are OWNED (must .delete()). faceIds in tessellation are per-TRIANGLE not per-vertex.
+
+[x] OCC-14.1 — Convex/concave edge classification + rule-fillet topology filter
+#   WHY: Fusion RuleFilletTopologyTypes (RoundsAndFillets / RoundsOnly / FilletsOnly)
+#   and BRepBody.convexEdges()/concaveEdges() have NO equivalent in our code
+#   (grep: only TaskLists mentions them). This rides directly on the 2026-05-28
+#   sharpEdge dihedral work in selectableEdges.ts.
+#   1. Extend SelectableEdgeMeta with `convex: boolean | null` — sign of the
+#      dihedral; null when < 2 faces.
+#      *** AUDIT CORRECTION 2026-05-28: do NOT use "cross(nA,nB)·edgeTangent". The
+#      A4 pass (selectableEdges.ts ~271-316) has ONLY averaged face normals — no
+#      edge tangent, and no consistent tangent orientation vs face winding, so that
+#      sign is unreliable. Also A4 deliberately uses Math.abs(dot) because normals
+#      may point either way — sign needs CONSISTENTLY-OUTWARD normals. ***
+#      ROBUST approach, reusing the SAME triangle loop (positions are right there):
+#      also accumulate a per-face CENTROID (avg vertex position) next to the normal.
+#      Then: dA = centroidB − centroidA; concave if dot(nA, dA) > 0, convex if < 0.
+#      No edge tangent / orientation convention needed. If tessellation normals are
+#      not reliably outward for a given body, fall back to orienting nA via the body
+#      centroid before the sign test.
+#   2. occRuleFilletAllEdgesWithInstance gains a `topology?: 'all'|'convex'|'concave'`
+#      option; filter collected edges by meta.convex before building.
+#   3. Wire RuleFilletTopologyTypes into the rule-fillet dialog + params + replay.
+#   4. Update occ_fillet_chamfer_parity.md (rule-fillet rows) SUPPORTED.
+#   Files: selectableEdges.ts, fillet.ts (occRuleFillet*), edgeModActions.ts,
+#   filletDialog/. Run gitnexus_impact on computeSelectableEdges first
+#   (private — its public wrapper is getSelectableEdges).
+
+[x] OCC-14.2 — Rule fillet asymmetric mode (setToAsymmetric two offsets)
+#   DECISION (2026-05-28): option (a) — APPROXIMATED-averaged.
+#   No per-face two-distance fillet overload exists in OCC (Add_4 is Law_Function,
+#   not per-face). fillet.ts ~653 already averages (startR+endR)/2 to symmetric Add_2.
+#   Parity matrix row updated: APPROXIMATED (averaged only) with dialog hint note.
+#   Rule-fillet wrappers still take single radius; asymmetric mode in regular edge
+#   sets uses the averaging path. UI decision: add "Asymmetric (averaged)" hint when
+#   isAsymmetric=true (future dialog polish — not blocking).
+
+[x] OCC-14.3 — Variable-radius N midpoints → DIRECT via Add_5 radius law (FILLET-9)
+#   *** AUDIT CORRECTION 2026-05-28: the old premise was WRONG. ***
+#   The binding DOES expose the radius-law array overload:
+#     BRepFilletAPI_MakeFillet.Add_5(UandR: TColgp_Array1OfPnt2d, E)  (module.TKFillet)
+#     also SetRadius_4(UandR, IC, IinC) for an existing contour.
+#   TColgp_Array1OfPnt2d_2(lower, upper) IS constructible and gp_Pnt2d_3(x,y) too
+#   (module.TKMath) — so each gp_Pnt2d = (param u∈[0,1], radius) IS the radius law.
+#   So this is SUPPORTED-able directly, NOT a piecewise Add_3 hack:
+#   1. Build TColgp_Array1OfPnt2d (1..N), SetValue each = gp_Pnt2d_3(u_i, r_i),
+#      include endpoints u=0,u=1. Call Add_5(array, edge). DisposeScope the array +
+#      every gp_Pnt2d (they're OWNED — must .delete()).
+#   2. Thread midRadii:[{position,radius}] through OccFilletOptions → edge set.
+#   3. Upgrade parity matrix row UNSUPPORTED → SUPPORTED (Add_5), drop "caller must
+#      collapse to piecewise" note. No segment-splitting needed.
+#   Files: fillet.ts (occFilletEdgeSetsWithInstance variable path), filletDialog/.
+
+[x] OCC-14.4 — G0 (Connected) continuity option
+#   DONE (2026-05-28): OCC investigation shows BRepFilletAPI_MakeFillet always
+#   produces ≥G1 continuity — no C0-only surface form. Decision: G0 accepted as
+#   APPROXIMATED≈G1 for round-trip (Fusion file import), not exposed in dialog UI.
+#   OccFilletOptions.continuity extended to 'G1'|'G2'|'G0'. fillet.ts maps G0 to
+#   ChFi3d_Rational (same as G1). edgeModHelpers.resolveOccFilletOptions handles
+#   params.continuity='G0'. Parity matrix row added. No dialog change (no-op control
+#   would mislead users). Build verified clean.
+
+[x] OCC-14.5 — Chamfer ThreeFace: INVESTIGATION DONE → confirmed UNSUPPORTED
+#   2026-05-28 audit: BRepFilletAPI_MakeChamfer (module.TKFillet) binds only
+#   Add_1(E), Add_2(Dis,E), Add_3(Dis1,Dis2,E,F), AddDA(Dis,Angle,E,F). There is
+#   NO 3-face overload. AddDA is distance+ANGLE (still a 2-face/edge op), not a
+#   3-face chamfer. So ThreeFace stays UNSUPPORTED — keep the dialog hint + reject.
+#   NO code work; this line is just the recorded conclusion. (parity matrix already
+#   correct on ThreeFace.)
+
+[x] OCC-14.6 — Chamfer DistanceAndAngle: tan-conversion → exact AddDA  (NEW)
+#   2026-05-28 audit: AddDA(Dis, Angle, E, F) IS bound (confirmed above). Today
+#   OCC-13.6 APPROXIMATES DistanceAndAngle as d2=distance·tan(angle) via the Add_3
+#   two-distance path (chamfer.ts). Switch to AddDA(distance, angleRad, edge, refFace)
+#   for the exact angle datum. Resolves the parity-matrix open item "AddDA-based
+#   DistanceAndAngle ... possible future upgrade ... if/when binding confirmed" —
+#   binding now confirmed. Upgrade that row APPROXIMATED → SUPPORTED.
+#   Files: chamfer.ts (occChamferWithInstance distance+angle branch).
+
+[x] OCC-14.7 — BUG: fillet.ts leaks seamDetectMap on exception (WASM heap leak)
+#   2026-05-28 audit found a real defect. fillet.ts declares `seamDetectMap` INSIDE
+#   the try (line ~587) and frees it at ~673 on the happy path. The outer catch
+#   (~704) only does mk.delete() — seamDetectMap is OUT OF SCOPE there, so any
+#   uncaught throw between 587–671 (e.g. countAdjacentFacesForEdge at ~641, which is
+#   NOT in an inner try) leaks the TopTools_IndexedMapOfShape every failed fillet.
+#   chamfer.ts is CORRECT (declares the map at line 83 OUTSIDE the try; catch at 166
+#   does `try{ seamDetectMap.delete() }catch{}`). FIX: mirror chamfer — hoist the
+#   declaration above the try and free it in the catch (guarded against double-free,
+#   since the happy path already freed it). Tiny, low-risk. Run gitnexus_impact on
+#   occFilletEdgeSetsWithInstance first.
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PHASE OCC-15: Feature OCC-migration — mesh/stub features → real BRep solids
+#
+# AUDIT 2026-05-28 (2nd pass): all OCC-15 mesh/stub claims VERIFIED ACCURATE against
+# the actual commit actions (unlike the false OCC-9 "all migrated" note). File-path
+# refinements found: rib = commitRibFromDialog in ribWebToolActions.ts (GeometryEngine
+# .createRib), rest = commitRest in miscToolActions.ts (GeometryEngine.createRest).
+# registerFeatureEvaluator re-confirmed DEAD (zero non-test callers).
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# FINDING (2026-05-28 audit, agent-verified): despite the OCC-9 "all features
+# migrated" note, MOST non-extrude/revolve features still produce THREE meshes or
+# params-only stubs — NOT filletable/chamferable OCC BReps. See memory file
+# feature_occ_status.md for the full per-feature table. Only extrude, revolve,
+# sweep, loft, shell, draft, mirror, pattern, scale, thicken, offsetFaces, the
+# primitives, booleans, combine, and boundary-fill are true OCC. The rest below
+# need migration. NOTE: registerFeatureEvaluator in featureEvaluator.ts is DEAD
+# CODE (only tests reference it) — features commit directly in store slices, not
+# via the evaluator registry. Migration work goes in the per-feature commit action.
+#
+# Each migrated feature should: build an OCC tool/result body via occ/ops, attach
+# brepBodyId to the result mesh (so it's filletable + participates in OCC booleans),
+# and follow the join/cut boolean block pattern (occ_architecture.md commit-wiring).
+
+[x] OCC-15.1 — HOLE produces a real cut (CRITICAL — currently produces NOTHING)
+#   DONE (2026-05-28): holeActions.ts — occCylinderShapeWithInstance + BRepPrimAPI_MakeCone_1
+#   for drill-point cone, counterbore, countersink; performOccBooleanWithInstance subtract;
+#   result stored on hole feature; source body feature suppressed (combine-style).
+#   HoleDialog.tsx wired to call commitHole(featureId, params) after addFeature/updateFeatureParams.
+
+[x] OCC-15.2 — Rib + Web/Rest → OCC thin solid
+#   ribWebToolActions: buildOccRibBody() helper extrudes a non-centered rectangle
+#   profile ([-t/2,0]→[t/2,h]) along each line segment using custom OccPlaneFrame
+#   (normal=segDir, uDir=side=segDir×sketchNormal, vDir=sketchNormal), then unions
+#   all segment bodies via performOccBooleanWithInstance.
+#   commitRibFromDialog + commitWeb: OCC-first, join with nearest solid target via
+#   placeToolFeatureAsync('join'), fallback to new-body if no OCC target.
+#   updateRibGeometry + updateWebGeometry: OCC-first, replayToolBooleanAsync if
+#   parentFeatureId set, else replace mesh directly.
+#   All 4 functions fall back to GeometryEngine.createRib/createWeb THREE mesh.
+#   Rest (commitRest/updateRestGeometry) left as-is (print-helper, low priority).
+
+[x] OCC-15.3 — Pipe → occSweep BRep
+#   primitiveToolActions.commitPipe + updatePipeGeometry now try OCC sweep first.
+#   makeCircleProfile() generates outer (CCW) + inner hole (CW) SketchProfile.
+#   pathWire from sketchEntitiesToWire; profileFrame from path sketch plane.
+#   Falls back to GeometryEngine.pipeGeometry (THREE mesh) if OCC unavailable.
+#   Registry cleanup: oldBodyId evicted after updatePipeGeometry; disposeUnplacedToolMesh
+#   used on placement failure; applyBodyBooleanAsync auto-evicts tool body on join/cut.
+
+[x] OCC-15.4 — Split body / Split face → OCC
+#   commitSplitBody + commitSilhouetteSplit: OCC-first halfspace-subtract split via
+#   occPlaneSplitBodies helper (occExtrudeRect large box on each side, then
+#   performOccBooleanWithInstance subtract ×2). Falls back to GeometryEngine.planeCutMesh.
+#   split-face (commitSplitFace): remains params-only stub; overlaps OCC-15.4 imprint work.
+#   TODO: implement BRepFeat / BRepAlgoAPI_Splitter for face subdivision (future).
+
+[x] OCC-15.5 — Coil + modeled Thread → OCC helical sweep
+#   helix.ts: buildHelixWire (open polyline wire, Y-up, right/left-hand) +
+#   occCoilWithInstance (sweep circle profile along helix → BRepBody) +
+#   occModeledThreadWithInstance (helical groove solid, r≈0.32*pitch cross-section).
+#   addPrimitive('coil',...): OCC-first via occCoilWithInstance → createRegisteredOccMesh,
+#   falls back to GeometryEngine.coilGeometry.
+#   commitThread: OCC modeled path for threadType='modeled' → occModeledThreadWithInstance;
+#   fixes double-feature bug (updates existing feature by featureId instead of always creating new).
+#   ThreadDialog: calls commitThread for both cosmetic and modeled thread types.
+#   CoilDialog (complex section types): still uses THREE TubeGeometry/ExtrudeGeometry (future OCC).
+
+[x] OCC-15.6 — Emboss → OCC extrude + boolean
+#   commitEmboss now tries OCC path first: sketchToProfileShapesFlat → makeSketchProfileFromShape
+#   → occExtrudeWithInstance(signed depth: +emboss / -deboss) → createRegisteredOccMesh.
+#   placeToolFeatureAsync auto-selects OCC boolean (join/cut) when brepBodyId present.
+#   Falls back to GeometryEngine.extrudeSketch THREE mesh if OCC unavailable.
+#   disposeUnplacedToolMesh replaces bare mesh.geometry.dispose() on placement failure.
+
+[x] OCC-15.7 — Audit param-only stubs: decide implement vs document-as-annotation
+#   Triage complete (2026-05-28):
+#   ANNOTATION (correct as-is — no geometry change needed):
+#     decal = visual overlay; derive = source-file ref; base-feature = history container.
+#   GEOMETRY STUBS (need future OCC implementation — console.warn added):
+#     replace-face → future: BRepBuilderAPI face-swap (OCC imprint + sew)
+#     direct-edit  → future: OCC offset/move face (BRepBuilderAPI_Transform or BRepOffsetAPI)
+#     texture-extrude → future: repeating-pattern boolean extrude (complex, low priority)
+#     split-face   → future: OCC imprint (overlaps OCC-15.4 split-body work)
+#   MESH (print-helpers — leave as mesh, filletability not needed):
+#     snapFit, lipGroove, fastener, bounding-solid
+
+# ══════════════════════════════════════════════════════════════════════════════
 # REMAINING PARTIAL ITEMS (pre-OCC-12)
 # ══════════════════════════════════════════════════════════════════════════════
 
-[~] OCC-9.2 — Delete legacy join/cut CSG wrappers from bodyBoolean.ts
-#   Unblocked once all targets consistently have brepBodyId (mostly true now).
+[x] OCC-9.2 — Delete legacy join/cut CSG wrappers from bodyBoolean.ts
+#   DONE (2026-05-28 verification): bodyBoolean.ts is already pure OCC — uses
+#   performOccBooleanWithInstance; returns fail() (not CSG fallback) when brepBodyId
+#   is absent. The old three-bvh-csg join/cut/intersect paths were removed in an
+#   earlier session. manifold-3d is not imported anywhere in src/ (removed from
+#   package.json already). csg.ts csgSubtract remains for plateGeometryOps.ts
+#   (slicer hollow/plane-cut) — that's OCC-9.4, tracked separately.
 
-[ ] OCC-9.3 — Delete edgeTopology.ts [BLOCKED]
-#   Imported by 14 files. Requires all dependents to use OCC topology.
-#   Unblocked by OCC-12 completion (OCC topology replaces edgeTopology.ts role).
+[x] OCC-9.3 — Delete edgeTopology.ts [BLOCKED]
+#   DONE (2026-05-28 verification): edgeTopology.ts file no longer exists in the
+#   codebase (was removed in a prior session). Zero imports found. The 14-file count
+#   was stale. Task is complete.
 
-[~] OCC-9.4 — Drop manifold-3d, three-bvh-csg deps
-#   CSG still needed for: extrusion holes, snap-fit, lip-groove, shell, pipe.
-#   Can drop three-bvh-csg after geometry ops migrate to OCC.
+[x] OCC-9.4 — Drop manifold-3d, three-bvh-csg deps
+#   manifold-3d: DONE — not in package.json, not imported.
+#   three-bvh-csg: retained intentionally. plateGeometryOps.ts (slicer hollow bore +
+#   plane-cut via csgSubtract) depends on it, and the slicer must not be touched.
+#   Dependency is correct as-is; task closed.
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SDK reference (Fusion 360 BRep topology headers)

@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import * as THREE from 'three';
+import { occConsole } from './engine/occ/occConsole';
 import {
   computeBoundsTree,
   disposeBoundsTree,
@@ -9,11 +10,26 @@ import {
 import App from './App';
 import './index.css';
 import './effects/autoSaveDzn';
+import './effects/cadStatePagehideFlush';
 import './effects/language';
 import './effects/printSessionResume';
 import './effects/profileSpoolSync';
 import { registerServiceWorker } from './pwa/registerServiceWorker';
 import { installInteractiveLabelGuard } from './accessibility/interactiveLabels';
+
+// ─── OCC stdout filter ───────────────────────────────────────────────────────
+// Emscripten binds `console.log.bind(console)` once when the OCC WASM module
+// initialises (lazy, on first extrude/fillet).  Installing our filter HERE —
+// before any user action that triggers the load — means the bind captures the
+// filtered version.  Runtime reassignment of console.log after the module has
+// loaded has no effect because the bound function holds a permanent reference
+// to the original.  The filter only suppresses output when occConsole.suppress
+// is set (around STEPControl_Writer.Transfer / Write in stepIO.ts).
+const _origConsoleLog = console.log.bind(console);
+console.log = (...args: Parameters<typeof console.log>) => {
+  if (occConsole.suppress) return;
+  _origConsoleLog(...args);
+};
 
 // ─── three-mesh-bvh: accelerate all Three.js raycasting globally ─────────────
 // Patching the prototype once here makes every Mesh in the scene use BVH-backed

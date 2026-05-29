@@ -6,18 +6,11 @@
  * Supports:
  *  - Constant radius (Add_2)
  *  - Variable radius start→end (Add_3)
+ *  - Variable radius N midpoints (Add_5 + TColgp_Array1OfPnt2d radius law) — OCC-14.3
  *  - Chord-length (dihedral-angle derived radius, then Add_2)
  *  - Multiple mixed edge sets in one Build pass
  *  - G2 surface continuity (ChFi3d_Polynomial surface form + best-effort SetContinuity)
- *  - Asymmetric per-face distance (Add_4(d1, d2, edge, face) when available)
  *  - Full-round with multi-face per side and auto-side inference
- *
- * Not supported natively (documented limitations):
- *  - N mid-point variable radius (FILLET-9). OCC BRepFilletAPI_MakeFillet
- *    only exposes start+end (Add_3) and a constant radius. opencascade.js
- *    does not bind the Law_Function or TColgp_Array1OfPnt2d overloads
- *    that would allow arbitrary mid-points. Caller must collapse mid-radii
- *    to a piecewise approximation if needed.
  */
 import type { OcctRaw } from '../types';
 import { makeBRepBodyFromOccShape, occDeref, type BRepBody } from '../brepBody';
@@ -32,7 +25,8 @@ import {
 interface OccFilletBuilder {
   Add_2(radius: number, edge: unknown): void;
   Add_3(startRadius: number, endRadius: number, edge: unknown): void;
-  Add_4?(distance1: number, distance2: number, edge: unknown, face: unknown): void;
+  /** OCC-14.3: radius-law array overload (confirmed bound in WASM build). */
+  Add_5?(UandR: unknown, E: unknown): void;
   Build(progress?: unknown): void;
   IsDone?(): boolean;
   HasResult?(): boolean;
@@ -160,6 +154,19 @@ type OccFilletApi = OcctRaw & {
     delete(): void;
   };
   gp_Pnt_1: new () => { X(): number; Y(): number; Z(): number; delete(): void };
+  /**
+   * OCC-14.3: 2D point array for Add_5 radius-law (confirmed bound in TKMath module).
+   * Lower/upper are 1-based indices; array is OWNED — must .delete().
+   */
+  TColgp_Array1OfPnt2d_2: new (lower: number, upper: number) => {
+    SetValue(idx: number, p: unknown): void;
+    delete(): void;
+  };
+  /**
+   * OCC-14.3: 2D point constructor for (u, radius) pairs (confirmed bound in TKMath).
+   * Each gp_Pnt2d is OWNED — must .delete().
+   */
+  gp_Pnt2d_3: new (x: number, y: number) => { delete(): void };
 };
 
 // ── Public types ──────────────────────────────────────────────────────────────
@@ -169,17 +176,23 @@ export interface OccFilletEdgeSet {
   edgeIds: number[];
   /** Constant radius — used when startRadius/endRadius/chordLength are absent. */
   radius?: number;
-  /** Variable radius: start of edge. Requires endRadius. Uses mk.Add_3. */
+  /** Variable radius: start of edge. Requires endRadius. Uses mk.Add_3 (2 pts) or mk.Add_5 (N pts). */
   startRadius?: number;
-  /** Variable radius: end of edge. Requires startRadius. Uses mk.Add_3. */
+  /** Variable radius: end of edge. Requires startRadius. Uses mk.Add_3 (2 pts) or mk.Add_5 (N pts). */
   endRadius?: number;
+  /**
+   * OCC-14.3: interior mid-point radius controls (u ∈ (0,1), radius in mm).
+   * When present, uses mk.Add_5(TColgp_Array1OfPnt2d, edge) with startRadius@u=0,
+   * midRadii interior points, and endRadius@u=1 as the radius law. Requires
+   * startRadius and endRadius. Falls back to Add_3 if Add_5 is not bound.
+   * Array must be sorted ascending by position; positions outside (0,1) are clamped.
+   */
+  midRadii?: Array<{ position: number; radius: number }>;
   /** Chord-length mode: arc chord width. Converted to equivalent radius via dihedral angle. */
   chordLength?: number;
   /**
-   * Per-face asymmetric mode. When true, startRadius/endRadius are interpreted
-   * as per-face distances (d1 on the reference face, d2 on the other) and
-   * applied via Add_4(d1, d2, edge, face). Falls back to Add_2 with the average
-   * if Add_4 is unavailable in the OCC binding or no adjacent face is found.
+   * Per-face asymmetric mode. When true, startRadius/endRadius are averaged via Add_2
+   * (no true per-face OCC binding exists for fillet — that's a chamfer concept).
    */
   isAsymmetric?: boolean;
 }
@@ -190,8 +203,13 @@ export interface OccFilletOptions {
   /**
    * G1 (default) — ChFi3d_Rational tangent surface.
    * G2 — ChFi3d_Polynomial for higher-quality curvature blending.
+   * G0 — OCC-14.4: BRepFilletAPI_MakeFillet always produces at least tangent (G1)
+   *      continuity; there is no C0-only surface form. G0 maps to ChFi3d_Rational
+   *      (identical to G1). This value is accepted for Fusion 360 file round-trip
+   *      only — APPROXIMATED as G1 in geometry. Not exposed in the dialog UI to
+   *      avoid a misleading no-op control.
    */
-  continuity?: 'G1' | 'G2';
+  continuity?: 'G1' | 'G2' | 'G0';
   /**
    * Tangency weight for G2 continuity mode (range 0.1–2.0).
    * Reserved for future OCC binding extension — BRepFilletAPI_MakeFillet does
@@ -508,11 +526,63 @@ export function computeSafeFilletRadii(
         if (n === geom.canonical) continue;
         const nb = byCanonical.get(n);
         if (!nb || !Number.isFinite(nb.len)) continue;
-        const contribution = filletedCanonical.has(n) ? nb.len * 0.49 : nb.len * 0.95;
+        // co-filleted factor: 0.37 stays safely below the (√2−1)·L ≈ 0.414·L
+        // theoretical maximum for a 3-way orthogonal corner blend, with enough
+        // headroom that OCC's corner-patch algorithm doesn't produce crease
+        // artifacts even on complex topology (boolean-subtracted faces nearby).
+        // 0.40 was too close to the limit on some models — small residual creases
+        // appeared at the transition from clamped to unclamped corners.
+        // non-filleted factor: 0.85 leaves 15% of the neighbour unconsumed.
+        const contribution = filletedCanonical.has(n) ? nb.len * 0.37 : nb.len * 0.85;
+        // Skip degenerate junction edges (boolean-op artefacts at curve/line transitions)
+        // whose tiny chord would falsely cap the fillet below any useful radius.
+        // OCC's corner-blend algorithm handles these junctions on its own.
+        if (contribution < 0.2) continue;
         if (contribution < limit) limit = contribution;
       }
     }
     if (Number.isFinite(limit)) result.set(geom.bodyEdgeId, limit);
+  }
+
+  // Phase 2: corner consistency — propagate the tightest cap to ALL co-filleted
+  // edges that share a corner vertex.
+  //
+  // Without this, a corner where edge A is clamped (e.g. 1.131) but adjacent
+  // co-filleted edge B has no cap runs edge A at 1.131 and edge B at the full
+  // requested radius (e.g. 2).  OCC's 3-way corner-blend algorithm receives
+  // mismatched radii, produces a degenerate self-intersecting surface, and the
+  // resulting tessellation looks wrinkled/corrupted.
+  //
+  // Strategy: iterate until stable (handles transitive chains — A clamps B,
+  // B then clamps C at a different vertex).
+  let anyTightened = true;
+  while (anyTightened) {
+    anyTightened = false;
+    for (const canonicals of vertexToCanonical.values()) {
+      const filletedAtV = canonicals.filter(c => filletedCanonical.has(c));
+      if (filletedAtV.length < 2) continue;
+
+      // Tightest cap already recorded for any filleted edge at this vertex.
+      let minCap = Infinity;
+      for (const c of filletedAtV) {
+        const edge = byCanonical.get(c);
+        if (!edge) continue;
+        const cap = result.get(edge.bodyEdgeId);
+        if (cap !== undefined && cap < minCap) minCap = cap;
+      }
+      if (!Number.isFinite(minCap)) continue;
+
+      // Apply that tightest cap to every filleted edge at this vertex.
+      for (const c of filletedAtV) {
+        const edge = byCanonical.get(c);
+        if (!edge) continue;
+        const existing = result.get(edge.bodyEdgeId);
+        if (existing === undefined || existing > minCap) {
+          result.set(edge.bodyEdgeId, minCap);
+          anyTightened = true;
+        }
+      }
+    }
   }
 
   edgeMap.delete();
@@ -556,6 +626,8 @@ export function occFilletEdgeSetsWithInstance(
   // corner solution. It must be chosen from CONTINUITY only:
   //   G2 → ChFi3d_Polynomial (curvature-continuous blend)
   //   G1 → ChFi3d_Rational   (tangent-continuous, OCC default)
+  //   G0 → ChFi3d_Rational   (OCC-14.4: APPROXIMATED as G1 — BRepFilletAPI_MakeFillet
+  //          always produces at least tangent continuity; no C0-only surface form exists)
   // isRollingBallCorner controls the VERTEX corner solution (rolling-ball vs
   // setback), which BRepFilletAPI_MakeFillet computes automatically and exposes
   // no toggle for — so it is round-trip-only (stored, no geometric effect today).
@@ -564,7 +636,7 @@ export function occFilletEdgeSetsWithInstance(
   // the corner toggle was wired.
   const filletShape = options.continuity === 'G2'
     ? occ.ChFi3d_FilletShape.ChFi3d_Polynomial
-    : occ.ChFi3d_FilletShape.ChFi3d_Rational;
+    : occ.ChFi3d_FilletShape.ChFi3d_Rational; // G1 and G0 both use Rational
 
   const mk = createFilletBuilder(occ, rawShape, filletShape);
   if (!mk) {
@@ -579,19 +651,21 @@ export function occFilletEdgeSetsWithInstance(
   if (options.continuity === 'G2') {
     trySetG2Continuity(occ, mk);
   }
+  // Build a shape→index map once for seam-edge detection.
+  // Seam edges (cylinder/torus parametric seam) are adjacent to < 2 faces
+  // and cause BRepFilletAPI_MakeFillet.Build() to throw. We skip them here
+  // so Build() never sees them, producing a clean null rather than an exception.
+  // NOTE: declared OUTSIDE the try so the outer catch can free it — otherwise an
+  // uncaught throw between here and the happy-path delete leaks the WASM map.
+  const seamDetectMap = new occ.TopTools_IndexedMapOfShape_1();
+  let seamDetectReady = false;
   try {
-    // Build a shape→index map once for seam-edge detection.
-    // Seam edges (cylinder/torus parametric seam) are adjacent to < 2 faces
-    // and cause BRepFilletAPI_MakeFillet.Build() to throw. We skip them here
-    // so Build() never sees them, producing a clean null rather than an exception.
-    const seamDetectMap = new occ.TopTools_IndexedMapOfShape_1();
-    let seamDetectReady = false;
-    try {
-      occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, seamDetectMap);
-      seamDetectReady = seamDetectMap.Extent() > 0;
-    } catch {
-      // Non-fatal: seam detection degrades gracefully (we'll attempt Build() anyway).
-    }
+    occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, seamDetectMap);
+    seamDetectReady = seamDetectMap.Extent() > 0;
+  } catch {
+    // Non-fatal: seam detection degrades gracefully (we'll attempt Build() anyway).
+  }
+  try {
 
     // OCC-13.2 — clamp over-large radii to local topology so a corner blend that
     // would self-intersect is shrunk to a valid value instead of throwing in Build().
@@ -608,8 +682,8 @@ export function occFilletEdgeSetsWithInstance(
       const cap = safeRadii.get(edgeId);
       if (cap !== undefined && requested > cap) {
         if (!clampWarned) {
-          console.warn(
-            `[occFillet] radius ${requested} too large for edge ${edgeId}; clamped to ${cap.toFixed(3)} to fit the corner`,
+          console.log(
+            `[occFillet] radius ${requested} clamped to ${cap.toFixed(3)} (edge ${edgeId} corner geometry limit)`,
           );
           clampWarned = true;
         }
@@ -649,8 +723,65 @@ export function occFilletEdgeSetsWithInstance(
           if (edgeSet.isAsymmetric && edgeSet.startRadius !== undefined && edgeSet.endRadius !== undefined) {
             const d1 = Math.max(edgeSet.startRadius, 0.001);
             const d2 = Math.max(edgeSet.endRadius, 0.001);
-            // Asymmetric mode not supported with fresh resolution — use average.
+            // Asymmetric fillet has no per-face OCC overload — average as Add_2.
             mk.Add_2(Math.max(clampRadius(edgeId, (d1 + d2) / 2), 0.001), rawEdge);
+          } else if (
+            edgeSet.midRadii && edgeSet.midRadii.length > 0 &&
+            edgeSet.startRadius !== undefined && edgeSet.endRadius !== undefined
+          ) {
+            // OCC-14.3: N midpoints via Add_5(TColgp_Array1OfPnt2d, edge).
+            // Build array: [startR@u=0, ...midRadii sorted by position, endR@u=1].
+            // All points are OWNED and must be deleted after Add_5 returns.
+            const add5 = mk.Add_5?.bind(mk);
+            if (
+              add5 &&
+              typeof (occ as unknown as Record<string, unknown>).TColgp_Array1OfPnt2d_2 === 'function' &&
+              typeof (occ as unknown as Record<string, unknown>).gp_Pnt2d_3 === 'function'
+            ) {
+              const sorted = [...edgeSet.midRadii].sort((a, b) => a.position - b.position);
+              const allPts: Array<{ position: number; radius: number }> = [
+                { position: 0, radius: edgeSet.startRadius },
+                ...sorted.map((m) => ({
+                  position: Math.max(0.001, Math.min(0.999, m.position)),
+                  radius: m.radius,
+                })),
+                { position: 1, radius: edgeSet.endRadius },
+              ];
+              const n = allPts.length;
+              const arr = new occ.TColgp_Array1OfPnt2d_2(1, n);
+              const pts: Array<{ delete(): void }> = [];
+              try {
+                for (let pi = 0; pi < n; pi++) {
+                  const r = Math.max(clampRadius(edgeId, allPts[pi].radius), 0.001);
+                  const pt = new occ.gp_Pnt2d_3(allPts[pi].position, r);
+                  pts.push(pt);
+                  arr.SetValue(pi + 1, pt);
+                }
+                add5(arr, rawEdge);
+                addedAny = true;
+              } catch (midErr) {
+                console.warn(`[occFillet] Add_5 midpoints failed for edge ${edgeId}, falling back to Add_3:`, midErr);
+                // Fall back to two-point variable radius (loses midpoints).
+                mk.Add_3(
+                  Math.max(clampRadius(edgeId, edgeSet.startRadius), 0.001),
+                  Math.max(clampRadius(edgeId, edgeSet.endRadius), 0.001),
+                  rawEdge,
+                );
+                addedAny = true;
+              } finally {
+                for (const pt of pts) { try { pt.delete(); } catch { /* ignore */ } }
+                try { arr.delete(); } catch { /* ignore */ }
+              }
+            } else {
+              // Add_5 not bound in this WASM build — degrade to Add_3.
+              console.warn(`[occFillet] Add_5 not bound; using Add_3 (no midpoints) for edge ${edgeId}`);
+              mk.Add_3(
+                Math.max(clampRadius(edgeId, edgeSet.startRadius), 0.001),
+                Math.max(clampRadius(edgeId, edgeSet.endRadius), 0.001),
+                rawEdge,
+              );
+              addedAny = true;
+            }
           } else if (edgeSet.startRadius !== undefined && edgeSet.endRadius !== undefined) {
             mk.Add_3(
               Math.max(clampRadius(edgeId, edgeSet.startRadius), 0.001),
@@ -663,7 +794,7 @@ export function occFilletEdgeSetsWithInstance(
           } else {
             mk.Add_2(Math.max(clampRadius(edgeId, edgeSet.radius ?? 2), 0.001), rawEdge);
           }
-          addedAny = true;
+          if (!edgeSet.midRadii?.length) addedAny = true; // midRadii path sets addedAny internally
         } catch (e) {
           console.warn(`[occFillet] could not add edge ${edgeId}:`, e);
         }
@@ -703,6 +834,9 @@ export function occFilletEdgeSetsWithInstance(
     });
   } catch (e) {
     console.warn('[occFillet] threw outside Build/Shape:', e);
+    // Guard against double-free: the happy path already deleted seamDetectMap at
+    // this point only if we reached it — on a throw before that, free it here.
+    try { seamDetectMap.delete(); } catch { /* already freed on happy path */ }
     mk.delete();
     return null;
   }
@@ -1017,34 +1151,63 @@ function autoInferSideFaceGroups(
 export interface OccRuleFilletOptions extends OccFilletOptions {
   /** Fillet radius applied to all collected edges. */
   radius?: number;
+  /**
+   * Fusion RuleFilletTopologyTypes filter: 'convex' = RoundsOnly (outside corners),
+   * 'concave' = FilletsOnly (inside corners), 'all' = RoundsAndFillets (default).
+   * Edges with convex=null (boundary / indeterminate) are always included.
+   */
+  topologyFilter?: 'all' | 'convex' | 'concave';
+  /**
+   * Selectable-edge metadata map for the source body, used to apply topologyFilter.
+   * Pass the result of getSelectableEdges(). Only the `convex` field is read.
+   */
+  edgeMeta?: ReadonlyMap<number, { convex: boolean | null }>;
+}
+
+/** Filter edge IDs by topology (convex/concave) when a filter and meta are provided. */
+function applyTopologyFilter(
+  edgeIds: number[],
+  options: OccRuleFilletOptions,
+): number[] {
+  const { topologyFilter, edgeMeta } = options;
+  if (!topologyFilter || topologyFilter === 'all' || !edgeMeta) return edgeIds;
+  const wantConvex = topologyFilter === 'convex';
+  return edgeIds.filter((id) => {
+    const m = edgeMeta.get(id);
+    // Edges with convex=null (boundary/seam/indeterminate) are always included.
+    if (!m || m.convex === null) return true;
+    return wantConvex ? m.convex : !m.convex;
+  });
 }
 
 /**
  * Rule fillet — AllEdges mode.
  * Collects every edge of the given face(s) and fillets them as a single set.
+ * Pass `options.topologyFilter` + `options.edgeMeta` to restrict to convex or
+ * concave edges (Fusion RuleFilletTopologyTypes: RoundsOnly / FilletsOnly).
  */
 export function occRuleFilletAllEdgesWithInstance(
   oc: OcctRaw,
   body: BRepBody,
   faceIds: number[],
   radius: number,
-  options: OccFilletOptions = {},
+  options: OccRuleFilletOptions = {},
 ): BRepBody | null {
   if (faceIds.length === 0) return null;
-  const edgeIds = new Set<number>();
+  const raw = new Set<number>();
   for (const faceId of faceIds) {
-    for (const e of collectFaceEdgeIds(oc, body, faceId)) edgeIds.add(e);
+    for (const e of collectFaceEdgeIds(oc, body, faceId)) raw.add(e);
   }
-  if (edgeIds.size === 0) return null;
-  return occFilletEdgeSetsWithInstance(oc, body, [{
-    edgeIds: [...edgeIds],
-    radius,
-  }], options);
+  if (raw.size === 0) return null;
+  const edgeIds = applyTopologyFilter([...raw], options);
+  if (edgeIds.length === 0) return null;
+  return occFilletEdgeSetsWithInstance(oc, body, [{ edgeIds, radius }], options);
 }
 
 /**
  * Rule fillet — BetweenFaces mode.
  * Fillets only the edges shared between any face in `groupA` and any face in `groupB`.
+ * Pass `options.topologyFilter` + `options.edgeMeta` to restrict to convex or concave edges.
  */
 export function occRuleFilletBetweenFacesWithInstance(
   oc: OcctRaw,
@@ -1052,12 +1215,11 @@ export function occRuleFilletBetweenFacesWithInstance(
   groupA: number[],
   groupB: number[],
   radius: number,
-  options: OccFilletOptions = {},
+  options: OccRuleFilletOptions = {},
 ): BRepBody | null {
-  const edgeIds = collectSharedEdgeIds(oc, body, groupA, groupB);
+  const raw = collectSharedEdgeIds(oc, body, groupA, groupB);
+  if (raw.length === 0) return null;
+  const edgeIds = applyTopologyFilter(raw, options);
   if (edgeIds.length === 0) return null;
-  return occFilletEdgeSetsWithInstance(oc, body, [{
-    edgeIds,
-    radius,
-  }], options);
+  return occFilletEdgeSetsWithInstance(oc, body, [{ edgeIds, radius }], options);
 }

@@ -14,14 +14,6 @@ import {
   type SelectableEdgeMeta,
 } from "../../../../engine/occ/ops/selectableEdges";
 
-/**
- * OCC-12.B0 — gate the authoritative selectable-edge path (filletable filter +
- * chainId hover/click) so the legacy detectSyntheticGeneratorEdges /
- * polylineTangentChain heuristics remain as a fallback for OCC bodies.
- * Non-OCC mesh bodies always use the legacy mesh-topology/crease guides.
- */
-export const USE_OCC_SELECTABLE_EDGES = true;
-
 export type GuideGeometryResult = {
   geometry: THREE.BufferGeometry;
   edgeIdsBySegment: number[];
@@ -32,13 +24,12 @@ export type GuideGeometryResult = {
 
 /**
  * Resolve authoritative selectable-edge metadata for an OCC body.
- * Returns null when the flag is off, the body is gone, or OCC is still loading
- * — callers then fall back to the legacy geometric heuristics.
+ * Returns null when the body is gone or OCC is still loading.
  */
 export function getSelectableEdgesForBody(
   bodyId: string | undefined,
 ): Map<number, SelectableEdgeMeta> | null {
-  if (!USE_OCC_SELECTABLE_EDGES || !bodyId) return null;
+  if (!bodyId) return null;
   const body = globalBRepBodyRegistry.get(bodyId);
   if (!body) return null;
   const occ = getOccSync();
@@ -75,13 +66,6 @@ export function disposeGuideGeometryResult(result: GuideGeometryResult | null | 
   result?.geometry.dispose();
   result?.edgePolylines.clear();
 }
-
-type StraightEdgeInfo = {
-  edgeId: number | string;
-  center: THREE.Vector3;
-  length: number;
-  direction: THREE.Vector3;
-};
 
 export function polylineIsCurved(polyline: Float32Array | THREE.Vector3[]): boolean {
   const count = Array.isArray(polyline) ? polyline.length : polyline.length / 3;
@@ -141,6 +125,68 @@ export function resolveMeshOccTessellation(mesh: THREE.Mesh) {
   return { tess, bodyId };
 }
 
+/**
+ * Polygon-arc chain threshold: chains with more members than this are
+ * polygon approximations of a curved edge (circle/arc tessellated as many
+ * straight segments). The visible guide merges them into one arc polyline
+ * (allowCurvedEdges=true) or filters them entirely (allowCurvedEdges=false),
+ * matching the behaviour for real analytical OCC circle/arc edges.
+ */
+const POLYGON_ARC_CHAIN_THRESHOLD = 8;
+
+/** Build a Map<chainId, memberCount> from the meta entries. */
+function buildChainSizes(
+  edgeIds: Iterable<number>,
+  meta: Map<number, SelectableEdgeMeta>,
+): Map<number, number> {
+  const sizes = new Map<number, number>();
+  for (const edgeId of edgeIds) {
+    const chainId = meta.get(edgeId)?.chainId;
+    if (chainId !== undefined && chainId >= 0) {
+      sizes.set(chainId, (sizes.get(chainId) ?? 0) + 1);
+    }
+  }
+  return sizes;
+}
+
+/**
+ * Sort 2-point polygon-arc segments (each a Float32Array[6]) into a
+ * continuous chain by greedy nearest-endpoint matching. Reverses segments
+ * as needed so each start connects to the previous end.
+ */
+function sortSegmentsIntoChain(segments: Float32Array[]): Float32Array[] {
+  if (segments.length <= 1) return segments;
+  const remaining = [...segments];
+  const result: Float32Array[] = [remaining.splice(0, 1)[0]];
+  while (remaining.length > 0) {
+    const last = result[result.length - 1];
+    const lx = last[last.length - 3], ly = last[last.length - 2], lz = last[last.length - 1];
+    let bestI = 0, bestDist = Infinity, bestRev = false;
+    for (let i = 0; i < remaining.length; i++) {
+      const pts = remaining[i];
+      const d0 = (pts[0] - lx) ** 2 + (pts[1] - ly) ** 2 + (pts[2] - lz) ** 2;
+      const n = pts.length;
+      const dR = (pts[n - 3] - lx) ** 2 + (pts[n - 2] - ly) ** 2 + (pts[n - 1] - lz) ** 2;
+      if (d0 < bestDist) { bestDist = d0; bestI = i; bestRev = false; }
+      if (dR < bestDist) { bestDist = dR; bestI = i; bestRev = true; }
+    }
+    const next = remaining.splice(bestI, 1)[0];
+    if (bestRev) {
+      const n = next.length / 3;
+      const rev = new Float32Array(next.length);
+      for (let i = 0; i < n; i++) {
+        rev[i * 3] = next[(n - 1 - i) * 3];
+        rev[i * 3 + 1] = next[(n - 1 - i) * 3 + 1];
+        rev[i * 3 + 2] = next[(n - 1 - i) * 3 + 2];
+      }
+      result.push(rev);
+    } else {
+      result.push(next);
+    }
+  }
+  return result;
+}
+
 export function buildBatchedEdgeLineGeometry(
   tess: BRepTessellation,
   allowCurvedEdges: boolean,
@@ -148,17 +194,23 @@ export function buildBatchedEdgeLineGeometry(
 ): { geometry: THREE.BufferGeometry; edgeIdsBySegment: number[] } | null {
   const positions: number[] = [];
   const edgeIdsBySegment: number[] = [];
-  // OCC-12.B1 — when authoritative meta is available, hide non-filletable edges
-  // (seams/boundaries) using BRep face-count instead of the geometric
-  // detectSyntheticGeneratorEdges guess. Falls back to the heuristic otherwise.
-  const useMeta = USE_OCC_SELECTABLE_EDGES && !!meta;
-  const synthetic = useMeta ? null : detectSyntheticGeneratorEdges(tess);
+  const useMeta = !!meta;
+  // Polygon-arc filter: chains with many members are tessellated approximations
+  // of a curved edge. Pre-compute sizes so we can filter them in the loop.
+  const chainSizes = useMeta && !allowCurvedEdges
+    ? buildChainSizes(tess.edgePolylines.keys(), meta!)
+    : null;
 
   for (const [edgeId, polyline] of tess.edgePolylines) {
     if (useMeta) {
-      if (meta!.get(edgeId)?.filletable === false) continue;
-    } else if (synthetic!.has(edgeId)) {
-      continue;
+      const m = meta!.get(edgeId);
+      if (m?.filletable === false) continue;
+      if (m && !m.sharpEdge) continue; // smooth surface edge — hide like Fusion 360
+      // Treat polygon-arc chains the same as real curved edges.
+      if (!allowCurvedEdges && chainSizes) {
+        const chainId = m?.chainId;
+        if (chainId !== undefined && (chainSizes.get(chainId) ?? 1) > POLYGON_ARC_CHAIN_THRESHOLD) continue;
+      }
     }
     if (!allowCurvedEdges && polylineIsCurved(polyline)) continue;
     const pointCount = polyline.length / 3;
@@ -182,107 +234,6 @@ export function buildBatchedEdgeLineGeometry(
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
   return { geometry, edgeIdsBySegment };
-}
-
-function canonicalDirection(direction: THREE.Vector3): THREE.Vector3 {
-  const out = direction.clone().normalize();
-  if (
-    out.x < -1e-6 ||
-    (Math.abs(out.x) <= 1e-6 && out.y < -1e-6) ||
-    (Math.abs(out.x) <= 1e-6 && Math.abs(out.y) <= 1e-6 && out.z < -1e-6)
-  ) {
-    out.multiplyScalar(-1);
-  }
-  return out;
-}
-
-function straightEdgeInfo(edgeId: number | string, polyline: Float32Array): StraightEdgeInfo | null {
-  const pointCount = polyline.length / 3;
-  if (pointCount < 2) return null;
-  const first = new THREE.Vector3(polyline[0], polyline[1], polyline[2]);
-  const last = new THREE.Vector3(
-    polyline[(pointCount - 1) * 3],
-    polyline[(pointCount - 1) * 3 + 1],
-    polyline[(pointCount - 1) * 3 + 2],
-  );
-  const delta = last.clone().sub(first);
-  const length = delta.length();
-  if (length < 1e-5) return null;
-  const direction = delta.clone().normalize();
-  const maxDeviation = Math.max(length * 0.0075, 1e-4);
-  for (let index = 1; index < pointCount - 1; index += 1) {
-    const point = new THREE.Vector3(polyline[index * 3], polyline[index * 3 + 1], polyline[index * 3 + 2]);
-    const offset = point.clone().sub(first);
-    const projected = first.clone().addScaledVector(direction, offset.dot(direction));
-    if (point.distanceTo(projected) > maxDeviation) return null;
-  }
-  return {
-    edgeId,
-    center: first.add(last).multiplyScalar(0.5),
-    length,
-    direction: canonicalDirection(direction),
-  };
-}
-
-function straightEdgeGroupKey(info: StraightEdgeInfo): string {
-  const dir = info.direction;
-  const quantizedLength = Math.round(info.length * 1000);
-  return [
-    Math.round(dir.x * 100),
-    Math.round(dir.y * 100),
-    Math.round(dir.z * 100),
-    quantizedLength,
-  ].join(":");
-}
-
-function detectSyntheticEdgeInfos(
-  infos: StraightEdgeInfo[],
-  bounds?: { min: THREE.Vector3; max: THREE.Vector3 },
-): Set<number | string> {
-  const groups = new Map<string, StraightEdgeInfo[]>();
-  for (const info of infos) {
-    const key = straightEdgeGroupKey(info);
-    const group = groups.get(key) ?? [];
-    group.push(info);
-    groups.set(key, group);
-  }
-
-  const hidden = new Set<number | string>();
-  const boundsSize = bounds ? bounds.max.clone().sub(bounds.min) : null;
-  const boundsTolerance = boundsSize ? Math.max(boundsSize.length() * 1e-4, 1e-4) : 0;
-  const isOnExteriorBounds = (info: StraightEdgeInfo) =>
-    !!bounds &&
-    (Math.abs(info.center.x - bounds.min.x) <= boundsTolerance ||
-      Math.abs(info.center.x - bounds.max.x) <= boundsTolerance ||
-      Math.abs(info.center.y - bounds.min.y) <= boundsTolerance ||
-      Math.abs(info.center.y - bounds.max.y) <= boundsTolerance ||
-      Math.abs(info.center.z - bounds.min.z) <= boundsTolerance ||
-      Math.abs(info.center.z - bounds.max.z) <= boundsTolerance);
-
-  for (const group of groups.values()) {
-    if (group.length < 9) continue;
-    for (const info of group) {
-      if (isOnExteriorBounds(info)) continue;
-      hidden.add(info.edgeId);
-    }
-  }
-  return hidden;
-}
-
-export function detectSyntheticGeneratorEdges(tess: BRepTessellation): Set<number | string> {
-  const infos: StraightEdgeInfo[] = [];
-  const min = new THREE.Vector3(Infinity, Infinity, Infinity);
-  const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
-  for (const [edgeId, polyline] of tess.edgePolylines) {
-    for (let index = 0; index + 2 < polyline.length; index += 3) {
-      min.min(new THREE.Vector3(polyline[index], polyline[index + 1], polyline[index + 2]));
-      max.max(new THREE.Vector3(polyline[index], polyline[index + 1], polyline[index + 2]));
-    }
-    const info = straightEdgeInfo(edgeId, polyline);
-    if (info) infos.push(info);
-  }
-  const bounds = Number.isFinite(min.x) ? { min, max } : undefined;
-  return detectSyntheticEdgeInfos(infos, bounds);
 }
 
 export function mergedGuideGeometryResults(
@@ -341,18 +292,78 @@ export function buildTessellationGuideGeometry(
   const edgeIdsBySegment: number[] = [];
   const edgePolylines = new Map<number, THREE.Vector3[]>();
   const chainIdByEdgeId = new Map<number, number>();
-  // OCC-12.B1 — authoritative filletable filter + chainId exposure when meta is
-  // available; otherwise the legacy synthetic-generator-edge heuristic.
-  const useMeta = USE_OCC_SELECTABLE_EDGES && !!meta;
-  const synthetic = useMeta ? null : detectSyntheticGeneratorEdges(tess);
+  const useMeta = !!meta;
+  // Polygon-arc chain handling: chains with > THRESHOLD members are polygon
+  // approximations of a curved edge. For the VISIBLE guide:
+  //   allowCurvedEdges=true  → merge the whole chain into one arc polyline
+  //   allowCurvedEdges=false → filter entirely (same as real curved edges)
+  // The invisible pick line (buildBatchedEdgeLineGeometry) keeps individual
+  // segments for accurate click detection.
+  const chainSizes = useMeta
+    ? buildChainSizes(tess.edgePolylines.keys(), meta!)
+    : null;
+  const largeChainProcessed = new Set<number>();
+
+  if (useMeta && chainSizes) {
+    // Group large-chain edge IDs
+    const chainEdgeGroups = new Map<number, number[]>();
+    for (const [edgeId] of tess.edgePolylines) {
+      const m = meta!.get(edgeId);
+      if (!m || m.filletable === false) continue;
+      if (!m.sharpEdge) continue; // smooth surface edge — hide like Fusion 360
+      const chainId = m.chainId;
+      if (chainId === undefined || chainId < 0) continue;
+      if ((chainSizes.get(chainId) ?? 1) <= POLYGON_ARC_CHAIN_THRESHOLD) continue;
+      const group = chainEdgeGroups.get(chainId) ?? [];
+      group.push(edgeId);
+      chainEdgeGroups.set(chainId, group);
+    }
+
+    for (const [chainId, chainEdgeIds] of chainEdgeGroups) {
+      // All members are handled here — skip them in the main loop below.
+      for (const eid of chainEdgeIds) largeChainProcessed.add(eid);
+      if (!allowCurvedEdges) continue; // filter entirely
+
+      // Build a single continuous arc polyline from the polygon segments.
+      const segments = chainEdgeIds
+        .map((eid) => tess.edgePolylines.get(eid))
+        .filter((p): p is Float32Array => !!p && p.length >= 6);
+      if (segments.length === 0) continue;
+
+      const ordered = sortSegmentsIntoChain(segments);
+      const repEdgeId = chainEdgeIds[0];
+      const worldPts: THREE.Vector3[] = [];
+      for (let si = 0; si < ordered.length; si++) {
+        const pts = ordered[si];
+        const ptCount = pts.length / 3;
+        const startI = si === 0 ? 0 : 1; // skip duplicate junction point
+        for (let i = startI; i < ptCount; i++) {
+          worldPts.push(
+            new THREE.Vector3(pts[i * 3], pts[i * 3 + 1], pts[i * 3 + 2]).applyMatrix4(meshMatrix),
+          );
+        }
+      }
+      if (worldPts.length < 2) continue;
+
+      edgePolylines.set(repEdgeId, worldPts);
+      for (let i = 0; i + 1 < worldPts.length; i++) {
+        const a = worldPts[i], b = worldPts[i + 1];
+        positions.push(a.x, a.y, a.z, b.x, b.y, b.z);
+        edgeIdsBySegment.push(repEdgeId);
+      }
+      // Register ALL chain member IDs in chainIdByEdgeId so that clicking any
+      // individual pick-line segment can expand to show the merged arc highlight.
+      for (const eid of chainEdgeIds) chainIdByEdgeId.set(eid, chainId);
+    }
+  }
 
   for (const [edgeId, polyline] of tess.edgePolylines) {
+    if (largeChainProcessed.has(edgeId)) continue; // handled above
     if (useMeta) {
       const m = meta!.get(edgeId);
       if (m?.filletable === false) continue;
+      if (m && !m.sharpEdge) continue; // smooth surface edge — hide like Fusion 360
       if (m && m.chainId >= 0) chainIdByEdgeId.set(edgeId, m.chainId);
-    } else if (synthetic!.has(edgeId)) {
-      continue;
     }
     if (!allowCurvedEdges && polylineIsCurved(polyline)) continue;
     const pointCount = polyline.length / 3;

@@ -2,7 +2,8 @@ import * as THREE from "three";
 import type { OccEdgePickResult } from "../OccEdgePicker";
 import { globalBRepBodyRegistry } from "../../../../engine/occ/globalRegistry";
 import type { BRepTessellation } from "../../../../engine/occ/brepBody";
-import { detectSyntheticGeneratorEdges, polylineIsCurved } from "./edgeOpEdgeGeometry";
+import { getSelectableEdgesForBody, polylineIsCurved } from "./edgeOpEdgeGeometry";
+import type { SelectableEdgeMeta } from "../../../../engine/occ/ops/selectableEdges";
 
 export type ResolvedOccEdgeSelection = {
   bodyId: string;
@@ -30,16 +31,19 @@ export function findClosestOccEdge(
   topologyPolylineWorld: THREE.Vector3[],
   meshMatrix: THREE.Matrix4,
   allowCurvedEdges: boolean,
+  meta?: Map<number, SelectableEdgeMeta> | null,
 ): { edgeId: number; polylineWorld: THREE.Vector3[]; distance: number } | null {
   if (topologyPolylineWorld.length === 0) return null;
   const mid = topologyPolylineWorld[Math.floor(topologyPolylineWorld.length / 2)].clone();
   const first = topologyPolylineWorld[0];
   const last = topologyPolylineWorld[topologyPolylineWorld.length - 1];
-  const syntheticEdgeIds = detectSyntheticGeneratorEdges(tess);
   let bestId: number | null = null;
   let bestDist = Infinity;
   for (const [edgeId, pts] of tess.edgePolylines) {
-    if (syntheticEdgeIds.has(edgeId)) continue;
+    if (meta) {
+      const m = meta.get(edgeId);
+      if (m?.filletable === false) continue;
+    }
     if (!allowCurvedEdges && polylineIsCurved(pts)) continue;
     const count = pts.length / 3;
     const ci = Math.floor(count / 2);
@@ -103,7 +107,8 @@ export function findClosestLiveOccEdge(
   for (const candidate of candidates) {
     const body = globalBRepBodyRegistry.get(candidate.bodyId);
     if (!body?._tessellation) continue;
-    const edge = findClosestOccEdge(body._tessellation, topologyPolylineWorld, candidate.matrix, allowCurvedEdges);
+    const meta = getSelectableEdgesForBody(candidate.bodyId);
+    const edge = findClosestOccEdge(body._tessellation, topologyPolylineWorld, candidate.matrix, allowCurvedEdges, meta);
     if (!edge || edge.distance >= bestDistance) continue;
     bestDistance = edge.distance;
     best = {

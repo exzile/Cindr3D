@@ -10,6 +10,7 @@
 import type { OcctRaw } from './types';
 import { occDeref, makeBRepBodyFromOccShape, type BRepBody } from './brepBody';
 import { type OccOperationResult, occOk, occErr, occMessage } from './result';
+import { occConsole } from './occConsole';
 
 const TMP_WRITE = '/occ_step_out.step';
 const TMP_READ  = '/occ_step_in.step';
@@ -31,21 +32,38 @@ export function shapeToStep(oc: OcctRaw, body: BRepBody): OccOperationResult<str
   // Do NOT delete it — that would destroy the body's own shape handle.
 
   let writer: unknown;
+  let progress: unknown;
   try {
     writer = new oc.STEPControl_Writer_1();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const status = (writer as any).Transfer(rawShape, oc.STEPControl_StepModelType.STEPControl_AsIs, true);
+    progress = new oc.Message_ProgressRange_1();
+
+    // Suppress OCC's verbose STEP transfer statistics from the console.
+    // The filter is installed in main.tsx (before OCC WASM loads) and reads
+    // occConsole.suppress — see occConsole.ts for the full explanation.
+    occConsole.suppress = true;
+    let status: unknown;
+    let writeStatus: unknown;
+    try {
+      // STEPControl_Writer.Transfer requires 4 args: shape, mode, compgraph, progressRange
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      status = (writer as any).Transfer(rawShape, oc.STEPControl_StepModelType.STEPControl_AsIs, true, progress);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (status === oc.IFSelect_ReturnStatus.IFSelect_RetDone) writeStatus = (writer as any).Write(TMP_WRITE);
+    } finally {
+      occConsole.suppress = false;
+    }
+
     if (status !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) {
       return occErr(occMessage('error', 'STEP_TRANSFER_FAIL', `STEPControl_Writer.Transfer returned status ${status}`));
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const writeStatus = (writer as any).Write(TMP_WRITE);
     if (writeStatus !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) {
       return occErr(occMessage('error', 'STEP_WRITE_FAIL', `STEPControl_Writer.Write returned status ${writeStatus}`));
     }
   } catch (e) {
     return occErr(occMessage('error', 'STEP_WRITE_EXCEPTION', String(e)));
   } finally {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (progress as any)?.delete?.();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (writer as any)?.delete?.();
     // rawShape is a VIEW — do NOT delete.

@@ -541,6 +541,119 @@ export function collectFaceEdgeIds(
 }
 
 /**
+ * Returns all body-edge IDs that share a vertex with any seed edge but are
+ * NOT themselves in the seed set.
+ *
+ * Used by the fillet corner-aware fallback (OCC-13.3): when OCC fails to
+ * compute a corner blend in a combined pass, auto-including the non-filleted
+ * edges adjacent to each seed-edge vertex at the same radius lets OCC close
+ * the corner in a single build call.
+ */
+export function collectVertexNeighborEdges(
+  oc: OcctRaw,
+  body: BRepBody,
+  seedEdgeIds: number[],
+): number[] {
+  if (seedEdgeIds.length === 0) return [];
+  const occ = oc as OccAdjacencyApi;
+
+  // rawShape is a VIEW from occDeref — do NOT delete.
+  const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
+  const edgeMap = new occ.TopTools_IndexedMapOfShape_1();
+  const vertMap = new occ.TopTools_IndexedMapOfShape_1();
+  try {
+    occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, edgeMap);
+    occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, vertMap);
+  } catch {
+    edgeMap.delete();
+    vertMap.delete();
+    return [];
+  }
+
+  // Map body-edge IDs ↔ canonical edge indices.
+  const bodyIdToCanonical = new Map<number, number>();
+  const canonicalToBodyId = new Map<number, number>();
+  for (const [bodyEdgeId, edgeHandle] of body.edgeIds) {
+    // raw is a VIEW from occDeref — do NOT delete.
+    const raw = occDeref(oc, edgeHandle, oc.TopoDS_Shape) as OccShapeRef;
+    const idx = findShapeIndex(edgeMap, raw);
+    if (idx > 0) {
+      bodyIdToCanonical.set(bodyEdgeId, idx);
+      canonicalToBodyId.set(idx, bodyEdgeId);
+    }
+  }
+
+  const seedCanonical = new Set<number>();
+  for (const bodyId of seedEdgeIds) {
+    const cIdx = bodyIdToCanonical.get(bodyId);
+    if (cIdx !== undefined) seedCanonical.add(cIdx);
+  }
+
+  // Build vertex → incident canonical-edge-index list.
+  // FindKey_1 and TopoDS.Edge_1 return VIEWs — do NOT delete them.
+  const vertexToCanonical = new Map<number, number[]>();
+  for (const cIdx of canonicalToBodyId.keys()) {
+    const edgeShapeView = findShapeByKey(edgeMap, cIdx);
+    if (!edgeShapeView) continue;
+    let rawEdge: unknown;
+    try { rawEdge = oc.TopoDS.Edge_1(edgeShapeView); }
+    catch { continue; }
+    const vexp = new occ.TopExp_Explorer_2(rawEdge, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+    try {
+      while (vexp.More()) {
+        const v = vexp.Current(); // OWNED — must delete
+        const vIdx = findShapeIndex(vertMap, v);
+        v.delete();
+        if (vIdx > 0) {
+          const list = vertexToCanonical.get(vIdx);
+          if (list) list.push(cIdx);
+          else vertexToCanonical.set(vIdx, [cIdx]);
+        }
+        vexp.Next();
+      }
+    } finally {
+      vexp.delete();
+    }
+  }
+
+  // Collect vertex neighbors of every seed edge (excluding seeds themselves).
+  const neighborCanonical = new Set<number>();
+  for (const cIdx of seedCanonical) {
+    const edgeShapeView = findShapeByKey(edgeMap, cIdx);
+    if (!edgeShapeView) continue;
+    let rawEdge: unknown;
+    try { rawEdge = oc.TopoDS.Edge_1(edgeShapeView); }
+    catch { continue; }
+    const vexp = new occ.TopExp_Explorer_2(rawEdge, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+    try {
+      while (vexp.More()) {
+        const v = vexp.Current(); // OWNED — must delete
+        const vIdx = findShapeIndex(vertMap, v);
+        v.delete();
+        if (vIdx > 0) {
+          for (const nb of (vertexToCanonical.get(vIdx) ?? [])) {
+            if (!seedCanonical.has(nb)) neighborCanonical.add(nb);
+          }
+        }
+        vexp.Next();
+      }
+    } finally {
+      vexp.delete();
+    }
+  }
+
+  edgeMap.delete();
+  vertMap.delete();
+
+  const result: number[] = [];
+  for (const cIdx of neighborCanonical) {
+    const bodyId = canonicalToBodyId.get(cIdx);
+    if (bodyId !== undefined) result.push(bodyId);
+  }
+  return result;
+}
+
+/**
  * Returns body-edge IDs that are shared between any face in `groupA` and any face in `groupB`.
  * Used by rule-fillet BetweenFaces mode.
  */

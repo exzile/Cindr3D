@@ -19,6 +19,7 @@ import { BODY_MATERIAL } from "../../../../components/viewport/scene/bodyMateria
 import { isBRepBodyAlive } from "../../../../engine/occ/brepBody";
 import { refreshStaleBodySync } from "../../persistence";
 import { DEFAULT_FILLET_RADIUS, propagateTangentEdges, resolveOccFilletEdgeSets } from "./edgeModHelpers";
+import { collectVertexNeighborEdges } from "../../../../engine/occ/ops/adjacency";
 import { analyzeMeshGeometry } from "../../../../meshRepair/meshRepair";
 
 type SourceFeature = CADState['features'][number];
@@ -298,6 +299,7 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     isRollingBallCorner,
     distance,
     distance2,
+    angle,
     propagate = false,
     pushUndo = false,
     fullRoundFaces,
@@ -308,11 +310,13 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     radius?: number;
     filletEdgeSets?: OccFilletEdgeSet[];
     filletParams?: Record<string, unknown>;
-    continuity?: 'G1' | 'G2';
+    continuity?: 'G1' | 'G2' | 'G0';
     tangencyWeight?: number;
     isRollingBallCorner?: boolean;
     distance?: number;
     distance2?: number;
+    /** OCC-14.6: raw angle in degrees for DistanceAndAngle chamfer; uses AddDA when set. */
+    angle?: number;
     propagate?: boolean;
     pushUndo?: boolean;
     fullRoundFaces?: { centerFaceId: number; sideFaces: FullRoundSideFaces };
@@ -368,10 +372,6 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
 
     let numericEdgeIds = selection.edgeIds.filter((edgeId) =>
       srcBody.edgeIds.has(edgeId),
-    );
-    console.log(
-      `[${tool}] srcBody edgeCount=${srcBody.edgeIds.size} faceCount=${srcBody.faceIds.size}` +
-      ` selectedEdges=[${numericEdgeIds.join(',')}] bodyId=${srcBody.id}`,
     );
     if (numericEdgeIds.length === 0) {
       return markOccEdgeModificationError(featureId, tool, "Selected OCC edges no longer exist on the source body");
@@ -451,12 +451,68 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
           { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
         );
 
+        // Vertex-neighbor fallback (OCC-13.3): if a filleted edge shares a vertex with
+        // a non-filleted edge, OCC cannot close the corner blend in a combined pass.
+        // Auto-include the non-filleted vertex-adjacent edges at the same radius and
+        // retry — this gives OCC enough topology to compute a complete corner.
+        if (!result) {
+          const allSeedIds = effectiveFilletEdgeSets.flatMap((es) => es.edgeIds);
+          const neighborIds = collectVertexNeighborEdges(occ.oc, srcBody, allSeedIds);
+          if (neighborIds.length > 0) {
+            const neighborRadius = currentFilletEdgeSets[0]?.radius ?? radius ?? DEFAULT_FILLET_RADIUS;
+            const augmented: OccFilletEdgeSet[] = [
+              ...effectiveFilletEdgeSets,
+              { edgeIds: neighborIds, radius: neighborRadius },
+            ];
+            result = occFilletEdgeSetsWithInstance(
+              occ.oc, srcBody, augmented,
+              { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
+            );
+            if (result) {
+              console.log(
+                `[${tool}] vertex-neighbor fallback: +${neighborIds.length} neighbor edge(s)`,
+              );
+            }
+          }
+        }
+
         // Arc-first sequential fallback: the combined pass fails when the corner edge
         // and arc edge share a vertex (OCC cannot compute the fillet surface junction in
         // one pass). Instead, apply the current (arc) fillet to the base body first,
         // then find the corner edge IDs in the arc-filleted intermediate body and apply
         // all sibling (corner) fillets on top. Corner edges are geometrically far from
         // the arc region, so their IDs remain stable after the arc fillet topology change.
+        //
+        // Radius-reduction pre-pass (OCC-13.X): when the chord-based cap in
+        // computeSafeFilletRadii is not tight enough (OCC's internal algorithm needs
+        // a smaller radius due to fillet-on-fillet geometry or complex corners), try
+        // progressively smaller radii before the arc-first sequential fallback.
+        // Each scale is applied uniformly to ALL edge sets so corner proportions hold.
+        if (!result) {
+          for (const scale of [0.6, 0.4, 0.25, 0.15]) {
+            const reducedSets: OccFilletEdgeSet[] = effectiveFilletEdgeSets.map((es) => ({
+              ...es,
+              radius: es.radius !== undefined ? es.radius * scale : undefined,
+              startRadius: es.startRadius !== undefined ? es.startRadius * scale : undefined,
+              endRadius: es.endRadius !== undefined ? es.endRadius * scale : undefined,
+              chordLength: es.chordLength !== undefined ? es.chordLength * scale : undefined,
+            }));
+            result = occFilletEdgeSetsWithInstance(
+              occ.oc, srcBody, reducedSets,
+              { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
+            );
+            if (result) {
+              const pct = Math.round(scale * 100);
+              const baseR = (effectiveFilletEdgeSets[0]?.radius ?? DEFAULT_FILLET_RADIUS);
+              console.warn(
+                `[${tool}] radius-reduction fallback: applied at ${pct}% (` +
+                `r=${(baseR * scale).toFixed(3)} instead of ${baseR.toFixed(3)})`,
+              );
+              break;
+            }
+          }
+        }
+
         if (!result && siblingFilletEdgeSets.length > 0) {
           console.warn(`[${tool}] combined fillet failed — trying arc-first sequential fallback`);
           try {
@@ -505,7 +561,10 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       }
     } else {
       result = occChamferWithInstance(occ.oc, srcBody, numericEdgeIds, distance ?? 0, {
-        distance2: distance2 !== undefined && distance2 !== distance ? distance2 : undefined,
+        // OCC-14.6: use exact AddDA when angle is provided; otherwise fall through
+        // to Add_3 with the tan-converted distance2 (DistanceAndAngle approximation).
+        angle: angle !== undefined ? angle : undefined,
+        distance2: angle === undefined && distance2 !== undefined && distance2 !== distance ? distance2 : undefined,
         sourceFeatureId: featureId,
       });
     }

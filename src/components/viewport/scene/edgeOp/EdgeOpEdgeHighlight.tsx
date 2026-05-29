@@ -16,7 +16,6 @@ import {
   mergedGuideGeometryResults,
   polylineIsCurved,
   resolveMeshOccTessellation,
-  USE_OCC_SELECTABLE_EDGES,
 } from "./edgeOpEdgeGeometry";
 import {
   findClosestLiveOccEdge,
@@ -26,9 +25,12 @@ import {
 } from "./edgeOpEdgeSelection";
 import { useCADStore } from "../../../../store/cadStore";
 import { ensureOccBodyForFeature } from "../../../../store/cad/slices/extrudeRevolve/extrudeCommitOccTarget";
-// collectTangentChainEdges and getOccSync are NOT used here — the hover/click
+// getOccSync is imported for the cold-start slow-retry logic in the build-loop
+// effect (see below). collectTangentChainEdges is NOT used here — the hover/click
 // chain expansion uses pure-geometry polylineTangentChain instead (no OCC WASM
 // dependency, works with topology guides that lack OCC edge IDs).
+// Eager OCC preload is handled by App.tsx (shows OccLoadingModal with progress).
+import { getOccSync } from "../../../../engine/occ/loader";
 
 interface EdgeOpEdgeHighlightProps {
   enabled: boolean;
@@ -412,10 +414,9 @@ export default function EdgeOpEdgeHighlight({
     };
 
     let isChainExpanded = false;
-    if (USE_OCC_SELECTABLE_EDGES && chainMap && guidePolylines) {
-      // OCC-12.B3 — authoritative chainId expansion. With analytical arcs each arc
-      // is ONE OCC edge, so the clicked edgeId is already canonical: no Math.min
-      // normalization needed. The chain set is only used for the visual highlight.
+    if (chainMap && guidePolylines) {
+      // Authoritative chainId expansion. With analytical arcs each arc is ONE OCC edge,
+      // so the clicked edgeId is already canonical: no Math.min normalization needed.
       const chainSet = expandChainEdges(chainMap, guidePolylines, result.edgeId);
       const chainPts = buildChainDisplay(chainSet);
       if (chainPts) {
@@ -478,7 +479,11 @@ export default function EdgeOpEdgeHighlight({
     let initialBuildHandle: number | null = null;
     let retryHandle: number | null = null;
     let attempts = 0;
-    const maxAttempts = 24;
+    // Fast phase: 24 × 125 ms = 3 s (bodies already live from current session).
+    // Slow phase: 2 s intervals while OCC WASM is still loading after a page
+    // refresh. Stopped once OCC is ready (the rehydration effect's
+    // triggerRebuildRef callback is the primary mechanism; this is a safety net).
+    const maxFastAttempts = 24;
     for (const line of allEdgeLinesRef.current) {
       _scene.remove(line);
       line.geometry.dispose();
@@ -492,6 +497,7 @@ export default function EdgeOpEdgeHighlight({
         line.geometry.dispose();
       }
       const lines: THREE.LineSegments[] = [];
+      let _meshCount = 0, _withOccTess = 0;
       _scene.traverse((obj) => {
         if (!(obj instanceof THREE.Mesh) && !(obj as THREE.Mesh).isMesh) return;
         const mesh = obj as THREE.Mesh;
@@ -500,8 +506,13 @@ export default function EdgeOpEdgeHighlight({
         const bodyId = mesh.userData.brepBodyId as string | undefined;
         if (featureId && !visibleBodyFeatureIds.has(featureId)) return;
         if (!featureId && !bodyId) return;
+        _meshCount++;
         const resolved = resolveMeshOccTessellation(mesh);
-        if (bodyId && !resolved) return;
+        if (bodyId && !resolved) {
+          // console.log(`[EdgeHighlight] buildLines: mesh featureId=${featureId ?? '—'} bodyId=${bodyId} — no OCC tessellation (body not in registry)`);
+          return;
+        }
+        if (resolved) _withOccTess++;
         // OCC-12.B1 — authoritative selectable-edge metadata for this OCC body
         // (filletable filter + chainId). null when the flag is off / OCC body gone.
         const meta = resolved ? getSelectableEdgesForBody(resolved.bodyId) : null;
@@ -517,16 +528,28 @@ export default function EdgeOpEdgeHighlight({
         // exceeds the 20° crease threshold), producing iso-lines that wrap
         // the entire cylinder.
         //
+        // IMPORTANT: hasOccTess is based purely on whether we have an OCC body,
+        // NOT on whether batched has straight edges. With analytical circle edges
+        // (MakeEdge_8), circle edge polylines are curved and filtered from batched
+        // when allowCurvedEdges=false — but that must not cause fallback to the
+        // THREE.js crease guide, which draws all triangle mesh edges on the
+        // curved surface.
+        //
         // The topology + crease guides remain as the fallback for legacy
-        // meshes without an OCC body.
-        const hasOccTess = !!resolved && (batched?.edgeIdsBySegment?.length ?? 0) > 0;
+        // meshes WITHOUT a featureId (standalone THREE.js geometry). Feature
+        // meshes (featureId set) are CAD bodies — they must ONLY show OCC-
+        // authoritative edges. If OCC isn't available for a feature mesh, show
+        // nothing rather than falling back to THREE.js crease geometry, which
+        // draws all triangle edges on curved surfaces as horizontal iso-lines.
+        const hasOccTess = !!resolved;
+        const allowCreaseFallback = !featureId;
         const tessellationGuideResult = resolved
           ? buildTessellationGuideGeometry(resolved.tess, mesh.matrixWorld, allowCurvedEdges, meta)
           : null;
-        const topologyGuideResult = hasOccTess
+        const topologyGuideResult = (hasOccTess || !allowCreaseFallback)
           ? null
           : buildMeshTopologyGuideGeometry(mesh, allowCurvedEdges);
-        const renderedGuideResult = hasOccTess
+        const renderedGuideResult = (hasOccTess || !allowCreaseFallback)
           ? null
           : buildMergedMeshCreaseGuideGeometry(mesh, allowCurvedEdges);
         const visibleGuideResult = hasOccTess
@@ -577,6 +600,7 @@ export default function EdgeOpEdgeHighlight({
           lines.push(pickLine);
         }
       });
+      // console.log(`[EdgeHighlight] buildLines: ${_meshCount} eligible meshes, ${_withOccTess} with OCC tess, ${lines.length} line objects built`);
       allEdgeLinesRef.current = lines;
       invalidateCanvas();
       return lines.length;
@@ -587,17 +611,42 @@ export default function EdgeOpEdgeHighlight({
         retryHandle = null;
         if (cancelled) return;
         attempts += 1;
+        const occReady = !!getOccSync();
+        // console.log(`[EdgeHighlight] scheduleBuild attempt ${attempts}/${maxFastAttempts}, OCC ready=${occReady}, delay was ${delayMs}ms`);
+        void occReady;
         const lineCount = buildLines();
-        if (lineCount > 0 || attempts >= maxAttempts) return;
-        scheduleBuild(125);
+        if (lineCount > 0) {
+          // console.log(`[EdgeHighlight] scheduleBuild: success on attempt ${attempts} — ${lineCount} line objects`);
+          return;
+        }
+        if (attempts < maxFastAttempts) {
+          // Still in the fast-retry window — keep checking at 125 ms.
+          scheduleBuild(125);
+        } else if (!getOccSync()) {
+          // OCC WASM is still loading after a cold-start page refresh.
+          // Slow-poll at 2 s so orange lines appear as soon as the STEP
+          // restore completes, even if the fast window already elapsed.
+          // console.log('[EdgeHighlight] scheduleBuild: fast window exhausted, OCC still loading — slow-polling at 2 s');
+          scheduleBuild(2000);
+        } else {
+          // else: OCC is loaded but lines are still empty (non-OCC body or
+          // unrecoverable STEP data). The rehydration-effect triggerRebuildRef
+          // callback is the primary async mechanism and may still succeed.
+          // console.log('[EdgeHighlight] scheduleBuild: fast window exhausted, OCC loaded but 0 lines — waiting for rehydration trigger');
+        }
       }, delayMs);
     };
 
     initialBuildHandle = window.setTimeout(() => {
       initialBuildHandle = null;
       if (cancelled) return;
+      // console.log('[EdgeHighlight] initial build (250ms delay)');
       const lineCount = buildLines();
-      if (lineCount > 0) return;
+      if (lineCount > 0) {
+        // console.log(`[EdgeHighlight] initial build succeeded — ${lineCount} line objects`);
+        return;
+      }
+      // console.log('[EdgeHighlight] initial build: 0 lines, scheduling retries');
       scheduleBuild(125);
     }, 250);
 
@@ -637,14 +686,32 @@ export default function EdgeOpEdgeHighlight({
         feature.type !== "sketch" &&
         feature.mesh instanceof THREE.Mesh,
     );
+    // console.log(`[EdgeHighlight] rehydration: ${candidates.length} solid feature(s) to restore — ${candidates.map((f) => f.id).join(', ') || 'none'}`);
+    // Pre-flight: log STEP data availability for each candidate so we can tell
+    // apart "no STEP data serialized" from "STEP restore failed at parse time".
+    // for (const f of candidates) {
+    //   const stepData = (f as unknown as { _occStepData?: { bodyId?: string; stepString?: string } })._occStepData;
+    //   const meshBodyId = f.mesh instanceof THREE.Mesh ? (f.mesh.userData['brepBodyId'] as string | undefined) ?? 'none' : 'no-mesh';
+    //   console.log(
+    //     `[EdgeHighlight] rehydration pre-flight: ${f.id} type=${f.type}` +
+    //     ` hasStep=${!!stepData?.stepString} stepBodyId=${stepData?.bodyId ?? 'none'}` +
+    //     ` meshBodyId=${meshBodyId}`,
+    //   );
+    // }
     Promise.all(
       candidates.map((feature) =>
-        ensureOccBodyForFeature(feature, features, sketches, undefined, { forceAnalyticalReplay: true }),
+        ensureOccBodyForFeature(feature, features, sketches).then((ok) => {
+          // console.log(`[EdgeHighlight] rehydration: feature ${feature.id} (${feature.type}) → ${ok ? 'restored' : 'skipped/failed'}`);
+          return ok;
+        }),
       ),
     ).then((results) => {
       if (cancelled) return;
+      // const restoredCount = results.filter(Boolean).length;
+      // console.log(`[EdgeHighlight] rehydration done: ${restoredCount}/${candidates.length} bodies restored`);
       if (!results.some(Boolean)) return;
       // Bodies are now registered — rebuild guide lines so they get brepBodyId set.
+      // console.log('[EdgeHighlight] rehydration: triggering guide line rebuild');
       triggerRebuildRef.current?.();
       invalidateCanvas();
     });
@@ -727,9 +794,9 @@ export default function EdgeOpEdgeHighlight({
           }
         }
         if (guidePolylines && guidePolylines.size > 1) {
-          // OCC-12.B2 — authoritative chainId grouping (no per-hover geometric BFS)
-          // when meta is available; legacy polylineTangentChain otherwise.
-          const chainSet = USE_OCC_SELECTABLE_EDGES && chainMap
+          // Authoritative chainId grouping for OCC bodies (chainMap present),
+          // legacy polylineTangentChain geometric BFS for non-OCC mesh bodies.
+          const chainSet = chainMap
             ? expandChainEdges(chainMap, guidePolylines, occHover.edgeId)
             : polylineTangentChain(guidePolylines, occHover.edgeId);
           if (chainSet.size > 1) {

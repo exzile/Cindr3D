@@ -7,6 +7,7 @@ import {
   occRuleFilletBetweenFacesWithInstance,
   type FullRoundSideFaces,
 } from "../../../../engine/occ/ops/fillet";
+import { getSelectableEdges } from "../../../../engine/occ/ops/selectableEdges";
 import { getOccSync } from "../../../../engine/occ/loader";
 import { storedEdgeIds } from "../../../../utils/occEdgeUtils";
 import {
@@ -161,6 +162,20 @@ export function createEdgeModActions({
         const { continuity, tangencyWeight, isRollingBallCorner } = resolveOccFilletOptions(
           filletParams ?? feature?.params,
         );
+        const topologyFilter =
+          (filletParams?.ruleFilletTopology as 'all' | 'convex' | 'concave' | undefined) ??
+          (feature?.params.ruleFilletTopology as 'all' | 'convex' | 'concave' | undefined);
+        // Build edge meta for topology filtering (memoized on body.revision — cheap).
+        const edgeMeta = topologyFilter && topologyFilter !== 'all'
+          ? getSelectableEdges(occ.oc, srcBody)
+          : undefined;
+        const ruleOpts = {
+          sourceFeatureId: featureId,
+          continuity,
+          tangencyWeight,
+          isRollingBallCorner,
+          ...(topologyFilter && topologyFilter !== 'all' ? { topologyFilter, edgeMeta } : {}),
+        };
 
         let resultBody = null as ReturnType<typeof occRuleFilletAllEdgesWithInstance>;
         if (ruleType === "between-faces") {
@@ -176,7 +191,7 @@ export function createEdgeModActions({
             groupA,
             groupB,
             Math.max(radius, 0.001),
-            { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
+            ruleOpts,
           );
         } else {
           const centerOccFaceId =
@@ -205,7 +220,7 @@ export function createEdgeModActions({
             srcBody,
             faceIds,
             Math.max(radius, 0.001),
-            { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
+            ruleOpts,
           );
         }
 
@@ -289,12 +304,22 @@ export function createEdgeModActions({
         );
       }
 
+      // OCC-14.6: extract raw angle for DistanceAndAngle mode so AddDA can be used
+      // instead of the tan-conversion approximation in occChamferWithInstance.
+      const rawAngle = chamferMode === 'dist-angle'
+        ? (typeof chamferParams?.angle === 'number'
+            ? chamferParams.angle
+            : (typeof feature?.params.angle === 'number' ? feature.params.angle as number : undefined))
+        : undefined;
+
       applyOccEdgeModification({
         tool: "Chamfer",
         featureId,
         edgeIds,
         distance,
-        distance2,
+        // When using exact AddDA, distance2 is ignored (angle takes priority).
+        distance2: rawAngle === undefined ? distance2 : undefined,
+        angle: rawAngle,
         propagate: shouldPropagateChamfer,
       });
     },
@@ -352,12 +377,18 @@ export function createEdgeModActions({
       }
 
       const [replayDistance, replayDistance2] = resolveOccChamferDistances(params);
+      // OCC-14.6: for dist-angle mode, pass the raw angle so AddDA is used on replay.
+      const replayMode = typeof params.mode === 'string' ? params.mode : 'equal-dist';
+      const replayAngle = replayMode === 'dist-angle' && typeof params.angle === 'number'
+        ? params.angle as number
+        : undefined;
       applyOccEdgeModification({
         tool: "Chamfer",
         featureId,
         edgeIds,
         distance: replayDistance,
-        distance2: replayDistance2,
+        distance2: replayAngle === undefined ? replayDistance2 : undefined,
+        angle: replayAngle,
         propagate: params.propagate === true,
         pushUndo: true,
       });

@@ -7,9 +7,12 @@ import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
 import { BREP_BODY_ID_KEY, BREP_TESS_KEY } from '../../../../engine/occ/picking';
 import { occExtrudeWithInstance } from '../../../../engine/occ/ops/extrude';
 import { performOccBooleanWithInstance } from '../../../../engine/occ/ops/booleanCore';
+import { occFilletEdgeSetsWithInstance, type OccFilletEdgeSet } from '../../../../engine/occ/ops/fillet';
+import { occChamferWithInstance } from '../../../../engine/occ/ops/chamfer';
 import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
 import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
 import { ensureFeatureOccBody } from '../../persistence';
+import { parseOccEdgeSelection, storedEdgeIds } from '../../../../utils/occEdgeUtils';
 import { buildOccNewBodyExtrudeMesh } from './extrudeCommitOccNewBody';
 import {
   createOffsetOccFrame,
@@ -164,19 +167,114 @@ function findBooleanReplayTarget(feature: Feature, features: Feature[]): Feature
 }
 
 /**
- * High edge-count threshold: bodies with more edges than this per face are likely
- * polygon-approximated arcs that should be rebuilt with analytical geometry for
- * fillet compatibility. A half-circle extrude produces ~362 polygon edges per arc;
- * analytical arcs produce ~3 edges per curved face.
+ * Replay a fillet or chamfer feature on top of its already-restored base body.
+ * Called when STEP data is missing and the feature cannot be restored via the
+ * standard paths — the base body must already be in globalBRepBodyRegistry
+ * (restored via ensureOccBodyForFeature on the source feature first).
+ *
+ * Edge IDs are expected to be stable after replay because OCC's topology
+ * builder is deterministic for identical geometry (same sketch → same IDs).
  */
-const POLYGON_ARC_EDGE_THRESHOLD = 50;
+async function replayEdgeModFeature(
+  feature: Feature,
+  features: Feature[],
+  sketches: Sketch[],
+  visited: Set<string>,
+): Promise<boolean> {
+  const mesh = feature.mesh;
+  if (!(mesh instanceof THREE.Mesh)) return false;
+
+  // Locate the source (base) feature that this edge mod was applied to.
+  const sourceFeatureId =
+    (feature.params.sourceFeatureId as string | undefined) ??
+    (feature.params.parentFeatureId as string | undefined) ??
+    feature.parentFeatureId;
+
+  let sourceFeature = sourceFeatureId
+    ? features.find((f) => f.id === sourceFeatureId)
+    : undefined;
+
+  // Fallback: walk backwards and pick the nearest non-sketch visible solid.
+  if (!sourceFeature) {
+    const idx = features.findIndex((f) => f.id === feature.id);
+    for (let i = idx - 1; i >= 0; i--) {
+      const f = features[i];
+      if (f.type !== 'sketch' && !f.suppressed && f.visible && f.mesh instanceof THREE.Mesh) {
+        sourceFeature = f;
+        break;
+      }
+    }
+  }
+  if (!sourceFeature) return false;
+
+  // Restore the source body recursively (extrude replay handles this).
+  if (!(await ensureOccBodyForFeature(sourceFeature, features, sketches, visited))) return false;
+
+  const sourceMesh = sourceFeature.mesh;
+  if (!(sourceMesh instanceof THREE.Mesh)) return false;
+  const sourceBodyId = sourceMesh.userData[BREP_BODY_ID_KEY] as string | undefined;
+  const sourceBody = sourceBodyId ? globalBRepBodyRegistry.get(sourceBodyId) : undefined;
+  if (!sourceBody) return false;
+
+  // Parse stored edge IDs — these are "occ:<bodyId>:<edgeId>" strings.
+  const rawEdgeIds = storedEdgeIds(feature.params.edgeIds);
+  if (rawEdgeIds.length === 0) return false;
+  const selection = parseOccEdgeSelection(rawEdgeIds);
+  if (!selection) return false;
+
+  // Filter to edges that actually exist on the restored source body.
+  // After replay, OCC re-uses the same IDs for deterministic geometry.
+  const numericEdgeIds = selection.edgeIds.filter((id) => sourceBody.edgeIds.has(id));
+  if (numericEdgeIds.length === 0) {
+    console.warn(
+      `[replayEdgeModFeature] ${feature.type} ${feature.id}: ` +
+      `none of the stored edge IDs (${selection.edgeIds.join(',')}) ` +
+      `exist on replayed source body (${sourceBody.edgeIds.size} edges available)`,
+    );
+    return false;
+  }
+
+  const occ = await getOcc();
+  let resultBody: BRepBody | null = null;
+
+  if (feature.type === 'fillet') {
+    const radius = (feature.params.radius as number | undefined) ?? 2;
+    const edgeSets: OccFilletEdgeSet[] = [{ edgeIds: numericEdgeIds, radius }];
+    resultBody = occFilletEdgeSetsWithInstance(occ.oc, sourceBody, edgeSets, {
+      sourceFeatureId: feature.id,
+    });
+  } else if (feature.type === 'chamfer') {
+    const distance = (feature.params.distance as number | undefined) ?? 1;
+    const distance2 = feature.params.distance2 as number | undefined;
+    const angle = feature.params.angle as number | undefined;
+    resultBody = occChamferWithInstance(occ.oc, sourceBody, numericEdgeIds, distance, {
+      distance2: angle === undefined && distance2 !== undefined && distance2 !== distance ? distance2 : undefined,
+      angle,
+      sourceFeatureId: feature.id,
+    });
+  }
+
+  if (!resultBody) {
+    console.warn(`[replayEdgeModFeature] ${feature.type} ${feature.id}: OCC operation returned null`);
+    return false;
+  }
+
+  const replayMesh = createRegisteredOccMesh(
+    occ.oc,
+    resultBody,
+    mesh.material as THREE.Material,
+    feature.id,
+  );
+  const ok = !!copyOccMetadata(mesh, replayMesh, feature.id);
+  replayMesh.geometry.dispose();
+  return ok;
+}
 
 export async function ensureOccBodyForFeature(
   feature: Feature,
   features: Feature[],
   sketches: Sketch[],
   visited = new Set<string>(),
-  options?: { forceAnalyticalReplay?: boolean },
 ): Promise<boolean> {
   if (visited.has(feature.id)) return false;
   visited.add(feature.id);
@@ -187,31 +285,21 @@ export async function ensureOccBodyForFeature(
   const liveBodyId = mesh.userData[BREP_BODY_ID_KEY] as string | undefined;
   const liveBody = liveBodyId ? globalBRepBodyRegistry.get(liveBodyId) : undefined;
 
-  // When forceAnalyticalReplay is requested (fillet mode), check if the live body
-  // has suspiciously many edges (polygon-approximated arcs). If so, dispose it and
-  // replay with the latest analytical builders that produce clean arc edges.
-  if (liveBody) {
-    if (
-      options?.forceAnalyticalReplay &&
-      feature.type === 'extrude' &&
-      liveBody.edgeIds.size > POLYGON_ARC_EDGE_THRESHOLD
-    ) {
-      console.log(
-        `[ensureOccBody] force-replaying ${feature.id}: edgeCount=${liveBody.edgeIds.size}` +
-        ` exceeds threshold=${POLYGON_ARC_EDGE_THRESHOLD} (likely polygon arcs)`,
-      );
-      disposeBRepBody(liveBody);
-      // Fall through to replay path below.
-    } else {
-      return true;
-    }
-  }
+  if (liveBody) return true;
 
   // Prefer replay over STEP restore for new-body extrudes: the replay path uses
   // the latest analytical arc/circle builders, producing clean OCC geometry that
   // fillets correctly. STEP restore would reproduce old polygon-approximated arcs.
   if (await replayOccNewBodyTarget(feature, sketches)) return true;
   if (await ensureFeatureOccBody(feature)) return true;
+
+  // Fillet / chamfer replay: re-apply the edge modification on top of the
+  // restored base body.  Handles the case where STEP data was not serialized
+  // (e.g. shapeToStep failure on first session) — the source extrude can be
+  // replayed from sketch data, and the fillet re-applied on top.
+  if (feature.type === 'fillet' || feature.type === 'chamfer') {
+    return replayEdgeModFeature(feature, features, sketches, visited);
+  }
 
   if (feature.type !== 'extrude') return false;
   const operation = extrudeOperation(feature);

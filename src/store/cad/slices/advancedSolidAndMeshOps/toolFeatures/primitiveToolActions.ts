@@ -2,12 +2,35 @@ import * as THREE from 'three';
 import type { Feature } from '../../../../../types/cad';
 import { GeometryEngine } from '../../../../../engine/GeometryEngine';
 import {
+  disposeUnplacedToolMesh,
   placeToolFeatureAsync,
   toolPlacementFailedMessage,
 } from '../../featureManagement/bodyBoolean';
 import type { CADSliceContext } from '../../../sliceContext';
 import type { CADState } from '../../../state';
 import { replayToolBooleanAsync } from '../toolFeatureReplay';
+import { getOccSync } from '../../../../../engine/occ/loader';
+import { globalBRepBodyRegistry } from '../../../../../engine/occ/globalRegistry';
+import { errorMessage } from '../../../../../utils/errorHandling';
+import { buildOccPipeMeshFromSketch, collectPipePathPoints } from './pipeToolGeometry';
+
+async function placeGeneratedToolFeature(
+  context: CADSliceContext,
+  feature: Feature,
+  mesh: THREE.Mesh,
+  operation: Parameters<typeof placeToolFeatureAsync>[2],
+  toolLabel: string,
+): Promise<string | null> {
+  const result = await placeToolFeatureAsync(context.get(), feature, operation);
+  if (!result.ok) {
+    disposeUnplacedToolMesh(mesh);
+    context.get().setStatusMessage(toolPlacementFailedMessage(toolLabel, result.note));
+    return null;
+  }
+  context.get().pushUndo();
+  context.set({ features: result.features, designConfigurations: result.designConfigurations });
+  return result.note;
+}
 
 export function createPrimitiveToolActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -19,21 +42,42 @@ export function createPrimitiveToolActions({ set, get }: CADSliceContext): Parti
       return;
     }
     const sketch = sketches.find((s) => s.id === pathSketchId);
-    const pathPoints: THREE.Vector3[] = [];
-    if (sketch) {
-      for (const e of sketch.entities) {
-        if (e.type === 'centerline' || e.type === 'construction-line' || e.isConstruction) continue;
-        for (const p of e.points) pathPoints.push(new THREE.Vector3(p.x, p.y, p.z));
-      }
-    }
-    const geom = await GeometryEngine.pipeGeometry(pathPoints, outerDiameter, hollow, wallThickness);
-    const mesh = new THREE.Mesh(geom);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
     const n = features.filter((f) => f.type === 'pipe').length + 1;
     const featureId = crypto.randomUUID();
+
+    // ── OCC-15.3: Try OCC sweep path first ────────────────────────────────
+    let mesh: THREE.Mesh | null = null;
+    if (sketch) {
+      const occ = getOccSync();
+      if (occ) {
+        try {
+          mesh = buildOccPipeMeshFromSketch(
+            occ,
+            sketch,
+            outerDiameter,
+            hollow,
+            wallThickness,
+            featureId,
+          );
+        } catch (err) {
+          console.warn(`[commitPipe] OCC sweep failed (${errorMessage(err, 'unknown')}), falling back to mesh`);
+          mesh = null;
+        }
+      }
+    }
+
+    // ── THREE mesh fallback ───────────────────────────────────────────────
+    if (!mesh) {
+      const pathPoints = collectPipePathPoints(sketch);
+      const geom = await GeometryEngine.pipeGeometry(pathPoints, outerDiameter, hollow, wallThickness);
+      mesh = new THREE.Mesh(geom);
+    }
+
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     mesh.userData.pickable = true;
     mesh.userData.featureId = featureId;
+
     const feature: Feature = {
       id: featureId,
       name: `Pipe ${n} (⌀${outerDiameter}mm)`,
@@ -48,7 +92,7 @@ export function createPrimitiveToolActions({ set, get }: CADSliceContext): Parti
     };
     const r = await placeToolFeatureAsync(get(), feature, operation);
     if (!r.ok) {
-      mesh.geometry.dispose();
+      disposeUnplacedToolMesh(mesh);
       get().setStatusMessage(toolPlacementFailedMessage('Pipe', r.note));
       return;
     }
@@ -85,15 +129,11 @@ export function createPrimitiveToolActions({ set, get }: CADSliceContext): Parti
       suppressed: false,
       timestamp: Date.now(),
     };
-    const r = await placeToolFeatureAsync(get(), feature, operation);
-    if (!r.ok) {
-      mesh.geometry.dispose();
-      get().setStatusMessage(toolPlacementFailedMessage('Snap Fit', r.note));
+    const note = await placeGeneratedToolFeature({ set, get }, feature, mesh, operation, 'Snap Fit');
+    if (note === null) {
       return;
     }
-    get().pushUndo();
-    set({ features: r.features, designConfigurations: r.designConfigurations });
-    get().setStatusMessage(`Snap Fit ${n} created: ${snapType}, ${length}×${width}×${thickness}mm${r.note}`);
+    get().setStatusMessage(`Snap Fit ${n} created: ${snapType}, ${length}×${width}×${thickness}mm${note}`);
   },
 
   commitLipGroove: async (params) => {
@@ -128,17 +168,13 @@ export function createPrimitiveToolActions({ set, get }: CADSliceContext): Parti
       suppressed: false,
       timestamp: Date.now(),
     };
-    const r = await placeToolFeatureAsync(get(), feature, operation);
-    if (!r.ok) {
-      mesh.geometry.dispose();
-      get().setStatusMessage(toolPlacementFailedMessage('Lip and Groove', r.note));
+    const note = await placeGeneratedToolFeature({ set, get }, feature, mesh, operation, 'Lip and Groove');
+    if (note === null) {
       return;
     }
-    get().pushUndo();
-    set({ features: r.features, designConfigurations: r.designConfigurations });
     get().setStatusMessage(
       `Lip and Groove ${n} created: lip ${lipWidth}×${lipHeight}mm`
-      + `${includeGroove ? `, groove ${grooveWidth}×${grooveDepth}mm (${clearance}mm clearance)` : ''}${r.note}`,
+      + `${includeGroove ? `, groove ${grooveWidth}×${grooveDepth}mm (${clearance}mm clearance)` : ''}${note}`,
     );
   },
 
@@ -208,13 +244,58 @@ export function createPrimitiveToolActions({ set, get }: CADSliceContext): Parti
     const existing = features.find((f) => f.id === featureId);
     if (!existing) { get().setStatusMessage('Pipe: feature not found'); return; }
     const sketch = sketches.find((s) => s.id === pathSketchId);
-    const pathPoints: THREE.Vector3[] = [];
+
+    // ── OCC-15.3: Try OCC sweep path first ────────────────────────────────
     if (sketch) {
-      for (const e of sketch.entities) {
-        if (e.type === 'centerline' || e.type === 'construction-line' || e.isConstruction) continue;
-        for (const p of e.points) pathPoints.push(new THREE.Vector3(p.x, p.y, p.z));
+      const occ = getOccSync();
+      if (occ) {
+        try {
+          const occMesh = buildOccPipeMeshFromSketch(
+            occ,
+            sketch,
+            outerDiameter,
+            hollow,
+            wallThickness,
+            featureId,
+          );
+          if (occMesh) {
+            // Capture old body id before replay so we can evict it from the registry after.
+            const oldBodyId = (existing.mesh as THREE.Mesh | undefined)?.userData?.brepBodyId as string | undefined;
+            const replayed = await replayToolBooleanAsync(features, existing, occMesh, operation);
+            if (replayed) {
+              // applyBodyBooleanAsync already removes the tool body (occMesh's id) from the
+              // registry for join/cut/intersect. We must evict the OLD pipe body ourselves.
+              if (oldBodyId) globalBRepBodyRegistry.delete(oldBodyId);
+              const { mesh, note } = replayed;
+              get().pushUndo();
+              (existing.mesh as THREE.Mesh | undefined)?.geometry?.dispose();
+              set({
+                features: get().features.map((f) =>
+                  f.id === featureId
+                    ? {
+                        ...f,
+                        mesh,
+                        name: `Pipe (⌀${outerDiameter}mm)`,
+                        sketchId: pathSketchId,
+                        params: { ...f.params, outerDiameter, hollow, wallThickness, operation, pathSketchId },
+                      }
+                    : f,
+                ),
+              });
+              get().setStatusMessage(`Pipe updated: ⌀${outerDiameter}mm${hollow ? `, ${wallThickness}mm wall` : ''}${note}`);
+              return;
+            }
+            // replay failed — clean up the intermediate OCC mesh we just created
+            disposeUnplacedToolMesh(occMesh);
+          }
+        } catch (err) {
+          console.warn(`[updatePipeGeometry] OCC sweep failed (${errorMessage(err, 'unknown')}), falling back to mesh`);
+        }
       }
     }
+
+    // ── THREE mesh fallback ───────────────────────────────────────────────
+    const pathPoints = collectPipePathPoints(sketch);
     const geom = await GeometryEngine.pipeGeometry(pathPoints, outerDiameter, hollow, wallThickness);
     const toolMesh = new THREE.Mesh(geom);
     toolMesh.castShadow = true;

@@ -4,6 +4,7 @@ import type { CADState } from '../../../state';
 
 export function createFeatureLifecycleTimelineActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
+    // OCC-15.7: derive = source-file reference annotation — no geometry change intended. Correct as-is.
     deriveFromDesign: (itemIds, sourceFileName) => {
       get().pushUndo();
       const { features } = get();
@@ -88,6 +89,7 @@ export function createFeatureLifecycleTimelineActions({ set, get }: CADSliceCont
     setRollbackIndex: (index) => set({ rollbackIndex: index }),
 
     baseFeatureActive: false,
+    // OCC-15.7: base-feature = parametric history grouping container — no geometry change intended. Correct as-is.
     openBaseFeature: (name) => {
       const { features } = get();
       const n = features.filter((f) => f.type === 'base-feature').length + 1;

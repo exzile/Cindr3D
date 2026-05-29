@@ -218,6 +218,45 @@ export default function ExtrudedBodies() {
     return sourceIds;
   }, [features]);
 
+  // When multiple fillet/chamfer features reference the same source body (sibling
+  // combination path), each one builds a combined mesh that supersedes the previous.
+  // Only the LAST committed fillet for a given source should be rendered; earlier
+  // intermediate ones must be hidden to prevent Z-fighting.
+  //
+  // Grouping is by parentFeatureId / sourceFeatureId — the same key used by
+  // edgeModificationSourceFeatureId. Within each group the highest-index feature
+  // with a mesh is the "winner"; all preceding features that also have meshes are
+  // superseded.
+  const supersededEdgeModIds = useMemo(() => {
+    const superseded = new Set<string>();
+    // Map sourceId → list of [featureId, hasCommittedMesh] in timeline order.
+    const groupedBySource = new Map<string, Array<{ id: string; hasMesh: boolean }>>();
+    for (const feature of features) {
+      if (feature.type !== 'fillet' && feature.type !== 'chamfer') continue;
+      if (!isActive(feature)) continue;
+      const sourceId = edgeModificationSourceFeatureId(feature);
+      if (!sourceId) continue;
+      const entry = { id: feature.id, hasMesh: feature.mesh != null };
+      const group = groupedBySource.get(sourceId);
+      if (group) group.push(entry); else groupedBySource.set(sourceId, [entry]);
+    }
+    for (const group of groupedBySource.values()) {
+      // Find the last group member that has a committed mesh — it is the winner.
+      let winnerIdx = -1;
+      for (let i = group.length - 1; i >= 0; i--) {
+        if (group[i].hasMesh) { winnerIdx = i; break; }
+      }
+      // If the winner is the only or first in the group, nothing to supersede.
+      if (winnerIdx <= 0) continue;
+      // All earlier members that also have meshes are superseded by the winner.
+      for (let i = 0; i < winnerIdx; i++) {
+        if (group[i].hasMesh) superseded.add(group[i].id);
+      }
+    }
+    return superseded;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [features, rollbackIndex]);
+
   function edgeModificationSourceFeatureId(feature: Feature): string | undefined {
     const explicit =
       feature.parentFeatureId ??
@@ -231,7 +270,8 @@ export default function ExtrudedBodies() {
   }
 
   const hasActiveDownstreamEdgeModification = (featureId: string): boolean =>
-    activeDownstreamEdgeModificationSourceIds.has(featureId);
+    activeDownstreamEdgeModificationSourceIds.has(featureId) ||
+    supersededEdgeModIds.has(featureId);
 
   // Keep the persistent geometry caches in sync from committed OCC meshes so
   // Prepare/export can resolve body geometry from committed OCC/stored meshes.
@@ -282,7 +322,7 @@ export default function ExtrudedBodies() {
       bodyIdGeometryCache.set(bodyId, merged);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneStoresHydrated, features, rollbackIndex, resolveBodyId]);
+  }, [sceneStoresHydrated, features, rollbackIndex, resolveBodyId, supersededEdgeModIds]);
 
   // Register stored-mesh features (fillet/chamfer/sweep/etc.) in liveBodyMeshes
   // so downstream tools and export/slicer caches can locate their geometry.
@@ -329,7 +369,7 @@ export default function ExtrudedBodies() {
     }
     return () => { stored.forEach(({ uuid }) => liveBodyMeshes.delete(uuid)); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneStoresHydrated, features, rollbackIndex]);
+  }, [sceneStoresHydrated, features, rollbackIndex, supersededEdgeModIds]);
 
   // Apply dim / appearance materials on pre-built stored meshes in an effect,
   // never in render, so cleanup is guaranteed when Edit In Place exits.
@@ -346,7 +386,7 @@ export default function ExtrudedBodies() {
       mesh.material = getMaterial(feature.componentId, bodyId, isSurface);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sceneStoresHydrated, features, editingInPlace, activeComponentId, rollbackIndex, bodiesById, getMaterial, resolveBodyId]);
+  }, [sceneStoresHydrated, features, editingInPlace, activeComponentId, rollbackIndex, bodiesById, getMaterial, resolveBodyId, supersededEdgeModIds]);
 
   // Memoised filtered lists — avoid re-allocating on every render when only unrelated
   // state changes (e.g. visibility toggles, status messages that bump features ref).
@@ -355,7 +395,7 @@ export default function ExtrudedBodies() {
   const storedMeshFeaturesFiltered = useMemo(
     () => features.filter((f) => isActive(f) && f.mesh && !hasActiveDownstreamEdgeModification(f.id)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [features, rollbackIndex],
+    [features, rollbackIndex, supersededEdgeModIds],
   );
 
   if (!sceneStoresHydrated) return null;

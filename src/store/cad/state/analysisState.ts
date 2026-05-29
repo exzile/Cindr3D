@@ -292,6 +292,9 @@ export interface CADAnalysisState {
   // ── SLD16 — Remove Face ──────────────────────────────────────────────────
   commitRemoveFace(featureId: string, faceNormal: THREE.Vector3, faceCentroid: THREE.Vector3): void;
 
+  // ── OCC-15.1 — Hole (real OCC BRep cut) ─────────────────────────────────
+  commitHole(featureId: string, params: Record<string, unknown>): void;
+
   // ── SLD3 — Emboss ────────────────────────────────────────────────────────
   commitEmboss(sketchId: string, depth: number, style: 'emboss' | 'deboss'): void;
 

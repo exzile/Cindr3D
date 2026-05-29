@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useCADStore } from "../../../../store/cadStore";
-import type { FilletEdgeSet, FilletMode, FilletParams, RuleFilletType } from "./types";
+import type { FilletEdgeSet, FilletMidRadius, FilletMode, FilletParams, RuleFilletTopology, RuleFilletType } from "./types";
 
 export function useFilletDialogState(
   onConfirm: (params: FilletParams) => void,
@@ -55,8 +55,14 @@ export function useFilletDialogState(
     () => (initialParams?.edgeSets as FilletEdgeSet[] | undefined) ?? [],
   );
   const [showEdgeSets, setShowEdgeSets] = useState(false);
+  const [midRadii, setMidRadii] = useState<FilletMidRadius[]>(
+    () => (initialParams?.midRadii as FilletMidRadius[] | undefined) ?? [],
+  );
   const [ruleType, setRuleType] = useState<RuleFilletType>(
     () => (initialParams?.ruleType as RuleFilletType | undefined) ?? 'all-edges',
+  );
+  const [ruleFilletTopology, setRuleFilletTopology] = useState<RuleFilletTopology>(
+    () => (initialParams?.ruleFilletTopology as RuleFilletTopology | undefined) ?? 'all',
   );
 
   useEffect(() => {
@@ -74,6 +80,16 @@ export function useFilletDialogState(
     setRadius(value);
     setFilletLiveRadius(value);
   };
+
+  const addMidRadius = () =>
+    setMidRadii((prev) => [
+      ...prev,
+      { position: parseFloat(((prev.length + 1) / (prev.length + 2)).toFixed(2)), radius: (startRadius + endRadius) / 2 },
+    ]);
+  const removeMidRadius = (i: number) =>
+    setMidRadii((prev) => prev.filter((_, idx) => idx !== i));
+  const updateMidRadius = (i: number, patch: Partial<FilletMidRadius>) =>
+    setMidRadii((prev) => prev.map((pt, idx) => (idx === i ? { ...pt, ...patch } : pt)));
 
   const addEdgeSet = () => {
     setEdgeSets((prev) => [
@@ -106,6 +122,7 @@ export function useFilletDialogState(
     if (mode === "variable") {
       params.startRadius = startRadius;
       params.endRadius = endRadius;
+      if (midRadii.length > 0) params.midRadii = midRadii;
     }
     if (mode === "chord-length") params.chordLength = chordLength;
     if (mode === "asymmetric") {
@@ -115,6 +132,7 @@ export function useFilletDialogState(
     }
     if (mode === "rule-fillet") {
       params.ruleType = ruleType;
+      if (ruleFilletTopology !== 'all') params.ruleFilletTopology = ruleFilletTopology;
     }
     if (edgeSets.length > 0) params.edgeSets = edgeSets;
     return params;
@@ -125,11 +143,13 @@ export function useFilletDialogState(
     isFlipped,
     isG2,
     isRollingBallCorner,
+    midRadii,
     mode,
     offsetOne,
     offsetTwo,
     propagate,
     radius,
+    ruleFilletTopology,
     ruleType,
     setback,
     setbackDistance,
@@ -177,8 +197,14 @@ export function useFilletDialogState(
     addEdgeSet,
     removeEdgeSet,
     updateEdgeSet,
+    midRadii,
+    addMidRadius,
+    removeMidRadius,
+    updateMidRadius,
     ruleType,
     setRuleType,
+    ruleFilletTopology,
+    setRuleFilletTopology,
     handleConfirm,
   };
 }

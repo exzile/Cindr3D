@@ -81,9 +81,9 @@ export function ThreadDialog({ onClose }: { onClose: () => void }) {
         timestamp: Date.now(),
       };
       addFeature(feature);
-      if (threadType === 'cosmetic') {
-        commitThread(feature.id, diameter / 2, pitch, fullLength ? length : length);
-      }
+      // OCC-15.5: always call commitThread — it handles both cosmetic and modeled.
+      // For modeled threads it attempts an OCC helical sweep BRep; falls back to cosmetic LINE.
+      commitThread(feature.id, diameter / 2, pitch, fullLength ? length : length);
       setStatusMessage(`Created ${threadType} thread: ${designation}`);
     }
     onClose();

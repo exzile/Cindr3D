@@ -1,7 +1,8 @@
 /**
  * OCC-5.2 — Exact chamfer via BRepFilletAPI_MakeChamfer.
  * Equal-distance chamfer uses Add_2(distance, edge);
- * two-distance (and the converted distance+angle) uses Add_3(d1, d2, edge, refFace).
+ * two-distance uses Add_3(d1, d2, edge, refFace);
+ * distance+angle uses AddDA(distance, angleRad, edge, refFace) — OCC-14.6.
  *
  * OCC-13.5/13.7 — brought up to occFilletEdgeSetsWithInstance's robustness baseline:
  *   - seam/boundary-edge guard (countAdjacentFacesForEdge < 2 → skip), so a chamfer
@@ -22,6 +23,8 @@ type OccChamferApi = OcctRaw & {
   BRepFilletAPI_MakeChamfer: new (shape: unknown) => {
     Add_2(distance: number, edge: unknown): void;
     Add_3(distance1: number, distance2: number, edge: unknown, face: unknown): void;
+    /** OCC-14.6: exact distance+angle chamfer (confirmed bound in WASM build). */
+    AddDA(distance: number, angle: number, edge: unknown, face: unknown): void;
     Build(progress?: unknown): void;
     IsDone(): boolean;
     Shape(): unknown;
@@ -39,8 +42,15 @@ type OccChamferApi = OcctRaw & {
 export interface OccChamferOptions {
   id?: string;
   sourceFeatureId?: string;
-  /** Second distance for two-distance / distance-and-angle chamfer. Omit for equal-distance. */
+  /** Second distance for TwoDistances chamfer (Add_3). Omit for equal-distance. */
   distance2?: number;
+  /**
+   * OCC-14.6: angle in degrees for DistanceAndAngle chamfer. When set, the exact
+   * AddDA(distance, angleRad, edge, refFace) binding is used instead of the
+   * tan-conversion approximation. Takes priority over distance2 when both are set.
+   * Clamped to [1°, 89°].
+   */
+  angle?: number;
 }
 
 export async function occChamfer(
@@ -112,13 +122,26 @@ export function occChamferWithInstance(
       }
 
       try {
-        if (options.distance2 !== undefined) {
-          // Two-distance / distance+angle: need a reference face adjacent to the edge.
+        if (options.angle !== undefined) {
+          // OCC-14.6: exact DistanceAndAngle via AddDA (confirmed bound in WASM build).
+          // NOTE: rawFace is an occDeref wrapPointer VIEW — do NOT delete.
+          const refFaceHandle = findAdjacentFace(oc, body, rawShape, rawEdge as { ptr: number; delete(): void });
+          if (refFaceHandle) {
+            const rawFace = occDeref(oc, refFaceHandle, oc.TopoDS_Face);
+            const clampedDeg = Math.max(1, Math.min(89, options.angle));
+            const angleRad = (clampedDeg * Math.PI) / 180;
+            mk.AddDA(distance, angleRad, rawEdge, rawFace);
+          } else {
+            // No reference face found — degrade to equal-distance.
+            mk.Add_2(distance, rawEdge);
+          }
+        } else if (options.distance2 !== undefined) {
+          // TwoDistances: need a reference face adjacent to the edge.
+          // NOTE: rawFace is an occDeref wrapPointer VIEW — do NOT delete.
           const refFaceHandle = findAdjacentFace(oc, body, rawShape, rawEdge as { ptr: number; delete(): void });
           if (refFaceHandle) {
             const rawFace = occDeref(oc, refFaceHandle, oc.TopoDS_Face);
             mk.Add_3(distance, options.distance2, rawEdge, rawFace);
-            // NOTE: rawFace is an occDeref wrapPointer VIEW — do NOT delete.
           } else {
             mk.Add_2(distance, rawEdge);
           }

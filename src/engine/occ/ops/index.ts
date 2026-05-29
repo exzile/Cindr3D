@@ -5,6 +5,7 @@ export * from './cylinder';
 export * from './draft';
 export * from './extrude';
 export * from './fillet';
+export * from './helix';
 export * from './intersect';
 export * from './loft';
 export * from './mirror';

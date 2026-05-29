@@ -13,9 +13,12 @@ export function createFaceFeatureDialogActions({ set, get }: CADSliceContext): P
     }),
     setReplaceFaceSource: (id) => set({ replaceFaceSourceId: id }),
     setReplaceFaceTarget: (id) => set({ replaceFaceTargetId: id }),
+    // @stub OCC-15.7: replace-face records params but produces NO geometry.
+    // TODO: implement via BRepBuilderAPI face-swap (OCC imprint + sew).
     commitReplaceFace: () => {
       const { replaceFaceSourceId, replaceFaceTargetId, features, setActiveDialog } = get();
       if (!replaceFaceSourceId || !replaceFaceTargetId) return;
+      console.warn('[Replace Face] geometry stub — no OCC face-swap performed yet');
       const n = features.filter((f) => f.type === 'replace-face').length + 1;
       const feature: Feature = {
         id: crypto.randomUUID(),
@@ -37,8 +40,11 @@ export function createFaceFeatureDialogActions({ set, get }: CADSliceContext): P
       directEditFaceId: null,
     }),
     setDirectEditFace: (id) => set({ directEditFaceId: id }),
+    // @stub OCC-15.7: direct-edit records params but produces NO geometry.
+    // TODO: implement via OCC offset/move face (BRepBuilderAPI_Transform or BRepOffsetAPI).
     commitDirectEdit: (params) => {
       const { directEditFaceId, features, setActiveDialog } = get();
+      console.warn('[Direct Edit] geometry stub — no OCC face move/offset performed yet');
       get().pushUndo();
       const n = features.filter((f) => f.type === 'direct-edit').length + 1;
       const feature: Feature = {
@@ -61,8 +67,11 @@ export function createFaceFeatureDialogActions({ set, get }: CADSliceContext): P
       textureExtrudeFaceId: null,
     }),
     setTextureExtrudeFace: (id) => set({ textureExtrudeFaceId: id }),
+    // @stub OCC-15.7: texture-extrude records params but produces NO geometry.
+    // TODO: implement as repeating-pattern boolean extrude (complex; low priority).
     commitTextureExtrude: (params) => {
       const { textureExtrudeFaceId, features, setActiveDialog } = get();
+      console.warn('[Texture Extrude] geometry stub — no OCC pattern extrude performed yet');
       const n = features.filter((f) => f.type === 'texture-extrude').length + 1;
       const feature: Feature = {
         id: crypto.randomUUID(),
@@ -98,6 +107,7 @@ export function createFaceFeatureDialogActions({ set, get }: CADSliceContext): P
       decalFaceNormal: null,
       decalFaceCentroid: null,
     }),
+    // OCC-15.7: decal = visual annotation only — no geometry change intended. Correct as-is.
     commitDecal: (params) => {
       const { decalFaceId, decalFaceNormal, decalFaceCentroid, features, setActiveDialog } = get();
       const targetFeatureId = params.faceId ?? decalFaceId ?? '';
@@ -149,6 +159,8 @@ export function createFaceFeatureDialogActions({ set, get }: CADSliceContext): P
     }),
     setSplitFace: (id) => set({ splitFaceId: id }),
     closeSplitFaceDialog: () => set({ activeDialog: null, splitFaceId: null }),
+    // @stub OCC-15.7 / OCC-15.4: split-face records params but produces NO geometry.
+    // TODO: implement via OCC imprint/BRepFeat (overlaps OCC-15.4 split-body work).
     commitSplitFace: (params) => {
       const { splitFaceId, features, setActiveDialog } = get();
       const n = features.filter((f) => f.type === 'split-face').length + 1;

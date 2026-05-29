@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
-import { mergeActiveSketchForPersistence } from '../store/cad/persistConfig';
+import { createCADPersistConfig, mergeActiveSketchForPersistence } from '../store/cad/persistConfig';
 import type { Sketch } from '../types/cad';
 
 const sketch = (id: string, entityCount = 0): Sketch => ({
@@ -44,5 +44,50 @@ describe('CAD persistence config', () => {
     const saved = [sketch('sketch-a', 1)];
 
     expect(mergeActiveSketchForPersistence(saved, null)).toBe(saved);
+  });
+
+  it('persists design metadata arrays used by construction and assembly tools', () => {
+    const partialize = createCADPersistConfig().partialize!;
+    const state = {
+      gridSize: 1,
+      snapEnabled: true,
+      gridVisible: true,
+      sketchPolygonSides: 6,
+      sketchFilletRadius: 2,
+      units: 'mm',
+      visualStyle: 'shaded',
+      showEnvironment: true,
+      showShadows: true,
+      showGroundPlane: true,
+      showComponentColors: false,
+      viewportLayout: 'single',
+      ambientOcclusionEnabled: false,
+      dimensionToleranceMode: 'none',
+      dimensionToleranceUpper: 0,
+      dimensionToleranceLower: 0,
+      activeSketch: null,
+      sketches: [],
+      features: [],
+      designConfigurations: [],
+      activeDesignConfigurationId: 'default',
+      parameters: [],
+      constructionPlanes: [{ id: 'plane-1', name: 'Plane 1', origin: [0, 0, 0], normal: [0, 0, 1], size: 100 }],
+      constructionAxes: [{ id: 'axis-1', name: 'Axis 1', origin: [0, 0, 0], direction: [1, 0, 0], length: 100 }],
+      constructionPoints: [{ id: 'point-1', name: 'Point 1', position: [1, 2, 3] }],
+      contactSets: [{ id: 'contact-1', name: 'Contact 1', component1Id: 'a', component2Id: 'b', enabled: true }],
+      selectionSets: [{ id: 'selection-1', name: 'Selection 1', bodyIds: ['body-1'] }],
+      frozenFormVertices: [],
+      featureGroups: [],
+      canvasReferences: [],
+      jointOrigins: [],
+      formBodies: [],
+    } as unknown as Parameters<typeof partialize>[0];
+    const persisted = partialize(state) as Record<string, unknown>;
+
+    expect(persisted.constructionPlanes).toHaveLength(1);
+    expect(persisted.constructionAxes).toHaveLength(1);
+    expect(persisted.constructionPoints).toHaveLength(1);
+    expect(persisted.contactSets).toHaveLength(1);
+    expect(persisted.selectionSets).toHaveLength(1);
   });
 });

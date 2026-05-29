@@ -2,6 +2,9 @@ export type FilletMode = 'constant' | 'variable' | 'full-round' | 'chord-length'
 
 export type RuleFilletType = 'all-edges' | 'between-faces';
 
+/** Fusion 360 RuleFilletTopologyTypes — which convexity class to fillet. */
+export type RuleFilletTopology = 'all' | 'convex' | 'concave';
+
 export interface FilletEdgeSet {
   edgeIds: string[];
   type: 'constant' | 'variable' | 'chord-length' | 'asymmetric';
@@ -14,12 +17,24 @@ export interface FilletEdgeSet {
   radiiPoints?: { t: number; r: number }[];
 }
 
+export interface FilletMidRadius {
+  /** Edge parameter u ∈ (0, 1) — 0 = start, 1 = end. */
+  position: number;
+  /** Fillet radius at this control point (mm). */
+  radius: number;
+}
+
 export interface FilletParams {
   radius: number;
   edgeIds: string[];
   mode: FilletMode;
   startRadius?: number;
   endRadius?: number;
+  /**
+   * OCC-14.3: interior mid-point radius controls for variable mode.
+   * Uses Add_5(TColgp_Array1OfPnt2d, edge) when present. Positions must be in (0,1).
+   */
+  midRadii?: FilletMidRadius[];
   chordLength?: number;
   offsetOne?: number;
   offsetTwo?: number;
@@ -45,5 +60,7 @@ export interface FilletParams {
   ruleType?: RuleFilletType;
   /** AllEdges mode: array of body-face IDs whose edges should be filleted. */
   ruleFaceIds?: number[];
+  /** Fusion RuleFilletTopologyTypes: 'all' (default), 'convex' (rounds only), 'concave' (fillets only). */
+  ruleFilletTopology?: RuleFilletTopology;
 }
 
