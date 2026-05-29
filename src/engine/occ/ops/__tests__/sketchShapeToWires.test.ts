@@ -15,10 +15,10 @@ function makeFakeOcc() {
     gp_Dir_4: class { constructor() {} delete() {} },
     gp_Ax2_3: class { constructor() {} delete() {} },
     gp_Circ_2: class { constructor() {} delete() {} },
-    GC_MakeArcOfCircle_4: class { IsDone() { return true; } Value() { return {}; } delete() {} },
     BRepBuilderAPI_MakeEdge_3: class { IsDone() { return true; } Edge() { calls.line++; return edge('line'); } delete() {} },
     BRepBuilderAPI_MakeEdge_8: class { IsDone() { return true; } Edge() { calls.circle++; return edge('circle'); } delete() {} },
-    BRepBuilderAPI_MakeEdge_24: class { IsDone() { return true; } Edge() { calls.arc++; return edge('arc'); } delete() {} },
+    // Arc edge: gp_Circ + two endpoints (MakeEdge_24 throws on arc handles in the real build).
+    BRepBuilderAPI_MakeEdge_10: class { IsDone() { return true; } Edge() { calls.arc++; return edge('arc'); } delete() {} },
     BRepBuilderAPI_MakePolygon_1: class { Add_1() {} Close() {} IsDone() { return true; } Wire() { calls.polygon++; return { delete() {} }; } delete() {} },
     BRepBuilderAPI_MakeWire_1: class {
       private done = true;
@@ -68,7 +68,25 @@ describe('sketchShapeToWires (OCC-15 analytic profile)', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const wires = sketchShapeToWires(oc as any, shape, FRAME);
     expect(wires).not.toBeNull();
-    expect(calls.arc).toBeGreaterThanOrEqual(1); // partial arc → GC_MakeArcOfCircle
+    expect(calls.arc).toBeGreaterThanOrEqual(1); // partial arc → analytic arc edge
+  });
+
+  it('refits arcs from a FACETED point-loop (all-LineCurve) profile', () => {
+    // Mimics the region path: sample an analytic half-disc to points, then rebuild
+    // a Shape FROM THE POINTS so every curve is a LineCurve (arc data lost).
+    const analytic = new THREE.Shape();
+    analytic.moveTo(10, 0);
+    analytic.absarc(0, 0, 10, 0, Math.PI, false);
+    analytic.lineTo(10, 0);
+    const faceted = new THREE.Shape(analytic.getPoints(64).map((p) => new THREE.Vector2(p.x, p.y)));
+    expect(faceted.curves.every((c) => c.type === 'LineCurve')).toBe(true); // truly faceted input
+
+    const { oc, calls } = makeFakeOcc();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const wires = sketchShapeToWires(oc as any, faceted, FRAME);
+    expect(wires).not.toBeNull();
+    expect(calls.arc).toBeGreaterThanOrEqual(1);  // the sampled arc run is recovered as an arc edge
+    expect(calls.line).toBeLessThan(10);          // NOT ~64 facet line edges
   });
 
   it('returns null (fall back to faceted path) when the profile contains a spline', () => {
