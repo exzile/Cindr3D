@@ -20,18 +20,50 @@ import { buildTangentEdgeLineGeometry } from './edgeOp/edgeOpEdgeGeometry';
  * picker (OccEdgePicker) ignores it entirely — purely visual.
  */
 
-// Subtle mid-grey that reads as a reference line on the dark body without
-// competing with the darker sharp-edge silhouette. Occluded by geometry
-// (depthTest on) but does not write depth, so it never haloes other overlays.
+// Dark, semi-transparent line that reads as a subtle reference on the default
+// warm body material (0xf2a23a) — a light grey washed out against it. Occluded by
+// geometry (depthTest on) but does not write depth, so it never haloes other
+// overlays. Slightly transparent so it reads as a reference, not a hard edge.
 const TANGENT_EDGE_MAT = new THREE.LineBasicMaterial({
-  color: 0x9a9a9a,
+  color: 0x2a2a2a,
   transparent: true,
-  opacity: 0.55,
+  opacity: 0.6,
   depthTest: true,
   depthWrite: false,
 });
 
 const TANGENT_EDGE_RENDER_ORDER = 2;
+const TANGENT_EDGE_RETRY_MS = 150;
+const TANGENT_EDGE_MAX_ATTEMPTS = 60; // ~9s: cold OCC WASM load + STEP restore.
+
+function createTangentLineSegments(mesh: THREE.Mesh, bodyId: string | undefined): THREE.LineSegments | null {
+  const occ = getOccSync();
+  const body = bodyId ? globalBRepBodyRegistry.get(bodyId) : undefined;
+  const tess = getMeshTessellation(mesh);
+  if (!occ || !body || !tess) return null;
+
+  let meta;
+  try {
+    meta = getSelectableEdges(occ.oc, body);
+  } catch {
+    return null;
+  }
+  let geometry: THREE.BufferGeometry | null = null;
+  try {
+    geometry = buildTangentEdgeLineGeometry(tess, meta);
+  } catch {
+    return null;
+  }
+  if (!geometry) return null;
+
+  const lines = new THREE.LineSegments(geometry, TANGENT_EDGE_MAT);
+  lines.renderOrder = TANGENT_EDGE_RENDER_ORDER;
+  // Mark explicitly NON-pickable: no edgeIdsBySegment / occDirect, and skip
+  // raycast so it never intercepts hover/click even via generic raycasters.
+  lines.userData.tangentReference = true;
+  lines.raycast = () => { /* visual-only — not raycastable */ };
+  return lines;
+}
 
 export interface TangentEdgeLinesProps {
   mesh: THREE.Mesh;
@@ -50,31 +82,32 @@ export default function TangentEdgeLines({ mesh, bodyId }: TangentEdgeLinesProps
   // the mesh — NOT the feature-level bodyId. Prefer the mesh's stamped id.
   const resolvedBodyId = (mesh.userData[BREP_BODY_ID_KEY] as string | undefined) ?? bodyId;
   useEffect(() => {
-    const occ = getOccSync();
-    const body = resolvedBodyId ? globalBRepBodyRegistry.get(resolvedBodyId) : undefined;
-    const tess = getMeshTessellation(mesh);
-    if (!occ || !body || !tess) return;
+    let lines: THREE.LineSegments | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+    let cancelled = false;
 
-    let meta;
-    try {
-      meta = getSelectableEdges(occ.oc, body);
-    } catch {
-      return;
-    }
-    const geometry = buildTangentEdgeLineGeometry(tess, meta);
-    if (!geometry) return;
-
-    const lines = new THREE.LineSegments(geometry, TANGENT_EDGE_MAT);
-    lines.renderOrder = TANGENT_EDGE_RENDER_ORDER;
-    // Mark explicitly NON-pickable: no edgeIdsBySegment / occDirect, and skip
-    // raycast so it never intercepts hover/click even via generic raycasters.
-    lines.userData.tangentReference = true;
-    lines.raycast = () => { /* visual-only — not raycastable */ };
-    mesh.add(lines);
+    // On a cold page reload the OCC WASM and the restored body/tessellation become
+    // available AFTER this component mounts, and the effect deps do not change
+    // when those async resources appear. Poll until OCC + body + tessellation are ready,
+    // then build once. Bail after MAX_ATTEMPTS so a genuinely body-less mesh never
+    // polls forever.
+    const tryBuild = () => {
+      if (cancelled || lines) return; // already built or unmounted
+      lines = createTangentLineSegments(mesh, resolvedBodyId);
+      if (!lines) {
+        if (attempts++ < TANGENT_EDGE_MAX_ATTEMPTS) timer = setTimeout(tryBuild, TANGENT_EDGE_RETRY_MS);
+        return;
+      }
+      mesh.add(lines);
+    };
+    tryBuild();
 
     return () => {
-      mesh.remove(lines);
-      geometry.dispose();
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      if (lines) mesh.remove(lines);
+      lines?.geometry.dispose();
     };
   }, [mesh, resolvedBodyId]);
 
