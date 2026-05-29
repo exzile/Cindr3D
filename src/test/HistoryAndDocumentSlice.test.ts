@@ -163,4 +163,52 @@ describe('history and document undo/redo', () => {
     expect(restored?.planeOrigin?.toArray()).toEqual([10, 20, 30]);
     expect(restored?.definition).toEqual(construction.definition);
   });
+
+  it('restores design and component metadata through undo', async () => {
+    const [{ useCADStore }, { useComponentStore }] = await Promise.all([
+      import('../store/cadStore'),
+      import('../store/componentStore'),
+    ]);
+    const rootComponentId = useComponentStore.getState().rootComponentId;
+    const construction: ConstructionGeometry = {
+      id: 'undo-construction-plane',
+      name: 'Undo Plane',
+      type: 'plane',
+      componentId: rootComponentId,
+      visible: true,
+      planeNormal: new THREE.Vector3(0, 1, 0),
+      planeOrigin: new THREE.Vector3(4, 5, 6),
+      definition: { method: 'offset-plane', referencePlane: 'XZ', distance: 5 },
+    };
+
+    useCADStore.setState({
+      constructionPlanes: [{ id: 'plane-a', name: 'Plane A', origin: [0, 0, 0], normal: [0, 0, 1], size: 25 }],
+      constructionAxes: [{ id: 'axis-a', name: 'Axis A', origin: [0, 0, 0], direction: [1, 0, 0], length: 25 }],
+      constructionPoints: [{ id: 'point-a', name: 'Point A', position: [1, 2, 3] }],
+      contactSets: [{ id: 'contact-a', name: 'Contact A', component1Id: 'c1', component2Id: 'c2', enabled: true }],
+      selectionSets: [{ id: 'selection-a', name: 'Selection A', bodyIds: ['body-a'] }],
+    });
+    useComponentStore.setState({ constructions: { [construction.id]: construction } });
+    useCADStore.getState().pushUndo();
+
+    useCADStore.setState({
+      constructionPlanes: [],
+      constructionAxes: [],
+      constructionPoints: [],
+      contactSets: [],
+      selectionSets: [],
+    });
+    useComponentStore.setState({ constructions: {} });
+
+    useCADStore.getState().undo();
+
+    expect(useCADStore.getState().constructionPlanes).toHaveLength(1);
+    expect(useCADStore.getState().constructionAxes).toHaveLength(1);
+    expect(useCADStore.getState().constructionPoints).toHaveLength(1);
+    expect(useCADStore.getState().contactSets).toHaveLength(1);
+    expect(useCADStore.getState().selectionSets).toHaveLength(1);
+    const restoredConstruction = useComponentStore.getState().constructions[construction.id];
+    expect(restoredConstruction?.planeNormal).toBeInstanceOf(THREE.Vector3);
+    expect(restoredConstruction?.planeOrigin?.toArray()).toEqual([4, 5, 6]);
+  });
 });
