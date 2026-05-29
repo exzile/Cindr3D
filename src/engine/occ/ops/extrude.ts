@@ -9,6 +9,7 @@ import { makeBRepBodyFromOccShape, type BRepBody } from '../brepBody';
 import { getOcc } from '../loader';
 import type { OccPlaneFrame } from '../plane';
 import { type SketchProfile, sketchProfileToWires, sketchShapeToWires, takeOccOwnedResources, wireToFace } from './sketchToWire';
+import { isOccShapeValid } from './shapeValidity';
 
 type OccExtrudeApi = OcctRaw & {
   BRepBuilderAPI_Transform_2: new (shape: unknown, trsf: unknown, copy: boolean) => { Shape(): unknown; delete(): void };
@@ -92,32 +93,54 @@ export function occExtrudeShapeWithInstance(
   frame: OccPlaneFrame,
   options: OccExtrudeOptions = {},
 ): OccExtrudedShape {
+  // Build the prism from a set of (outer + hole) wires.
+  const buildFrom = (wires: { outerWire: unknown; holeWires: unknown[] }): OccExtrudedShape => {
+    const face = wireToFace(oc, wires.outerWire, wires.holeWires, frame);
+    // takeOccOwnedResources already transfers polygonMaker (which owns outerWire) and
+    // holeWire polygonMakers into profileResources. Do NOT push outerWire/holeWires
+    // themselves -- they are wrapPointer VIEWs of their respective polygonMaker's
+    // internal Wire(). Pushing them alongside their owning builders causes a
+    // double-destroy (polygonMaker.delete() + wire.delete() -> same C++ memory freed twice).
+    const profileResources = face ? takeOccOwnedResources(face) : [];
+    if (!face) throw new Error('[occExtrude] failed to build face from wires');
+    return occExtrudeFaceShapeWithInstance(oc, face, distance, frame, options, profileResources);
+  };
+
   // OCC-15: prefer the analytic wire (true arc/circle edges) when the original
-  // THREE.Shape is available and contains only buildable curve types; otherwise
-  // fall back to the faceted point-loop polygon path.
-  let wires: { outerWire: unknown; holeWires: unknown[] } | null = null;
+  // THREE.Shape is available. BUT a noisy region profile can refit into mismatched
+  // sub-arcs that build a topologically INVALID solid (displays fine, but fillets
+  // and other ops fail). So validate the analytic solid with BRepCheck and fall back
+  // to the proven faceted polygon path when it isn't a valid solid.
   if (options.profileShape) {
+    let analyticWires: { outerWire: unknown; holeWires: unknown[] } | null = null;
     try {
-      wires = sketchShapeToWires(oc, options.profileShape, frame);
+      analyticWires = sketchShapeToWires(oc, options.profileShape, frame);
     } catch (e) {
       console.warn('[occExtrude] analytic shape wire build threw; using faceted fallback:', e);
-      wires = null;
+      analyticWires = null;
+    }
+    if (analyticWires) {
+      let analytic: OccExtrudedShape | null = null;
+      try {
+        analytic = buildFrom(analyticWires);
+      } catch (e) {
+        console.warn('[occExtrude] analytic build threw; using faceted fallback:', e);
+        analytic = null;
+        for (const w of [analyticWires.outerWire, ...analyticWires.holeWires]) {
+          for (const r of takeOccOwnedResources(w)) { try { r.delete?.(); } catch { /* ignore */ } }
+        }
+      }
+      if (analytic) {
+        if (isOccShapeValid(oc, analytic.shape)) return analytic;
+        console.warn('[occExtrude] analytic profile produced an invalid solid; falling back to faceted');
+        analytic.dispose();
+      }
     }
   }
-  if (!wires) wires = sketchProfileToWires(oc, profile, frame);
-  if (!wires) throw new Error('[occExtrude] failed to build wires from profile');
 
-  const face = wireToFace(oc, wires.outerWire, wires.holeWires, frame);
-  // takeOccOwnedResources already transfers polygonMaker (which owns outerWire) and
-  // holeWire polygonMakers into profileResources. Do NOT push outerWire/holeWires
-  // themselves -- they are wrapPointer VIEWs of their respective polygonMaker's
-  // internal Wire(). Pushing them alongside their owning builders causes a
-  // double-destroy (polygonMaker.delete() + wire.delete() -> same C++ memory freed twice).
-  const profileResources = face ? takeOccOwnedResources(face) : [];
-
-  if (!face) throw new Error('[occExtrude] failed to build face from wires');
-
-  return occExtrudeFaceShapeWithInstance(oc, face, distance, frame, options, profileResources);
+  const faceted = sketchProfileToWires(oc, profile, frame);
+  if (!faceted) throw new Error('[occExtrude] failed to build wires from profile');
+  return buildFrom(faceted);
 }
 
 export function occExtrudeFaceShapeWithInstance(

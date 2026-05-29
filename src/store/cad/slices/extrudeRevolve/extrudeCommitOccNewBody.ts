@@ -127,6 +127,16 @@ export async function buildOccNewBodyExtrudeMesh({
       : (GeometryEngine.sketchToShape(sourceSketch) ?? shapes[0]);
     if (!firstShape) return { needsStoredMesh: false, occFailureMessage: null };
 
+    // OCC-15: prefer the ANALYTIC whole-sketch shape as the profile source when the
+    // sketch is a single region (then it equals the selected profile). A selected
+    // region's shape comes from Clipper2 POINTS, whose noisy vertices refit into
+    // mismatched sub-arcs and build an INVALID solid; sketchToShape keeps the original
+    // ArcCurve/EllipseCurve so a notch becomes one clean arc. Multi-region sketches
+    // keep the per-region shape (occExtrude validates and falls back to faceted).
+    const analyticWholeShape = GeometryEngine.sketchToShape(sourceSketch);
+    const profileShapeForExtrude =
+      analyticWholeShape && shapes.length <= 1 ? analyticWholeShape : firstShape;
+
     const sketchProfile = makeSketchProfileFromShape(firstShape);
     const frame = createOffsetOccFrame(sketchForOp, extrudeStartType, extrudeStartOffset);
     const { occDistance, occSymmetric, occTwoSideDist } = resolveOccExtrudeDistance(
@@ -139,8 +149,9 @@ export async function buildOccNewBodyExtrudeMesh({
       id: featureId,
       sourceFeatureId: featureId,
       // OCC-15: build analytic arc/circle edges from the THREE.Shape when buildable;
-      // occExtrude falls back to the faceted polygon path for unsupported curves.
-      profileShape: firstShape,
+      // occExtrude validates the result and falls back to the faceted polygon path
+      // if the analytic solid is invalid or a curve type isn't supported.
+      profileShape: profileShapeForExtrude,
       symmetric: occSymmetric,
       twoSideDist: occTwoSideDist,
       taperAngle: Math.abs(extrudeTaperAngle) > 0.001 ? extrudeTaperAngle : undefined,

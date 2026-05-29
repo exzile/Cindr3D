@@ -487,6 +487,13 @@ function buildAnalyticWire(oc: OcctRaw, curves: ThreeCurve[], frame: SketchPlane
   } else {
     const ordered = reverse ? [...curves].reverse() : curves;
     for (const curve of ordered) {
+      // THREE's absarc/absellipse can insert a near-zero-length LineCurve to connect
+      // currentPoint to the arc start (floating-point: arc start ≈ but ≠ currentPoint).
+      // Skip those degenerate lines rather than failing the whole analytic build.
+      if (curve.type === 'LineCurve') {
+        const v1 = curve.v1 as THREE.Vector2, v2 = curve.v2 as THREE.Vector2;
+        if (v1.distanceTo(v2) < SEG_MIN_LEN) continue;
+      }
       const edge = curveToAnalyticEdge(oc, curve, frame, reverse);
       if (!edge) { cleanup(); return null; } // unsupported → fall back
       edges.push(edge);
