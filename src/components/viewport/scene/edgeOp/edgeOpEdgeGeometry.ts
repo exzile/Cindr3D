@@ -236,6 +236,44 @@ export function buildBatchedEdgeLineGeometry(
   return { geometry, edgeIdsBySegment };
 }
 
+/**
+ * Build line geometry for TANGENT (smooth) edges — the fillet / round / chamfer
+ * surface boundaries where two faces meet at a shallow (G1-continuous) dihedral.
+ * These are the reference lines Fusion 360 draws around fillets. They are
+ * deliberately returned WITHOUT an edgeIdsBySegment map and rendered on a plain
+ * LineSegments with no pick userData, so the edge picker never selects them — they
+ * are purely a visual reference.
+ *
+ * Selection is the complement of the sharp-edge guide: `filletable === true`
+ * (excludes seams / open boundaries) AND `sharpEdge === false` (the sharp edges
+ * are already drawn by the silhouette/outline pass). Curved tangent edges (the arc
+ * around a rounded corner) are intentionally kept. Returns null when there are none.
+ */
+export function buildTangentEdgeLineGeometry(
+  tess: BRepTessellation,
+  meta: Map<number, SelectableEdgeMeta>,
+): THREE.BufferGeometry | null {
+  const positions: number[] = [];
+  for (const [edgeId, polyline] of tess.edgePolylines) {
+    const m = meta.get(edgeId);
+    if (!m || m.filletable === false || m.sharpEdge) continue;
+    const pointCount = polyline.length / 3;
+    if (pointCount < 2) continue;
+    for (let index = 0; index < pointCount - 1; index += 1) {
+      const a = index * 3;
+      const b = (index + 1) * 3;
+      positions.push(
+        polyline[a], polyline[a + 1], polyline[a + 2],
+        polyline[b], polyline[b + 1], polyline[b + 2],
+      );
+    }
+  }
+  if (positions.length === 0) return null;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(new Float32Array(positions), 3));
+  return geometry;
+}
+
 export function mergedGuideGeometryResults(
   ...results: Array<GuideGeometryResult | null | undefined>
 ): GuideGeometryResult | null {

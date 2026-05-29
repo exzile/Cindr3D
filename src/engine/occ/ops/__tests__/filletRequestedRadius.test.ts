@@ -5,10 +5,10 @@ import { OccHandle } from '../../occHandle';
 
 // Integration-style fake for occFilletEdgeSetsWithInstance: topology walk
 // (MapShapes / IndexedMap / explorer / BRepAdaptor) + a BRepFilletAPI_MakeFillet
-// mock that records the radii passed to Add_2/Add_3 and can be told to fail Build()
-// on the first attempt. Proves the two-attempt strategy:
-//   1. requested radii are used verbatim when OCC builds (no silent cap);
-//   2. clamped radii are used only as a retry after a hard Build() failure.
+// mock that records the radii passed to Add_2/Add_3 and can be told to fail Build().
+// Proves the Fusion-faithful single-attempt strategy:
+//   1. requested radii are always used verbatim (no silent cap);
+//   2. a hard Build() failure returns null — there is NO clamped retry.
 
 const ENUM = { TopAbs_FACE: 1, TopAbs_EDGE: 2, TopAbs_VERTEX: 3, TopAbs_SHAPE: 4 } as const;
 
@@ -155,7 +155,7 @@ function twoEdgeCorner() {
   );
 }
 
-describe('occFilletEdgeSetsWithInstance — requested-radius-first (OCC-13.2 revised)', () => {
+describe('occFilletEdgeSetsWithInstance — Fusion-faithful single attempt', () => {
   beforeEach(() => {
     builders = [];
     buildFailQueue = [];
@@ -163,34 +163,21 @@ describe('occFilletEdgeSetsWithInstance — requested-radius-first (OCC-13.2 rev
 
   it('uses the exact requested radius when OCC builds (no silent cap)', () => {
     const { body, oc } = twoEdgeCorner();
-    // radius 4 exceeds the would-be clamp (~1.85). Build succeeds on attempt 1.
+    // radius 4 would exceed the old corner clamp (~1.85), but we never clamp.
     const result = occFilletEdgeSetsWithInstance(oc, body, [{ edgeIds: [0, 1], radius: 4 }]);
     expect(result).not.toBeNull();
-    expect(builders).toHaveLength(1); // only attempt 1 ran
-    // Both edges added at the requested 4 — NOT the ~1.85 clamp.
+    expect(builders).toHaveLength(1); // single attempt only
+    // Both edges added at the requested 4 — never a clamped value.
     expect(builders[0].radii).toEqual([4, 4]);
   });
 
-  it('falls back to clamped radii only after a hard Build() failure', () => {
+  it('returns null on a hard Build() failure — no clamped retry (fails like Fusion)', () => {
     const { body, oc } = twoEdgeCorner();
-    buildFailQueue = [true]; // first attempt fails, second succeeds
-    const result = occFilletEdgeSetsWithInstance(oc, body, [{ edgeIds: [0, 1], radius: 4 }]);
-    expect(result).not.toBeNull();
-    expect(builders).toHaveLength(2);
-    // Attempt 1 tried the requested radius...
-    expect(builders[0].radii).toEqual([4, 4]);
-    // ...attempt 2 clamped to the corner limit (~1.85, well under 4).
-    for (const r of builders[1].radii) {
-      expect(r).toBeLessThan(4);
-      expect(r).toBeCloseTo(1.85, 2);
-    }
-  });
-
-  it('returns null when both attempts fail', () => {
-    const { body, oc } = twoEdgeCorner();
-    buildFailQueue = [true, true];
+    buildFailQueue = [true]; // the (only) attempt fails
     const result = occFilletEdgeSetsWithInstance(oc, body, [{ edgeIds: [0, 1], radius: 4 }]);
     expect(result).toBeNull();
-    expect(builders).toHaveLength(2);
+    expect(builders).toHaveLength(1); // NO second attempt at a smaller radius
+    // The failed attempt still used the requested radius verbatim.
+    expect(builders[0].radii).toEqual([4, 4]);
   });
 });

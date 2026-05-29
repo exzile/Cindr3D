@@ -10,6 +10,7 @@ import { parseOccEdgeSelection, storedEdgeIds } from '../../../utils/occEdgeUtil
 
 import type { Feature } from '../../../types/cad';
 import { BODY_MATERIAL, SURFACE_MATERIAL, DIM_MATERIAL, componentColorMaterial } from './bodyMaterial';
+import TangentEdgeLines from './TangentEdgeOverlay';
 
 
 type PersistHydrationApi = {
@@ -414,6 +415,15 @@ export default function ExtrudedBodies() {
             m.userData.featureId = feature.id;
             m.userData.bodyId = bodyId;
           }}
+        />
+      ))}
+      {/* Fusion-style tangent reference lines around fillets/chamfers (visual only,
+          non-selectable). Same active-feature set as the meshes above. */}
+      {storedMeshFeaturesFiltered.map((feature) => (
+        <TangentEdgeLines
+          key={`tangent-${feature.id}`}
+          mesh={feature.mesh!}
+          bodyId={resolveBodyId(feature.id, feature.bodyId)}
         />
       ))}
     </>

@@ -21,6 +21,8 @@ import {
   findAdjacentFacesToFace,
   findShapeIndex,
 } from './adjacency';
+import { computeEdgeAnchor, findEdgeByAnchor, type EdgeAnchor } from './edgeAnchor';
+import { isOccShapeValid } from './shapeValidity';
 
 interface OccFilletBuilder {
   Add_2(radius: number, edge: unknown): void;
@@ -409,187 +411,6 @@ function countAdjacentFacesForEdge(
   }
 }
 
-// ── Radius pre-validation (OCC-13.2) ──────────────────────────────────────────
-
-/**
- * Pre-validate fillet radii against local topology so an over-large radius is
- * clamped to a valid value instead of throwing inside Build() (the dominant
- * cause of adjacent-corner failures).
- *
- * For each filleted edge we measure the chord length of every edge sharing one
- * of its endpoints. The limiting dimension is:
- *   - a NON-filleted neighbour of chord length L → the fillet can consume almost
- *     all of L (cap 0.95·L);
- *   - a co-filleted neighbour of chord length L → two fillets eat into L from
- *     both ends, so each is capped at ~0.49·L.
- * Closed edges (circle seams/caps, chord ≈ 0) do not participate — their
- * over-radius failures are caught post-hoc by the open-mesh guard.
- *
- * Returns edgeId → maxSafeRadius only where a finite limit exists. Never throws.
- */
-export function computeSafeFilletRadii(
-  oc: OcctRaw,
-  body: BRepBody,
-  rawShape: unknown,
-  filletedEdgeIds: Set<number>,
-): Map<number, number> {
-  const result = new Map<number, number>();
-  const occ = oc as OccFilletApi;
-
-  const edgeMap = new occ.TopTools_IndexedMapOfShape_1();
-  const vertMap = new occ.TopTools_IndexedMapOfShape_1();
-  try {
-    occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, edgeMap);
-    occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, vertMap);
-  } catch {
-    edgeMap.delete();
-    vertMap.delete();
-    return result;
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const findKey = ((edgeMap as any).FindKey_1 ?? (edgeMap as any).FindKey)?.bind(edgeMap) as
-    | ((i: number) => unknown)
-    | undefined;
-
-  interface EdgeGeom { len: number; verts: number[]; bodyEdgeId: number; canonical: number }
-  const byCanonical = new Map<number, EdgeGeom>();
-  const vertexToCanonical = new Map<number, number[]>();
-  const filletedCanonical = new Set<number>();
-
-  for (const [bodyEdgeId, edgeHandle] of body.edgeIds) {
-    const raw = occDeref(oc, edgeHandle, oc.TopoDS_Shape) as { ptr: number };
-    const canonical = findShapeIndex(edgeMap as Parameters<typeof findShapeIndex>[0], raw);
-    if (canonical <= 0) continue;
-
-    // Chord length via curve endpoints; closed edges (≈0) are non-constraining.
-    let len = Infinity;
-    try {
-      // rawEdge is a VIEW (TopoDS.Edge_1 of the occDeref VIEW) — do NOT delete.
-      const rawEdge = oc.TopoDS.Edge_1(raw);
-      const curve = new occ.BRepAdaptor_Curve_2(rawEdge);
-      const p0 = new occ.gp_Pnt_1();
-      const p1 = new occ.gp_Pnt_1();
-      try {
-        const t0 = curve.FirstParameter();
-        const t1 = curve.LastParameter();
-        curve.D0(t0, p0);
-        curve.D0(t1, p1);
-        const dx = p1.X() - p0.X(), dy = p1.Y() - p0.Y(), dz = p1.Z() - p0.Z();
-        const chord = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        len = chord > 1e-6 ? chord : Infinity;
-      } finally {
-        p0.delete?.();
-        p1.delete?.();
-        curve.delete?.();
-      }
-    } catch {
-      len = Infinity;
-    }
-
-    // Endpoint vertices (canonical indices).
-    const verts: number[] = [];
-    try {
-      // rawEdge VIEW again — do NOT delete.
-      const rawEdge = oc.TopoDS.Edge_1(raw);
-      const vexp = new occ.TopExp_Explorer_2(rawEdge, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
-      try {
-        while (vexp.More() && verts.length < 2) {
-          const v = vexp.Current();
-          const vi = findShapeIndex(vertMap as Parameters<typeof findShapeIndex>[0], v);
-          v.delete();
-          if (vi > 0 && !verts.includes(vi)) verts.push(vi);
-          vexp.Next();
-        }
-      } finally {
-        vexp.delete();
-      }
-    } catch { /* leave verts as found */ }
-
-    byCanonical.set(canonical, { len, verts, bodyEdgeId, canonical });
-    if (filletedEdgeIds.has(bodyEdgeId)) filletedCanonical.add(canonical);
-    for (const v of verts) {
-      const list = vertexToCanonical.get(v);
-      if (list) list.push(canonical); else vertexToCanonical.set(v, [canonical]);
-    }
-  }
-
-  // Keep the FindKey reference reachable for type-checkers (used implicitly via
-  // canonical indices); no FindKey lookups are needed beyond MapShapes ordering.
-  void findKey;
-
-  for (const geom of byCanonical.values()) {
-    if (!filletedCanonical.has(geom.canonical)) continue;
-    let limit = Infinity;
-    for (const v of geom.verts) {
-      for (const n of vertexToCanonical.get(v) ?? []) {
-        if (n === geom.canonical) continue;
-        const nb = byCanonical.get(n);
-        if (!nb || !Number.isFinite(nb.len)) continue;
-        // co-filleted factor: 0.37 stays safely below the (√2−1)·L ≈ 0.414·L
-        // theoretical maximum for a 3-way orthogonal corner blend, with enough
-        // headroom that OCC's corner-patch algorithm doesn't produce crease
-        // artifacts even on complex topology (boolean-subtracted faces nearby).
-        // 0.40 was too close to the limit on some models — small residual creases
-        // appeared at the transition from clamped to unclamped corners.
-        // non-filleted factor: 0.85 leaves 15% of the neighbour unconsumed.
-        const contribution = filletedCanonical.has(n) ? nb.len * 0.37 : nb.len * 0.85;
-        // Skip degenerate junction edges (boolean-op artefacts at curve/line transitions)
-        // whose tiny chord would falsely cap the fillet below any useful radius.
-        // OCC's corner-blend algorithm handles these junctions on its own.
-        if (contribution < 0.2) continue;
-        if (contribution < limit) limit = contribution;
-      }
-    }
-    if (Number.isFinite(limit)) result.set(geom.bodyEdgeId, limit);
-  }
-
-  // Phase 2: corner consistency — propagate the tightest cap to ALL co-filleted
-  // edges that share a corner vertex.
-  //
-  // Without this, a corner where edge A is clamped (e.g. 1.131) but adjacent
-  // co-filleted edge B has no cap runs edge A at 1.131 and edge B at the full
-  // requested radius (e.g. 2).  OCC's 3-way corner-blend algorithm receives
-  // mismatched radii, produces a degenerate self-intersecting surface, and the
-  // resulting tessellation looks wrinkled/corrupted.
-  //
-  // Strategy: iterate until stable (handles transitive chains — A clamps B,
-  // B then clamps C at a different vertex).
-  let anyTightened = true;
-  while (anyTightened) {
-    anyTightened = false;
-    for (const canonicals of vertexToCanonical.values()) {
-      const filletedAtV = canonicals.filter(c => filletedCanonical.has(c));
-      if (filletedAtV.length < 2) continue;
-
-      // Tightest cap already recorded for any filleted edge at this vertex.
-      let minCap = Infinity;
-      for (const c of filletedAtV) {
-        const edge = byCanonical.get(c);
-        if (!edge) continue;
-        const cap = result.get(edge.bodyEdgeId);
-        if (cap !== undefined && cap < minCap) minCap = cap;
-      }
-      if (!Number.isFinite(minCap)) continue;
-
-      // Apply that tightest cap to every filleted edge at this vertex.
-      for (const c of filletedAtV) {
-        const edge = byCanonical.get(c);
-        if (!edge) continue;
-        const existing = result.get(edge.bodyEdgeId);
-        if (existing === undefined || existing > minCap) {
-          result.set(edge.bodyEdgeId, minCap);
-          anyTightened = true;
-        }
-      }
-    }
-  }
-
-  edgeMap.delete();
-  vertMap.delete();
-  return result;
-}
-
 // ── Core builder ──────────────────────────────────────────────────────────────
 
 /**
@@ -644,7 +465,8 @@ export function occFilletEdgeSetsWithInstance(
   // crease artifacts). Only if OCC genuinely cannot build do we retry with radii
   // clamped to the local corner geometry, turning a hard failure into a slightly
   // smaller valid blend instead of nothing.
-  const runAttempt = (useClamp: boolean): BRepBody | null => {
+
+  const runAttempt = (): BRepBody | null => {
     const mk = createFilletBuilder(occ, rawShape, filletShape);
     if (!mk) {
       console.warn('[occFillet] BRepFilletAPI_MakeFillet is not bound in this OCC build');
@@ -672,36 +494,10 @@ export function occFilletEdgeSetsWithInstance(
     }
     try {
 
-    // The clamp map is built ONLY on the retry pass; the first pass uses the exact
-    // requested radii so valid fillets are never silently shrunk (the user's value
-    // is honoured, matching Fusion). On retry, an over-large radius is capped to the
-    // local corner geometry as a recovery for a build that already hard-failed.
-    let safeRadii: Map<number, number> = new Map();
-    if (useClamp) {
-      try {
-        const filletedEdgeIds = new Set<number>();
-        for (const es of edgeSets) for (const id of es.edgeIds) filletedEdgeIds.add(id);
-        safeRadii = computeSafeFilletRadii(oc, body, rawShape, filletedEdgeIds);
-      } catch {
-        safeRadii = new Map();
-      }
-    }
-    let clampWarned = false;
-    const clampRadius = (edgeId: number, requested: number): number => {
-      if (!useClamp) return requested;
-      const cap = safeRadii.get(edgeId);
-      if (cap !== undefined && requested > cap) {
-        if (!clampWarned) {
-          console.log(
-            `[occFillet] retry: radius ${requested} clamped to ${cap.toFixed(3)} (edge ${edgeId} corner geometry limit)`,
-          );
-          clampWarned = true;
-        }
-        return cap;
-      }
-      return requested;
-    };
-
+    // Fusion parity: the user-requested radii are used verbatim. An over-large
+    // radius is NOT silently clamped to a smaller value — like Fusion 360, if OCC
+    // cannot produce a watertight blend at the requested size the operation fails
+    // (returns null) and the caller surfaces an error so the user reduces the value.
     let addedAny = false;
     for (const edgeSet of edgeSets) {
       for (const edgeId of edgeSet.edgeIds) {
@@ -734,7 +530,7 @@ export function occFilletEdgeSetsWithInstance(
             const d1 = Math.max(edgeSet.startRadius, 0.001);
             const d2 = Math.max(edgeSet.endRadius, 0.001);
             // Asymmetric fillet has no per-face OCC overload — average as Add_2.
-            mk.Add_2(Math.max(clampRadius(edgeId, (d1 + d2) / 2), 0.001), rawEdge);
+            mk.Add_2(Math.max((d1 + d2) / 2, 0.001), rawEdge);
           } else if (
             edgeSet.midRadii && edgeSet.midRadii.length > 0 &&
             edgeSet.startRadius !== undefined && edgeSet.endRadius !== undefined
@@ -762,7 +558,7 @@ export function occFilletEdgeSetsWithInstance(
               const pts: Array<{ delete(): void }> = [];
               try {
                 for (let pi = 0; pi < n; pi++) {
-                  const r = Math.max(clampRadius(edgeId, allPts[pi].radius), 0.001);
+                  const r = Math.max(allPts[pi].radius, 0.001);
                   const pt = new occ.gp_Pnt2d_3(allPts[pi].position, r);
                   pts.push(pt);
                   arr.SetValue(pi + 1, pt);
@@ -773,8 +569,8 @@ export function occFilletEdgeSetsWithInstance(
                 console.warn(`[occFillet] Add_5 midpoints failed for edge ${edgeId}, falling back to Add_3:`, midErr);
                 // Fall back to two-point variable radius (loses midpoints).
                 mk.Add_3(
-                  Math.max(clampRadius(edgeId, edgeSet.startRadius), 0.001),
-                  Math.max(clampRadius(edgeId, edgeSet.endRadius), 0.001),
+                  Math.max(edgeSet.startRadius, 0.001),
+                  Math.max(edgeSet.endRadius, 0.001),
                   rawEdge,
                 );
                 addedAny = true;
@@ -786,23 +582,23 @@ export function occFilletEdgeSetsWithInstance(
               // Add_5 not bound in this WASM build — degrade to Add_3.
               console.warn(`[occFillet] Add_5 not bound; using Add_3 (no midpoints) for edge ${edgeId}`);
               mk.Add_3(
-                Math.max(clampRadius(edgeId, edgeSet.startRadius), 0.001),
-                Math.max(clampRadius(edgeId, edgeSet.endRadius), 0.001),
+                Math.max(edgeSet.startRadius, 0.001),
+                Math.max(edgeSet.endRadius, 0.001),
                 rawEdge,
               );
               addedAny = true;
             }
           } else if (edgeSet.startRadius !== undefined && edgeSet.endRadius !== undefined) {
             mk.Add_3(
-              Math.max(clampRadius(edgeId, edgeSet.startRadius), 0.001),
-              Math.max(clampRadius(edgeId, edgeSet.endRadius), 0.001),
+              Math.max(edgeSet.startRadius, 0.001),
+              Math.max(edgeSet.endRadius, 0.001),
               rawEdge,
             );
           } else if (edgeSet.chordLength !== undefined && edgeSet.chordLength > 0) {
             const r = computeChordLengthRadius(oc, rawShape, rawEdge as { ptr: number }, edgeSet.chordLength);
-            mk.Add_2(Math.max(clampRadius(edgeId, r), 0.001), rawEdge);
+            mk.Add_2(Math.max(r, 0.001), rawEdge);
           } else {
-            mk.Add_2(Math.max(clampRadius(edgeId, edgeSet.radius ?? 2), 0.001), rawEdge);
+            mk.Add_2(Math.max(edgeSet.radius ?? 2, 0.001), rawEdge);
           }
           if (!edgeSet.midRadii?.length) addedAny = true; // midRadii path sets addedAny internally
         } catch (e) {
@@ -836,6 +632,19 @@ export function occFilletEdgeSetsWithInstance(
     }
 
     const resultShape = mk.Shape();
+
+    // OCC-13.2: Build() can return IsDone=true but produce an invalid solid (free
+    // bounds / non-manifold / self-intersection) on corners it can't fully close.
+    // Use OCC's own BRepCheck_Analyzer — authoritative, and unlike edge-counting it
+    // never confuses seam/degenerate edges for open ones. An invalid build returns
+    // null so the caller falls back to a different strategy (e.g. per-edge passes)
+    // rather than installing a broken solid.
+    if (!isOccShapeValid(oc, resultShape)) {
+      console.warn('[occFillet] BRepCheck_Analyzer reports the result is not a valid solid; rejecting build');
+      mk.delete();
+      return null;
+    }
+
     // Keep the fillet builder alive — resultShape is a reference into it.
     return makeBRepBodyFromOccShape(oc, resultShape, {
       id: options.id,
@@ -854,10 +663,94 @@ export function occFilletEdgeSetsWithInstance(
     // resultShape (a reference into the builder) stays valid.
   };
 
-  // Attempt 1: exact requested radii (no capping — Fusion-like). Attempt 2 runs
-  // only if OCC could not build at the requested size, retrying with radii clamped
-  // to local corner geometry so a hard failure degrades to a smaller valid blend.
-  return runAttempt(false) ?? runAttempt(true);
+  // Single attempt with the exact requested radii (no capping — Fusion-faithful).
+  // If OCC cannot build a watertight blend at the requested size, this returns null
+  // and the caller reports an error so the user can reduce the radius.
+  return runAttempt();
+}
+
+// ── Sequential per-edge fillet (OCC robustness fallback) ──────────────────────
+
+export interface OccSequentialFilletResult {
+  body: BRepBody | null;
+  /** Number of target edges successfully filleted. */
+  appliedCount: number;
+  /** Number of target edges that OCC could not fillet (skipped, never shrunk). */
+  skippedCount: number;
+}
+
+/**
+ * Apply each target edge in its OWN BRepFilletAPI_MakeFillet.Build() pass,
+ * rebuilding the body between edges. OCC's combined multi-edge fillet frequently
+ * leaves one corner patch unclosed (a free edge) or throws on parts that Fusion
+ * blends in a single pass; doing one edge at a time lets the kernel close each
+ * region with far fewer simultaneous constraints, and a later edge that meets an
+ * earlier fillet face gets its corner resolved pairwise.
+ *
+ * Edge IDs are positional and change on every rebuild, so each target is anchored
+ * by trim-invariant geometry on the ORIGINAL body (see edgeAnchor) and re-found on
+ * the running body before each pass. An edge that can no longer be matched (e.g.
+ * consumed by a prior fillet) or that OCC still refuses is SKIPPED — never silently
+ * shrunk — and reported via skippedCount so the caller can tell the user exactly
+ * which edge(s) could not be filleted at the requested radius.
+ *
+ * The requested radius/variable-radius spec of each edge set is preserved per edge.
+ */
+export function occFilletEdgeSetsSequentialWithInstance(
+  oc: OcctRaw,
+  body: BRepBody,
+  edgeSets: OccFilletEdgeSet[],
+  options: OccFilletOptions = {},
+): OccSequentialFilletResult {
+  // Anchor every target edge on the original body up-front.
+  interface Target { anchor: EdgeAnchor; set: OccFilletEdgeSet }
+  const targets: Target[] = [];
+  for (const es of edgeSets) {
+    for (const edgeId of es.edgeIds) {
+      const anchor = computeEdgeAnchor(oc, body, edgeId);
+      if (anchor) targets.push({ anchor, set: es });
+      else console.warn(`[occFillet] sequential: could not anchor edge ${edgeId}; skipping`);
+    }
+  }
+  if (targets.length === 0) return { body: null, appliedCount: 0, skippedCount: 0 };
+
+  // The original body is owned by the caller/registry — never dispose it. Only
+  // intermediate bodies we create here are ours to free.
+  let running: BRepBody = body;
+  let runningIsIntermediate = false;
+  let applied = 0;
+  let skipped = 0;
+
+  const passOptions: OccFilletOptions = {
+    // Intermediate bodies must NOT claim the feature id (the store sets it on the
+    // final installed body); use a scoped marker so getByFeature stays clean.
+    sourceFeatureId: options.sourceFeatureId ? `${options.sourceFeatureId}_seq` : undefined,
+    continuity: options.continuity,
+    tangencyWeight: options.tangencyWeight,
+    isRollingBallCorner: options.isRollingBallCorner,
+  };
+
+  for (const target of targets) {
+    const edgeId = findEdgeByAnchor(oc, running, target.anchor);
+    if (edgeId === null) { skipped++; continue; }
+    const next = occFilletEdgeSetsWithInstance(
+      oc, running, [{ ...target.set, edgeIds: [edgeId] }], passOptions,
+    );
+    if (next) {
+      if (runningIsIntermediate) running.dispose();
+      running = next;
+      runningIsIntermediate = true;
+      applied++;
+    } else {
+      skipped++;
+    }
+  }
+
+  if (applied > 0 && runningIsIntermediate) {
+    return { body: running, appliedCount: applied, skippedCount: skipped };
+  }
+  if (runningIsIntermediate) running.dispose();
+  return { body: null, appliedCount: 0, skippedCount: skipped };
 }
 
 // ── Convenience wrappers (backward-compatible) ────────────────────────────────

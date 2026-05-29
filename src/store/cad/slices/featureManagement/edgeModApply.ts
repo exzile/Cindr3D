@@ -5,12 +5,15 @@ import { errorMessage } from "../../../../utils/errorHandling";
 import { globalBRepBodyRegistry } from "../../../../engine/occ/globalRegistry";
 import {
   occFilletEdgeSetsWithInstance,
+  occFilletEdgeSetsSequentialWithInstance,
   occFullRoundFilletWithInstance,
   type FullRoundSideFaces,
   type OccFilletEdgeSet,
 } from "../../../../engine/occ/ops/fillet";
 import type { BRepBody } from "../../../../engine/occ/brepBody";
 import { occChamferWithInstance } from "../../../../engine/occ/ops/chamfer";
+import { isOccShapeValid } from "../../../../engine/occ/ops/shapeValidity";
+import { occDeref } from "../../../../engine/occ/brepBody";
 import { getOccSync } from "../../../../engine/occ/loader";
 import { createRegisteredOccMesh } from "../../../../engine/occ/registeredMesh";
 import { parseOccEdgeSelection, storedEdgeIds } from "../../../../utils/occEdgeUtils";
@@ -437,6 +440,10 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
 
     // Compute the fillet / chamfer result.
     let result: BRepBody | null;
+    // Set when the sequential per-edge fallback could not fillet every requested
+    // edge at the requested radius; surfaced to the user on an otherwise-successful
+    // partial result (we never silently shrink — only report which edges failed).
+    let sequentialSkippedEdges = 0;
     if (tool === 'Fillet') {
       if (fullRoundFaces) {
         result = occFullRoundFilletWithInstance(
@@ -483,36 +490,11 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
         // all sibling (corner) fillets on top. Corner edges are geometrically far from
         // the arc region, so their IDs remain stable after the arc fillet topology change.
         //
-        // Radius-reduction pre-pass (OCC-13.X): when the chord-based cap in
-        // computeSafeFilletRadii is not tight enough (OCC's internal algorithm needs
-        // a smaller radius due to fillet-on-fillet geometry or complex corners), try
-        // progressively smaller radii before the arc-first sequential fallback.
-        // Each scale is applied uniformly to ALL edge sets so corner proportions hold.
-        if (!result) {
-          for (const scale of [0.6, 0.4, 0.25, 0.15]) {
-            const reducedSets: OccFilletEdgeSet[] = effectiveFilletEdgeSets.map((es) => ({
-              ...es,
-              radius: es.radius !== undefined ? es.radius * scale : undefined,
-              startRadius: es.startRadius !== undefined ? es.startRadius * scale : undefined,
-              endRadius: es.endRadius !== undefined ? es.endRadius * scale : undefined,
-              chordLength: es.chordLength !== undefined ? es.chordLength * scale : undefined,
-            }));
-            result = occFilletEdgeSetsWithInstance(
-              occ.oc, srcBody, reducedSets,
-              { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
-            );
-            if (result) {
-              const pct = Math.round(scale * 100);
-              const baseR = (effectiveFilletEdgeSets[0]?.radius ?? DEFAULT_FILLET_RADIUS);
-              console.warn(
-                `[${tool}] radius-reduction fallback: applied at ${pct}% (` +
-                `r=${(baseR * scale).toFixed(3)} instead of ${baseR.toFixed(3)})`,
-              );
-              break;
-            }
-          }
-        }
-
+        // NOTE: there is deliberately NO radius-reduction fallback here. Fusion 360 does
+        // not silently shrink a too-large radius — it fails the feature and asks the user
+        // to reduce the value. The fallbacks below (vertex-neighbor, arc-first) only add
+        // topology context or change application order; they always honour the requested
+        // radius. An over-large radius therefore fails cleanly (see the error below).
         if (!result && siblingFilletEdgeSets.length > 0) {
           console.warn(`[${tool}] combined fillet failed — trying arc-first sequential fallback`);
           try {
@@ -558,6 +540,32 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
             console.warn(`[${tool}] arc-first fallback threw`, seqErr);
           }
         }
+
+        // Sequential per-edge fallback (OCC-13.5): OCC's combined multi-edge fillet
+        // can leave one corner patch unclosed (a free edge) or throw on parts that
+        // Fusion blends in a single pass. Apply each edge in its own Build() pass,
+        // rebuilding between — the kernel closes each region with fewer simultaneous
+        // constraints, and an edge meeting an earlier fillet face gets its corner
+        // resolved pairwise. Edges OCC still cannot fillet are skipped (never shrunk)
+        // and reported. Only worth attempting when more than one edge is requested.
+        if (!result) {
+          const totalEdges = effectiveFilletEdgeSets.reduce((sum, es) => sum + es.edgeIds.length, 0);
+          if (totalEdges > 1) {
+            console.warn(`[${tool}] combined fillet failed — trying sequential per-edge fallback`);
+            const seq = occFilletEdgeSetsSequentialWithInstance(
+              occ.oc, srcBody, effectiveFilletEdgeSets,
+              { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
+            );
+            if (seq.body) {
+              result = seq.body;
+              sequentialSkippedEdges = seq.skippedCount;
+              console.log(
+                `[${tool}] sequential fallback: filleted ${seq.appliedCount} edge(s) individually` +
+                (seq.skippedCount > 0 ? `, ${seq.skippedCount} could not be filleted at the requested radius` : ''),
+              );
+            }
+          }
+        }
       }
     } else {
       result = occChamferWithInstance(occ.oc, srcBody, numericEdgeIds, distance ?? 0, {
@@ -569,7 +577,16 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       });
     }
     if (!result) {
-      return markOccEdgeModificationError(featureId, tool, "OCC operation failed for the selected edge set");
+      const requestedSize = tool === "Fillet" ? radius : distance;
+      const sizeHint =
+        typeof requestedSize === "number"
+          ? ` The requested ${tool.toLowerCase()} size (${requestedSize}) may be too large for the selected edge(s) or nearby blends; try a smaller value.`
+          : "";
+      return markOccEdgeModificationError(
+        featureId,
+        tool,
+        `OCC operation failed for the selected edge set; kept the previous body unchanged.${sizeHint}`,
+      );
     }
     if (result.faceIds.size <= srcBody.faceIds.size) {
       const resultFaceCount = result.faceIds.size;
@@ -609,21 +626,41 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       newMesh,
     );
     if (meshTopologyFailure) {
-      const { boundaryDelta, nonManifoldDelta } = meshTopologyFailure;
-      newMesh.geometry.dispose();
-      globalBRepBodyRegistry.delete(result.id);
-      result.dispose();
-      const requestedSize = tool === "Fillet" ? radius : distance;
-      const sizeHint =
-        typeof requestedSize === "number"
-          ? ` The requested ${tool.toLowerCase()} size (${requestedSize}) is likely too large for the selected edge(s) or nearby blends; try a smaller value.`
-          : "";
-      return markOccEdgeModificationError(
-        featureId,
-        tool,
-        `${tool} produced an open mesh ` +
-          `(new boundary edges: ${boundaryDelta}, new non-manifold edges: ${nonManifoldDelta}); ` +
-          `kept the previous body unchanged.${sizeHint}`,
+      // The tessellation looks open, but OCC's mesher can leave T-junctions /
+      // welded near-coincident vertices on a solid that is actually valid. Defer to
+      // BRepCheck_Analyzer (authoritative): only reject when the BRep itself is
+      // invalid. A valid BRep with a mesh artifact is installed (the geometry is
+      // sound; the artifact is cosmetic in tessellation), matching Fusion which
+      // builds these fillets without complaint.
+      let brepValid = false;
+      try {
+        const rawResult = occDeref(occ.oc, result.shape, occ.oc.TopoDS_Shape);
+        brepValid = isOccShapeValid(occ.oc, rawResult);
+      } catch {
+        brepValid = false;
+      }
+      if (!brepValid) {
+        const { boundaryDelta, nonManifoldDelta } = meshTopologyFailure;
+        newMesh.geometry.dispose();
+        globalBRepBodyRegistry.delete(result.id);
+        result.dispose();
+        const requestedSize = tool === "Fillet" ? radius : distance;
+        const sizeHint =
+          typeof requestedSize === "number"
+            ? ` The requested ${tool.toLowerCase()} size (${requestedSize}) is likely too large for the selected edge(s) or nearby blends; try a smaller value.`
+            : "";
+        return markOccEdgeModificationError(
+          featureId,
+          tool,
+          `${tool} produced an open mesh ` +
+            `(new boundary edges: ${boundaryDelta}, new non-manifold edges: ${nonManifoldDelta}); ` +
+            `kept the previous body unchanged.${sizeHint}`,
+        );
+      }
+      console.warn(
+        `[${tool}] tessellation reported open mesh (boundaryDelta=${meshTopologyFailure.boundaryDelta}, ` +
+          `nonManifoldDelta=${meshTopologyFailure.nonManifoldDelta}) but BRepCheck_Analyzer says the solid is valid; ` +
+          `installing (mesh artifact only)`,
       );
     }
     const currentFeature = get().features.find((feature) => feature.id === featureId);
@@ -651,7 +688,10 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       ),
       statusMessage:
         tool === "Fillet"
-          ? `Filleted ${numericEdgeIds.length} OCC edge(s)${continuity === 'G2' ? ' (G2)' : ''}`
+          ? `Filleted ${numericEdgeIds.length} OCC edge(s)${continuity === 'G2' ? ' (G2)' : ''}` +
+            (sequentialSkippedEdges > 0
+              ? ` — ${sequentialSkippedEdges} edge(s) could not be filleted at this radius and were skipped; try a smaller radius for those`
+              : '')
           : `Chamfered ${numericEdgeIds.length} OCC edge(s) at d=${distance}`,
     }));
     if (prevMesh && prevMesh.geometry !== newMesh.geometry) {
