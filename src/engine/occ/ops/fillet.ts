@@ -638,52 +638,62 @@ export function occFilletEdgeSetsWithInstance(
     ? occ.ChFi3d_FilletShape.ChFi3d_Polynomial
     : occ.ChFi3d_FilletShape.ChFi3d_Rational; // G1 and G0 both use Rational
 
-  const mk = createFilletBuilder(occ, rawShape, filletShape);
-  if (!mk) {
-    console.warn('[occFillet] BRepFilletAPI_MakeFillet is not bound in this OCC build');
-    return null;
-  }
+  // OCC-13.2 (revised) — attempt the fillet with the USER-REQUESTED radii first so
+  // a valid fillet is never silently capped (Fusion 360 does not cap, and the old
+  // unconditional pre-clamp also produced mismatched co-filleted corner radii →
+  // crease artifacts). Only if OCC genuinely cannot build do we retry with radii
+  // clamped to the local corner geometry, turning a hard failure into a slightly
+  // smaller valid blend instead of nothing.
+  const runAttempt = (useClamp: boolean): BRepBody | null => {
+    const mk = createFilletBuilder(occ, rawShape, filletShape);
+    if (!mk) {
+      console.warn('[occFillet] BRepFilletAPI_MakeFillet is not bound in this OCC build');
+      return null;
+    }
 
-  // Prefer the explicit continuity API for G2 when this opencascade.js build
-  // binds it — it controls the approximation continuity directly rather than via
-  // the surface-form enum. Best-effort: any binding-shape mismatch is swallowed
-  // and the ChFi3d_Polynomial surface form above remains in effect.
-  if (options.continuity === 'G2') {
-    trySetG2Continuity(occ, mk);
-  }
-  // Build a shape→index map once for seam-edge detection.
-  // Seam edges (cylinder/torus parametric seam) are adjacent to < 2 faces
-  // and cause BRepFilletAPI_MakeFillet.Build() to throw. We skip them here
-  // so Build() never sees them, producing a clean null rather than an exception.
-  // NOTE: declared OUTSIDE the try so the outer catch can free it — otherwise an
-  // uncaught throw between here and the happy-path delete leaks the WASM map.
-  const seamDetectMap = new occ.TopTools_IndexedMapOfShape_1();
-  let seamDetectReady = false;
-  try {
-    occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, seamDetectMap);
-    seamDetectReady = seamDetectMap.Extent() > 0;
-  } catch {
-    // Non-fatal: seam detection degrades gracefully (we'll attempt Build() anyway).
-  }
-  try {
-
-    // OCC-13.2 — clamp over-large radii to local topology so a corner blend that
-    // would self-intersect is shrunk to a valid value instead of throwing in Build().
-    const filletedEdgeIds = new Set<number>();
-    for (const es of edgeSets) for (const id of es.edgeIds) filletedEdgeIds.add(id);
-    let safeRadii: Map<number, number>;
+    // Prefer the explicit continuity API for G2 when this opencascade.js build
+    // binds it — it controls the approximation continuity directly rather than via
+    // the surface-form enum. Best-effort: any binding-shape mismatch is swallowed
+    // and the ChFi3d_Polynomial surface form above remains in effect.
+    if (options.continuity === 'G2') {
+      trySetG2Continuity(occ, mk);
+    }
+    // Build a shape→index map once for seam-edge detection.
+    // Seam edges (cylinder/torus parametric seam) are adjacent to < 2 faces
+    // and cause BRepFilletAPI_MakeFillet.Build() to throw. We skip them here
+    // so Build() never sees them, producing a clean null rather than an exception.
+    const seamDetectMap = new occ.TopTools_IndexedMapOfShape_1();
+    let seamDetectReady = false;
     try {
-      safeRadii = computeSafeFilletRadii(oc, body, rawShape, filletedEdgeIds);
+      occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, seamDetectMap);
+      seamDetectReady = seamDetectMap.Extent() > 0;
     } catch {
-      safeRadii = new Map();
+      // Non-fatal: seam detection degrades gracefully (we'll attempt Build() anyway).
+    }
+    try {
+
+    // The clamp map is built ONLY on the retry pass; the first pass uses the exact
+    // requested radii so valid fillets are never silently shrunk (the user's value
+    // is honoured, matching Fusion). On retry, an over-large radius is capped to the
+    // local corner geometry as a recovery for a build that already hard-failed.
+    let safeRadii: Map<number, number> = new Map();
+    if (useClamp) {
+      try {
+        const filletedEdgeIds = new Set<number>();
+        for (const es of edgeSets) for (const id of es.edgeIds) filletedEdgeIds.add(id);
+        safeRadii = computeSafeFilletRadii(oc, body, rawShape, filletedEdgeIds);
+      } catch {
+        safeRadii = new Map();
+      }
     }
     let clampWarned = false;
     const clampRadius = (edgeId: number, requested: number): number => {
+      if (!useClamp) return requested;
       const cap = safeRadii.get(edgeId);
       if (cap !== undefined && requested > cap) {
         if (!clampWarned) {
           console.log(
-            `[occFillet] radius ${requested} clamped to ${cap.toFixed(3)} (edge ${edgeId} corner geometry limit)`,
+            `[occFillet] retry: radius ${requested} clamped to ${cap.toFixed(3)} (edge ${edgeId} corner geometry limit)`,
           );
           clampWarned = true;
         }
@@ -832,16 +842,22 @@ export function occFilletEdgeSetsWithInstance(
       sourceFeatureId: options.sourceFeatureId,
       ownedResources: [mk],
     });
-  } catch (e) {
-    console.warn('[occFillet] threw outside Build/Shape:', e);
-    // Guard against double-free: the happy path already deleted seamDetectMap at
-    // this point only if we reached it — on a throw before that, free it here.
-    try { seamDetectMap.delete(); } catch { /* already freed on happy path */ }
-    mk.delete();
-    return null;
-  }
-  // NOTE: mk is NOT deleted here — it's transferred to ownedResources so that
-  // resultShape (a reference into the builder) stays valid.
+    } catch (e) {
+      console.warn('[occFillet] threw outside Build/Shape:', e);
+      // Guard against double-free: the happy path already deleted seamDetectMap at
+      // this point only if we reached it — on a throw before that, free it here.
+      try { seamDetectMap.delete(); } catch { /* already freed on happy path */ }
+      mk.delete();
+      return null;
+    }
+    // NOTE: mk is NOT deleted here — it's transferred to ownedResources so that
+    // resultShape (a reference into the builder) stays valid.
+  };
+
+  // Attempt 1: exact requested radii (no capping — Fusion-like). Attempt 2 runs
+  // only if OCC could not build at the requested size, retrying with radii clamped
+  // to local corner geometry so a hard failure degrades to a smaller valid blend.
+  return runAttempt(false) ?? runAttempt(true);
 }
 
 // ── Convenience wrappers (backward-compatible) ────────────────────────────────

@@ -106,7 +106,7 @@ function makeBody(verts: VertDef[], edges: EdgeDef[]): { body: BRepBody; vertPos
 }
 
 describe('computeSafeFilletRadii (OCC-13.2)', () => {
-  it('caps a filleted edge at 0.95x the shortest non-filleted neighbour', () => {
+  it('caps a filleted edge at 0.85x the shortest non-filleted neighbour', () => {
     // A path: v0 --e0(len 10)-- v1 --e1(len 4)-- v2. Fillet e0 only.
     const { body, vertPos } = makeBody(
       [{ ptr: 1, pos: [0, 0, 0] }, { ptr: 2, pos: [10, 0, 0] }, { ptr: 3, pos: [14, 0, 0] }],
@@ -116,11 +116,11 @@ describe('computeSafeFilletRadii (OCC-13.2)', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawShape = (body.shape as any)._object ?? null;
     const caps = computeSafeFilletRadii(oc, body, rawShape, new Set([0]));
-    // e0's only neighbour (e1, len 4, not filleted) → cap 0.95 * 4 = 3.8.
-    expect(caps.get(0)).toBeCloseTo(3.8);
+    // e0's only neighbour (e1, len 4, not filleted) → cap 0.85 * 4 = 3.4.
+    expect(caps.get(0)).toBeCloseTo(3.4);
   });
 
-  it('caps co-filleted neighbours at ~0.49x the connecting edge length', () => {
+  it('caps each end edge at 0.85x a shared non-filleted connector', () => {
     // v0 --e0-- v1 --e1(connector len 10)-- v2 --e2-- v3. Fillet e0 and e2.
     const { body, vertPos } = makeBody(
       [
@@ -137,16 +137,15 @@ describe('computeSafeFilletRadii (OCC-13.2)', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawShape = (body.shape as any)._object ?? null;
     const caps = computeSafeFilletRadii(oc, body, rawShape, new Set([0, 2]));
-    // e0 neighbour e1 (len 10, NOT filleted) → 0.95*10=9.5; but e0 also has no
-    // co-filleted neighbour, so cap is 9.5. e2 similarly 9.5.
-    // The connecting-edge halving applies when the connector itself is filleted;
-    // here e1 is not filleted, so each end edge can take 0.95*10.
-    expect(caps.get(0)).toBeCloseTo(9.5);
-    expect(caps.get(2)).toBeCloseTo(9.5);
+    // e0 and e2 do NOT share a vertex (connector e1 between), so no co-filleted
+    // halving and no Phase-2 propagation. Each is capped by its only neighbour e1
+    // (len 10, NOT filleted) → 0.85 * 10 = 8.5.
+    expect(caps.get(0)).toBeCloseTo(8.5);
+    expect(caps.get(2)).toBeCloseTo(8.5);
   });
 
-  it('halves the cap when the connector edge is itself filleted', () => {
-    // v0 --e0-- v1 --e1(len 10)-- v2. Fillet e0 AND e1 (they share v1).
+  it('propagates the tightest co-filleted cap (0.37x) across a shared corner', () => {
+    // v0 --e0(len 3)-- v1 --e1(len 10)-- v2. Fillet e0 AND e1 (they share v1).
     const { body, vertPos } = makeBody(
       [{ ptr: 1, pos: [-3, 0, 0] }, { ptr: 2, pos: [0, 0, 0] }, { ptr: 3, pos: [10, 0, 0] }],
       [{ ptr: 101, verts: [1, 2] }, { ptr: 102, verts: [2, 3] }],
@@ -155,10 +154,10 @@ describe('computeSafeFilletRadii (OCC-13.2)', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawShape = (body.shape as any)._object ?? null;
     const caps = computeSafeFilletRadii(oc, body, rawShape, new Set([0, 1]));
-    // e0 (len 3) and e1 (len 10) share v1 and are both filleted.
-    // e0's neighbour e1 is filleted → 0.49*10 = 4.9.
-    // e1's neighbour e0 is filleted → 0.49*3 = 1.47.
-    expect(caps.get(0)).toBeCloseTo(4.9);
-    expect(caps.get(1)).toBeCloseTo(1.47);
+    // Phase 1: e0 (neighbour e1 filleted) → 0.37*10 = 3.7; e1 (neighbour e0
+    // filleted) → 0.37*3 = 1.11. Phase 2 propagates the tightest cap at the shared
+    // vertex v1 → both edges become 1.11.
+    expect(caps.get(0)).toBeCloseTo(1.11);
+    expect(caps.get(1)).toBeCloseTo(1.11);
   });
 });
