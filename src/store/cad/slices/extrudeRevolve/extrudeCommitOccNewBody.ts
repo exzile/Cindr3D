@@ -81,6 +81,7 @@ export async function buildOccNewBodyExtrudeMesh({
         const profileBody = occExtrudeWithInstance(occ.oc, sketchProfile, occDistance, frame, {
           id: `${featureId}_p${idx}`,
           sourceFeatureId: featureId,
+          profileShape: shape, // OCC-15: analytic arc/circle edges when buildable
           symmetric: occSymmetric,
           twoSideDist: occTwoSideDist,
           taperAngle: Math.abs(extrudeTaperAngle) > 0.001 ? extrudeTaperAngle : undefined,
@@ -137,6 +138,9 @@ export async function buildOccNewBodyExtrudeMesh({
     const extrudeOptions = {
       id: featureId,
       sourceFeatureId: featureId,
+      // OCC-15: build analytic arc/circle edges from the THREE.Shape when buildable;
+      // occExtrude falls back to the faceted polygon path for unsupported curves.
+      profileShape: firstShape,
       symmetric: occSymmetric,
       twoSideDist: occTwoSideDist,
       taperAngle: Math.abs(extrudeTaperAngle) > 0.001 ? extrudeTaperAngle : undefined,

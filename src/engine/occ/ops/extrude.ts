@@ -8,7 +8,7 @@ import type { OcctRaw } from '../types';
 import { makeBRepBodyFromOccShape, type BRepBody } from '../brepBody';
 import { getOcc } from '../loader';
 import type { OccPlaneFrame } from '../plane';
-import { type SketchProfile, sketchProfileToWires, takeOccOwnedResources, wireToFace } from './sketchToWire';
+import { type SketchProfile, sketchProfileToWires, sketchShapeToWires, takeOccOwnedResources, wireToFace } from './sketchToWire';
 
 type OccExtrudeApi = OcctRaw & {
   BRepBuilderAPI_Transform_2: new (shape: unknown, trsf: unknown, copy: boolean) => { Shape(): unknown; delete(): void };
@@ -30,6 +30,13 @@ type OccExtrudeApi = OcctRaw & {
 export interface OccExtrudeOptions {
   id?: string;
   sourceFeatureId?: string;
+  /**
+   * OCC-15: original THREE.Shape for the profile. When present, arcs/circles are
+   * built as ANALYTIC OCC edges (gp_Circ / arc) instead of the faceted ~96-point
+   * polygon derived from `profile`. Falls back to the polygon path if the shape
+   * contains a curve type we don't build analytically (ellipse, spline, bezier).
+   */
+  profileShape?: THREE.Shape;
   symmetric?: boolean;
   /** When set, also extrude in the opposite direction by this distance and union. */
   twoSideDist?: number;
@@ -85,7 +92,19 @@ export function occExtrudeShapeWithInstance(
   frame: OccPlaneFrame,
   options: OccExtrudeOptions = {},
 ): OccExtrudedShape {
-  const wires = sketchProfileToWires(oc, profile, frame);
+  // OCC-15: prefer the analytic wire (true arc/circle edges) when the original
+  // THREE.Shape is available and contains only buildable curve types; otherwise
+  // fall back to the faceted point-loop polygon path.
+  let wires: { outerWire: unknown; holeWires: unknown[] } | null = null;
+  if (options.profileShape) {
+    try {
+      wires = sketchShapeToWires(oc, options.profileShape, frame);
+    } catch (e) {
+      console.warn('[occExtrude] analytic shape wire build threw; using faceted fallback:', e);
+      wires = null;
+    }
+  }
+  if (!wires) wires = sketchProfileToWires(oc, profile, frame);
   if (!wires) throw new Error('[occExtrude] failed to build wires from profile');
 
   const face = wireToFace(oc, wires.outerWire, wires.holeWires, frame);
