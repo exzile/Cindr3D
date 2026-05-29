@@ -245,13 +245,12 @@ export function buildBatchedEdgeLineGeometry(
  * are purely a visual reference.
  *
  * Selection: `filletable === true` (excludes seams / open boundaries) AND
- * `sharpEdge === false` (sharp edges are drawn by the silhouette/outline pass) AND
- * `adjacentCurvedFace === true` — at least one neighbour is a curved blend face.
- * That last condition is what separates a real fillet/round tangent boundary from
- * the facet seams inside a polygon-approximated curved WALL (where both neighbours
- * are flat facets); without it, a faceted bore/notch draws ~100 spurious iso-lines.
- * Curved tangent edges (the arc around a rounded corner) are kept. Returns null
- * when there are none.
+ * `blendEdge === true` — the edge borders a curved fillet/round/chamfer-blend face
+ * with a shallow (≤45°) dihedral. `blendEdge` is what separates a real tangent blend
+ * boundary (including corner-blend arcs nudged past the 15° sharp threshold by
+ * faceted neighbour walls) from both the facet seams inside a polygon-approximated
+ * curved WALL (flat-flat, never a blend) and genuine ~90° corners like a bore rim.
+ * Returns null when there are none.
  */
 export function buildTangentEdgeLineGeometry(
   tess: BRepTessellation,
@@ -260,7 +259,7 @@ export function buildTangentEdgeLineGeometry(
   const positions: number[] = [];
   for (const [edgeId, polyline] of tess.edgePolylines) {
     const m = meta.get(edgeId);
-    if (!m || m.filletable === false || m.sharpEdge || !m.adjacentCurvedFace) continue;
+    if (!m || m.filletable === false || !m.blendEdge) continue;
     const pointCount = polyline.length / 3;
     if (pointCount < 2) continue;
     for (let index = 0; index < pointCount - 1; index += 1) {

@@ -65,6 +65,15 @@ export interface SelectableEdgeMeta {
    * Defaults to false; only set when tessellation data is available.
    */
   adjacentCurvedFace: boolean;
+  /**
+   * True when this edge borders a curved (fillet/round/chamfer-blend) face AND the
+   * dihedral there is shallow enough to be a tangent BLEND boundary rather than a
+   * hard corner. Uses a looser threshold than `sharpEdge` (≈45° vs 15°) so blend
+   * arcs whose dihedral is nudged past 15° by faceted neighbour walls still count,
+   * while genuine ~90° edges (a bore rim, a sharp corner) are excluded. Drives the
+   * Fusion-style tangent reference line overlay. Defaults to false.
+   */
+  blendEdge: boolean;
   /** Circle / arc only (mm). */
   radius?: number;
 }
@@ -252,6 +261,7 @@ function computeSelectableEdges(oc: OcctRaw, body: BRepBody): Map<number, Select
       sharpEdge: true,            // refined in A4 below using tessellation face normals
       convex: null,               // refined in A4 below using centroid-difference test
       adjacentCurvedFace: false,  // refined in A4 below using per-face normal spread
+      blendEdge: false,           // refined in A4 below (tangent blend boundary)
       ...(radius !== undefined ? { radius } : {}),
     });
   }
@@ -305,6 +315,7 @@ function computeSelectableEdges(oc: OcctRaw, body: BRepBody): Map<number, Select
   //   → convex (face B curves away from nA direction). Still uses averaged normals +
   //   centroids — approximate face orientation is fine for this coarse sign test.
   const SHARP_DOT_THRESHOLD = Math.cos(Math.PI * 15 / 180); // cos(15°) ≈ 0.9659
+  const BLEND_DOT_THRESHOLD = Math.cos(Math.PI * 45 / 180); // cos(45°) ≈ 0.7071 — blend-edge cutoff
   const tess = body._tessellation;
   if (tess) {
     // Per-triangle data grouped by face, plus face-level sums for the convex test.
@@ -426,8 +437,12 @@ function computeSelectableEdges(oc: OcctRaw, body: BRepBody): Map<number, Select
         const nA = localNormal(dA, emx, emy, emz);
         const nB = localNormal(dB, emx, emy, emz);
         if (nA && nB) {
-          const dot = nA[0] * nB[0] + nA[1] * nB[1] + nA[2] * nB[2];
-          m.sharpEdge = Math.abs(dot) <= SHARP_DOT_THRESHOLD;
+          const dot = Math.abs(nA[0] * nB[0] + nA[1] * nB[1] + nA[2] * nB[2]);
+          m.sharpEdge = dot <= SHARP_DOT_THRESHOLD;
+          // blendEdge: a tangent fillet/round boundary. Looser than sharpEdge so a
+          // blend arc nudged just past 15° by a faceted neighbour wall still counts,
+          // while a genuine ~90° corner (bore rim) does not. BLEND_DOT = cos(45°).
+          m.blendEdge = dot > BLEND_DOT_THRESHOLD;
         }
       }
 
