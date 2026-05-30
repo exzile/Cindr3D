@@ -59,6 +59,7 @@ export function createShellDraftOffsetActions({ set, get }: CADSliceContext): Pa
             sourceFeatureId: featureId,
             outsideThickness: tout > 0 ? tout : undefined,
             shellType: opts.shellType === 'rounded' ? 'rolling-ball' : 'sharp',
+            isTangentChain: opts.isTangentChain,
           });
           if (!shellResult) {
             get().setStatusMessage('Shell (OCC): BRep operation failed - check face selection');
@@ -89,7 +90,7 @@ export function createShellDraftOffsetActions({ set, get }: CADSliceContext): Pa
       get().setStatusMessage('Shell requires an OCC body (create solid via Extrude or Revolve first)');
     },
 
-    commitDraft: (featureId, pullAxisDir, draftAngle, fixedPlaneY, options) => {
+    commitDraft: (featureId, pullAxisDir, draftAngle, fixedPlaneY, options = {}) => {
       const { features } = get();
       const r = requireMesh(features, featureId, 'Draft', get().setStatusMessage);
       if (!r) return;
@@ -123,14 +124,20 @@ export function createShellDraftOffsetActions({ set, get }: CADSliceContext): Pa
           pull,
           THREE.MathUtils.degToRad(draftAngle),
           {
-            origin: options?.neutralPlaneOrigin
+            origin: options.neutralPlaneOrigin
               ? options.neutralPlaneOrigin.clone()
               : pull.clone().multiplyScalar(fixedPlaneY),
-            normal: options?.neutralPlaneNormal
+            normal: options.neutralPlaneNormal
               ? options.neutralPlaneNormal.clone().normalize()
               : pull.clone(),
           },
-          { sourceFeatureId: featureId },
+          {
+            sourceFeatureId: featureId,
+            mode: options.mode,
+            angleRad2: options.angle2 !== undefined ? THREE.MathUtils.degToRad(options.angle2) : undefined,
+            isDirectionFlipped: options.isDirectionFlipped,
+            isTangentChain: options.isTangentChain,
+          },
         );
         if (!draftResult) {
           get().setStatusMessage('Draft: OCC operation failed for the selected face set');

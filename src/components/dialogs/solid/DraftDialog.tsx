@@ -17,7 +17,10 @@ export function DraftDialog({ onClose }: { onClose: () => void }) {
   const [selectedBodyId, setSelectedBodyId] = useState<string>(String(p.bodyId ?? bodyFeatures[0]?.id ?? ''));
   const [draftType, setDraftType] = useState<'fixed-plane' | 'parting-line'>((p.draftType as 'fixed-plane' | 'parting-line') ?? 'fixed-plane');
   const [angle, setAngle] = useState(Number(p.angle ?? 3));
+  const [angle2, setAngle2] = useState(Number(p.angle2 ?? 3));
   const [mode, setMode] = useState<'one-side' | 'two-side' | 'symmetric'>((p.mode as 'one-side' | 'two-side' | 'symmetric') ?? 'one-side');
+  const [isDirectionFlipped, setIsDirectionFlipped] = useState<boolean>(Boolean(p.isDirectionFlipped));
+  const [isTangentChain, setIsTangentChain] = useState<boolean>(Boolean(p.isTangentChain));
   const [pullAxis, setPullAxis] = useState<'+X' | '-X' | '+Y' | '-Y' | '+Z' | '-Z'>((p.pullAxis as '+X' | '-X' | '+Y' | '-Y' | '+Z' | '-Z') ?? '+Y');
   const [fixedPlaneY, setFixedPlaneY] = useState(Number(p.fixedPlaneOffset ?? 0));
 
@@ -76,22 +79,23 @@ export function DraftDialog({ onClose }: { onClose: () => void }) {
     const neutralPlaneOrigin = draftPartingFaceCentroid
       ? new THREE.Vector3(...draftPartingFaceCentroid)
       : dir.clone().multiplyScalar(offset);
-    const params = { draftType, angle, mode, pullAxis, fixedPlaneOffset: fixedPlaneY, bodyId: selectedBodyId, partingFaceId: draftPartingFaceId, draftFaceIds: pickedFaceIds };
+    const params = { draftType, angle, angle2, mode, isDirectionFlipped, isTangentChain, pullAxis, fixedPlaneOffset: fixedPlaneY, bodyId: selectedBodyId, partingFaceId: draftPartingFaceId, draftFaceIds: pickedFaceIds };
+    const commitOpts = {
+      faceIds: pickedFaceIds,
+      neutralPlaneOrigin,
+      neutralPlaneNormal: dir,
+      mode,
+      angle2: mode === 'two-side' ? angle2 : undefined,
+      isDirectionFlipped: isDirectionFlipped || undefined,
+      isTangentChain: isTangentChain || undefined,
+    };
 
     if (editing) {
       updateFeatureParams(editing.id, params);
-      if (selectedBodyId) commitDraft(selectedBodyId, dir, angle, offset, {
-        faceIds: pickedFaceIds,
-        neutralPlaneOrigin,
-        neutralPlaneNormal: dir,
-      });
+      if (selectedBodyId) commitDraft(selectedBodyId, dir, angle, offset, commitOpts);
       setStatusMessage(`Updated draft: ${angle}° (${mode})`);
     } else if (selectedBodyId) {
-      commitDraft(selectedBodyId, dir, angle, offset, {
-        faceIds: pickedFaceIds,
-        neutralPlaneOrigin,
-        neutralPlaneNormal: dir,
-      });
+      commitDraft(selectedBodyId, dir, angle, offset, commitOpts);
       setStatusMessage(`Draft applied: ${angle}° (${draftType})`);
     } else {
       const feature: Feature = {
@@ -195,7 +199,7 @@ export function DraftDialog({ onClose }: { onClose: () => void }) {
       </div>
       <div className="settings-grid">
         <div className="form-group">
-          <label>Draft Angle (°)</label>
+          <label>{mode === 'two-side' ? 'Angle 1 (°)' : 'Draft Angle (°)'}</label>
           <input type="number" value={angle}
             onChange={(e) => setAngle(Math.max(0.1, Math.min(89, parseFloat(e.target.value) || 3)))}
             step={0.5} min={0.1} max={89} />
@@ -209,6 +213,24 @@ export function DraftDialog({ onClose }: { onClose: () => void }) {
           </select>
         </div>
       </div>
+      {mode === 'two-side' && (
+        <div className="form-group">
+          <label>Angle 2 (°) — opposite side</label>
+          <input type="number" value={angle2}
+            onChange={(e) => setAngle2(Math.max(0.1, Math.min(89, parseFloat(e.target.value) || 3)))}
+            step={0.5} min={0.1} max={89} />
+        </div>
+      )}
+      <label className="checkbox-label">
+        <input type="checkbox" checked={isDirectionFlipped}
+          onChange={(e) => setIsDirectionFlipped(e.target.checked)} />
+        Flip Direction
+      </label>
+      <label className="checkbox-label">
+        <input type="checkbox" checked={isTangentChain}
+          onChange={(e) => setIsTangentChain(e.target.checked)} />
+        Tangent Chain (propagate to adjacent faces)
+      </label>
       <div className="form-group">
         <label>Fixed Plane Offset</label>
         <input type="number" value={fixedPlaneY}

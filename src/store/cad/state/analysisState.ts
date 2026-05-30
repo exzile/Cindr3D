@@ -13,6 +13,11 @@ export interface ShellCommitOptions {
   removeFaces: ShellPickData[];
   /** Per-face wall-thickness overrides (Fusion "Individual Faces"). */
   faceThicknesses: (ShellPickData & { thickness: number })[];
+  /**
+   * When true, also remove tangent-connected neighbours of each selected face.
+   * Mirrors Fusion ShellFeatureInput.isTangentChain.
+   */
+  isTangentChain?: boolean;
 }
 
 export interface CADAnalysisState {
@@ -279,7 +284,19 @@ export interface CADAnalysisState {
     pullAxisDir: THREE.Vector3,
     draftAngle: number,
     fixedPlaneY: number,
-    options?: { faceIds?: number[]; neutralPlaneOrigin?: THREE.Vector3; neutralPlaneNormal?: THREE.Vector3 },
+    options?: {
+      faceIds?: number[];
+      neutralPlaneOrigin?: THREE.Vector3;
+      neutralPlaneNormal?: THREE.Vector3;
+      /** 'one-side' (default) | 'two-side' | 'symmetric'. Mirrors Fusion setSingleAngle/setTwoAngles. */
+      mode?: 'one-side' | 'two-side' | 'symmetric';
+      /** Second angle (degrees) for 'two-side' mode. Defaults to draftAngle. */
+      angle2?: number;
+      /** Negate the pull direction (Fusion isDirectionFlipped). */
+      isDirectionFlipped?: boolean;
+      /** Expand face selection to tangent neighbours (Fusion isTangentChain). */
+      isTangentChain?: boolean;
+    },
   ): void;
 
   // ── SLD14 — Offset Face ──────────────────────────────────────────────────

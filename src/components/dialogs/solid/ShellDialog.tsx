@@ -111,7 +111,7 @@ export function ShellDialog({ onClose }: { onClose: () => void }) {
           .filter((id) => shellRemoveFaceData[id] && shellFaceThicknesses[id] != null)
           .map((id) => ({ ...shellRemoveFaceData[id], thickness: shellFaceThicknesses[id] }))
       : [];
-    return { insideThickness: tin, outsideThickness: tout, shellType, removeFaces, faceThicknesses };
+    return { insideThickness: tin, outsideThickness: tout, shellType, removeFaces, faceThicknesses, isTangentChain: tangentChain };
   };
 
   const handleApply = () => {

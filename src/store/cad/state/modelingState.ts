@@ -323,6 +323,8 @@ export interface CADModelingState {
     toolFeatureId: string | string[],
     operation: "join" | "cut" | "intersect",
     keepTool: boolean,
+    /** Place result in a new component instead of on the existing target body. Mirrors Fusion isNewComponent. */
+    isNewComponent?: boolean,
   ) => void;
   recommitCombine: (
     featureId: string,
@@ -332,6 +334,7 @@ export interface CADModelingState {
       targetId: string;
       toolId: string;
       toolIds?: string[];
+      isNewComponent?: boolean;
     },
   ) => void;
 

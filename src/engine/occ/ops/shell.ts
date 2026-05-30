@@ -7,6 +7,7 @@ import type { OcctRaw } from '../types';
 import { makeBRepBodyFromOccShape, occDeref, type BRepBody } from '../brepBody';
 import { getOcc } from '../loader';
 import { runEdgeOpBuild } from './adjacency';
+import { expandTangentFaceChain } from './faceAdjacency';
 
 type OccShellApi = OcctRaw & {
   BRepOffsetAPI_MakeThickSolid: new () => {
@@ -30,8 +31,15 @@ export interface OccShellOptions {
   /**
    * 'rolling-ball' (default) — GeomAbs_Arc join, smooth corner blending.
    * 'sharp'                  — GeomAbs_Intersection join, miter corners.
+   * Mirrors Fusion ShellTypes: RoundedOffsetShellType / SharpOffsetShellType.
    */
   shellType?: 'rolling-ball' | 'sharp';
+  /**
+   * When true, expand facesToRemove to include all tangent-connected neighbours
+   * of the selected faces before removing them.
+   * Mirrors Fusion ShellFeatureInput.isTangentChain.
+   */
+  isTangentChain?: boolean;
 }
 
 export async function occShell(
@@ -54,11 +62,16 @@ export function occShellWithInstance(
   const occ = oc as OccShellApi;
   if (facesToRemove.length === 0) return null;
 
+  // Expand the removal face set to include tangent neighbours if requested.
+  const resolvedFaces = options.isTangentChain
+    ? expandTangentFaceChain(oc, body, facesToRemove)
+    : facesToRemove;
+
   // Build the TopTools_ListOfShape of faces to remove
   const faceList = new occ.TopTools_ListOfShape_1();
   const rawFaces: Array<{ delete?: () => void }> = [];
 
-  for (const faceId of facesToRemove) {
+  for (const faceId of resolvedFaces) {
     const handle = body.faceIds.get(faceId);
     if (!handle) continue;
     const rawFace = occDeref(oc, handle, oc.TopoDS_Face);

@@ -13,6 +13,7 @@ export function CombineDialog({ onClose }: { onClose: () => void }) {
 
   const [operation, setOperation] = useState<CombineOperation>((p.operation as CombineOperation) ?? 'join');
   const [keepTools, setKeepTools] = useState(p.keepTools !== false && !!p.keepTools);
+  const [isNewComponent, setIsNewComponent] = useState<boolean>(Boolean(p.isNewComponent));
   const [targetId, setTargetId] = useState<string>(String(p.targetId ?? ''));
   const [toolIds, setToolIds] = useState<string[]>(
     Array.isArray(p.toolIds)
@@ -29,15 +30,15 @@ export function CombineDialog({ onClose }: { onClose: () => void }) {
 
   const handleApply = () => {
     if (editing) {
-      recommitCombine(editing.id, { operation, keepTools, targetId, toolId: toolIds[0] ?? '', toolIds });
+      recommitCombine(editing.id, { operation, keepTools, isNewComponent, targetId, toolId: toolIds[0] ?? '', toolIds });
     } else if (targetId && toolIds.length > 0) {
-      commitCombine(targetId, toolIds, operation, keepTools);
+      commitCombine(targetId, toolIds, operation, keepTools, isNewComponent);
     } else {
       const feature: Feature = {
         id: crypto.randomUUID(),
         name: `Combine (${operation})`,
         type: 'combine',
-        params: { operation, keepTools, targetId, toolId: toolIds[0] ?? '', toolIds },
+        params: { operation, keepTools, isNewComponent, targetId, toolId: toolIds[0] ?? '', toolIds },
         visible: true,
         suppressed: false,
         timestamp: Date.now(),
@@ -96,6 +97,10 @@ export function CombineDialog({ onClose }: { onClose: () => void }) {
       <label className="checkbox-label">
         <input type="checkbox" checked={keepTools} onChange={(e) => setKeepTools(e.target.checked)} />
         Keep Tools (preserve tool bodies)
+      </label>
+      <label className="checkbox-label">
+        <input type="checkbox" checked={isNewComponent} onChange={(e) => setIsNewComponent(e.target.checked)} />
+        New Component (keep input bodies, result is a separate body)
       </label>
       <p className="dialog-hint">Select a target body and one or more tool bodies to combine.</p>
     </DialogShell>
