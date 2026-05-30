@@ -155,7 +155,7 @@
 
 # ── Track A: Vertex-edge topology helpers ─────────────────────────────────────
 
-[ ] OCC-16.A1 — buildVertexEdgeMap(oc, body): Map<vertexPtr, Set<edgeId>>
+[x] OCC-16.A1 — buildVertexEdgeMap(oc, body): Map<vertexPtr, Set<edgeId>>
 #   File: src/engine/occ/ops/adjacency.ts (extend existing file)
 #   Walk TopExp_Explorer on body over TopAbs_VERTEX; for each vertex, use
 #   TopTools_IndexedDataMapOfShapeListOfShape or a fresh BRep_Builder walk to
@@ -167,12 +167,12 @@
 #   Disposal: all TopTools maps and explorers you create are OWNED → .delete()
 #   Export: buildVertexEdgeMap + type VertexEdgeMap
 
-[ ] OCC-16.A2 — edgesShareVertex(vertexMap, idA, idB): boolean
+[x] OCC-16.A2 — edgesShareVertex(vertexMap, idA, idB): boolean
 #   Tiny helper: given A1's map, return true if any vertex in the map has both
 #   idA and idB in its Set. Used in A3 to detect which edges are "adjacent".
 #   No OCC calls — pure map lookup. Lives in adjacency.ts next to A1.
 
-[ ] OCC-16.A3 — partitionEdgesByTopology(oc, body, edgeIds): EdgePartition
+[x] OCC-16.A3 — partitionEdgesByTopology(oc, body, edgeIds): EdgePartition
 #   Uses A1+A2 + selectableEdges (kind classification) to split edgeIds into:
 #     round:  edgeIds where kind === 'circle' or 'arc'
 #     linear: edgeIds where kind === 'line' (or unknown)
@@ -185,7 +185,7 @@
 
 # ── Track B: Topology-aware sequential fallback ───────────────────────────────
 
-[ ] OCC-16.B1 — topologicalFilletOrder(partition): Array<number[]>
+[x] OCC-16.B1 — topologicalFilletOrder(partition): Array<number[]>
 #   Pure function: given an EdgePartition (from A3), returns an ORDERED list of
 #   edge-id groups to apply as sequential combined passes. Rules:
 #     1. Round edges adjacent to linear edges go in group 1 (fillet the arc/
@@ -203,7 +203,7 @@
 #   Pure function, no OCC calls — unit-testable with mocked partitions.
 #   File: src/engine/occ/ops/filletOrder.ts (new file)
 
-[ ] OCC-16.B2 — occFilletEdgeSetsTopologicalWithInstance(oc, body, edgeSets, opts)
+[x] OCC-16.B2 — occFilletEdgeSetsTopologicalWithInstance(oc, body, edgeSets, opts)
 #   New exported function in fillet.ts. Applies the topology-ordered sequential
 #   strategy:
 #     1. Call A3's partitionEdgesByTopology on the seed edges + the base body
@@ -223,7 +223,7 @@
 #   Disposal discipline: every intermediate body that is replaced must be
 #   disposed immediately (do NOT hold on to them — WASM heap pressure).
 
-[ ] OCC-16.B3 — Wire topology-ordered fallback into edgeModApply.ts
+[x] OCC-16.B3 — Wire topology-ordered fallback into edgeModApply.ts
 #   In applyOccEdgeModification's Fillet branch, insert the new fallback BETWEEN
 #   the existing "combined-on-base" fallback and the final null-return:
 #
@@ -247,7 +247,7 @@
 
 # ── Track C: Error messaging ───────────────────────────────────────────────────
 
-[ ] OCC-16.C1 — Actionable failure message when all orderings fail
+[x] OCC-16.C1 — Actionable failure message when all orderings fail
 #   When all fallbacks including topological ordering fail, the error should say:
 #     "Fillet at Xmm could not be solved at this corner — the edge meets an
 #      adjacent fillet and no ordering worked. Try Y mm (verified max) or apply
@@ -258,7 +258,7 @@
 
 # ── Track D: Tests ─────────────────────────────────────────────────────────────
 
-[ ] OCC-16.D1 — Unit test partitionEdgesByTopology (adjacency.test.ts)
+[x] OCC-16.D1 — Unit test partitionEdgesByTopology (adjacency.test.ts)
 #   Test with a mocked body that has 2 edges sharing a vertex: one circle, one
 #   line. Assert:
 #     round = [circleEdgeId]
@@ -268,14 +268,14 @@
 #   Test with a box (no circles): all linear, no adjacency cross-type.
 #   File: src/engine/occ/ops/__tests__/adjacency.test.ts (new)
 
-[ ] OCC-16.D2 — Unit test topologicalFilletOrder (filletOrder.test.ts)
+[x] OCC-16.D2 — Unit test topologicalFilletOrder (filletOrder.test.ts)
 #   Test the ordering pure function without OCC:
 #     partionWithCircleAndLine → returns [[circleId], [lineId]]
 #     partionWithOnlyCircles  → returns [] (no cross-type adjacency → skip)
 #     partitionWithTwoIsolated → returns [] (nothing adjacent → skip)
 #   File: src/engine/occ/ops/__tests__/filletOrder.test.ts (new)
 
-[ ] OCC-16.D3 — Integration test: 1mm fillet-meets-fillet corner
+[x] OCC-16.D3 — Integration test: 1mm fillet-meets-fillet corner
 #   Uses the REAL OCC kernel (vitest + actual occ loader, same as
 #   filletRequestedRadius.test.ts pattern).
 #   Build: rect extrude (10mm deep) → fillet the notch arc (r6.71) at 1mm →
@@ -285,7 +285,7 @@
 #   This is the exact case that was failing before OCC-16.
 #   File: src/engine/occ/ops/__tests__/filletCornerOrder.test.ts (new)
 
-[ ] OCC-16.D4 — Regression: existing fillet tests still pass
+[x] OCC-16.D4 — Regression: existing fillet tests still pass
 #   npx vitest run src/engine/occ/ops/__tests__/
 #   All 14 existing OCC-ops tests must still pass. The topological path is a
 #   FALLBACK — primary path unchanged. The only way a regression occurs is if
@@ -293,7 +293,7 @@
 
 # ── Track E: Cleanup ───────────────────────────────────────────────────────────
 
-[ ] OCC-16.E1 — Remove arc-first sequential fallback (OCC-13.3 "pending QA")
+[x] OCC-16.E1 — Remove arc-first sequential fallback (OCC-13.3 "pending QA")
 #   OCC-13.3 comment: "Arc-first fallback kept (gated on QA before removal)".
 #   Once OCC-16.B2 ships and the topological fallback covers the same cases
 #   (round-first + siblings), the arc-first block in edgeModApply.ts is
@@ -332,13 +332,13 @@
 #
 # ACCEPTANCE CRITERIA (must all pass before closing OCC-16):
 #   [x] 1mm fillet on notch arc (r6.71) works (already done, OCC-16 prereq)
-#   [ ] 1mm fillet on adjacent line edge (top/side) works AFTER the notch fillet
-#   [ ] No degenerate sliver; seed-edge-consumed guard passes
-#   [ ] BRepCheck-valid final solid
-#   [ ] Prior fillets are preserved (combined-on-base + topological: all edges)
-#   [ ] D3 integration test passes
-#   [ ] D4 regression (14 existing tests) passes
-#   [ ] OCC-13.4 QA checklist completed and closed
+#   [x] 1mm fillet on adjacent line edge (top/side) works AFTER the notch fillet
+#   [x] No degenerate sliver; seed-edge-consumed guard passes
+#   [x] BRepCheck-valid final solid
+#   [x] Prior fillets are preserved (combined-on-base + topological: all edges)
+#   [x] D3 integration test passes
+#   [x] D4 regression (31 tests across 7 files) passes
+#   [ ] OCC-13.4 QA checklist completed and closed (interactive 3D QA — pending)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SDK reference (Fusion 360 BRep topology headers)

@@ -16,11 +16,15 @@ import type { OcctRaw } from '../types';
 import { makeBRepBodyFromOccShape, occDeref, type BRepBody } from '../brepBody';
 import { getOcc } from '../loader';
 import {
+  buildVertexEdgeMap,
   collectFaceEdgeIds,
   collectSharedEdgeIds,
   findAdjacentFacesToFace,
   findShapeIndex,
+  partitionEdgesByTopology,
 } from './adjacency';
+import { topologicalFilletOrder } from './filletOrder';
+import { getSelectableEdges } from './selectableEdges';
 import { computeEdgeAnchor, findEdgeByAnchor, type EdgeAnchor } from './edgeAnchor';
 import { isOccShapeValid } from './shapeValidity';
 
@@ -1131,4 +1135,80 @@ export function occRuleFilletBetweenFacesWithInstance(
   const edgeIds = applyTopologyFilter(raw, options);
   if (edgeIds.length === 0) return null;
   return occFilletEdgeSetsWithInstance(oc, body, [{ edgeIds, radius }], options);
+}
+
+// ── OCC-16.B2: Topology-ordered sequential fallback ───────────────────────────
+
+/**
+ * Applies edge sets in topology-aware order: round edges adjacent to linear
+ * edges go first, so OCC has the blended topology before the linear edge is
+ * attempted.  Each group is applied as a single combined BRepFilletAPI_MakeFillet
+ * pass on the running body.
+ *
+ * Returns null when:
+ *   - the partition has no cross-type adjacency (no benefit over combined pass), OR
+ *   - any group fails to build a valid body.
+ *
+ * Never radius-clamps. Disposal: every intermediate body is disposed immediately
+ * when replaced — no WASM heap accumulation.
+ */
+export function occFilletEdgeSetsTopologicalWithInstance(
+  oc: OcctRaw,
+  body: BRepBody,
+  edgeSets: OccFilletEdgeSet[],
+  options: OccFilletOptions = {},
+): BRepBody | null {
+  if (edgeSets.length === 0) return null;
+
+  // Flatten all edge IDs for partition analysis.
+  const allEdgeIds = edgeSets.flatMap((es) => es.edgeIds);
+  if (allEdgeIds.length === 0) return null;
+
+  const edgeMeta = getSelectableEdges(oc, body);
+  const edgeKinds = new Map<number, string>(
+    [...edgeMeta.entries()].map(([id, meta]) => [id, meta.kind]),
+  );
+  const vertexMap = buildVertexEdgeMap(oc, body);
+  const partition = partitionEdgesByTopology(allEdgeIds, edgeKinds, vertexMap);
+  const plan = topologicalFilletOrder(partition);
+
+  // No cross-type adjacency — this path adds no value over the combined pass.
+  if (plan.length <= 1) return null;
+
+  // Build a lookup from edgeId → OccFilletEdgeSet so each group inherits the
+  // right radius spec from its source set.
+  const edgeToSet = new Map<number, OccFilletEdgeSet>();
+  for (const es of edgeSets) {
+    for (const id of es.edgeIds) edgeToSet.set(id, es);
+  }
+
+  let running: BRepBody = body;
+  let runningIsIntermediate = false;
+
+  for (const group of plan) {
+    if (group.length === 0) continue;
+
+    // Build edge-set list for this group, preserving per-edge radius specs.
+    const groupSets: OccFilletEdgeSet[] = group.map((id) => {
+      const src = edgeToSet.get(id);
+      return src ? { ...src, edgeIds: [id] } : { edgeIds: [id] };
+    });
+
+    const next = occFilletEdgeSetsWithInstance(
+      oc, running, groupSets,
+      { sourceFeatureId: options.sourceFeatureId, continuity: options.continuity,
+        tangencyWeight: options.tangencyWeight, isRollingBallCorner: options.isRollingBallCorner },
+    );
+
+    if (!next) {
+      if (runningIsIntermediate) running.dispose();
+      return null;
+    }
+
+    if (runningIsIntermediate) running.dispose();
+    running = next;
+    runningIsIntermediate = true;
+  }
+
+  return runningIsIntermediate ? running : null;
 }

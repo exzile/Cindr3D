@@ -6,6 +6,7 @@ import { globalBRepBodyRegistry } from "../../../../engine/occ/globalRegistry";
 import {
   occFilletEdgeSetsWithInstance,
   occFilletEdgeSetsSequentialWithInstance,
+  occFilletEdgeSetsTopologicalWithInstance,
   occFullRoundFilletWithInstance,
   type FullRoundSideFaces,
   type OccFilletEdgeSet,
@@ -660,46 +661,6 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
           }
         }
 
-        // Arc-first sequential fallback: the combined pass fails when the corner edge
-        // and arc edge share a vertex (OCC cannot compute the fillet surface junction in
-        // one pass). Instead, apply the current (arc) fillet to the base body first,
-        // then find the corner edge IDs in the arc-filleted intermediate body and apply
-        // all sibling (corner) fillets on top. Corner edges are geometrically far from
-        // the arc region, so their IDs remain stable after the arc fillet topology change.
-        //
-        // NOTE: there is deliberately NO radius-reduction fallback here. Fusion 360 does
-        // not silently shrink a too-large radius — it fails the feature and asks the user
-        // to reduce the value. The fallbacks below (vertex-neighbor, arc-first) only add
-        // topology context or change application order; they always honour the requested
-        // radius. An over-large radius therefore fails cleanly (see the error below).
-        if (!result && siblingFilletEdgeSets.length > 0) {
-          console.warn(`[${tool}] combined fillet failed — trying arc-first sequential fallback`);
-          try {
-            // Step 1: Apply the current (arc) fillet to the base body.
-            const arcBody = occFilletEdgeSetsWithInstance(
-              occ.oc, srcBody, currentFilletEdgeSets,
-              { sourceFeatureId: `${featureId}_arc` },
-            );
-            if (arcBody) {
-              // Step 2: Re-map sibling (corner) edge sets to the arc-filleted body.
-              // Corner edges are unaffected by the arc fillet, so their IDs survive.
-              const cornerSetsInArcBody = collectSiblingFilletEdgeSets(arcBody);
-              if (cornerSetsInArcBody.length > 0) {
-                // Step 3: Apply all corner fillets to the arc-filleted body.
-                result = occFilletEdgeSetsWithInstance(
-                  occ.oc, arcBody, cornerSetsInArcBody,
-                  { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
-                );
-              }
-              if (!result) arcBody.dispose();
-            } else {
-              console.warn(`[${tool}] arc-first fallback: arc fillet on base body failed`);
-            }
-          } catch (seqErr) {
-            console.warn(`[${tool}] arc-first fallback threw`, seqErr);
-          }
-        }
-
         // Combined-on-base fallback: in a fillet CHAIN, each feature was applied to a
         // different intermediate body, so collectSiblingFilletEdgeSets (matched by
         // bodyId) never combines them, and the per-step sequential fallbacks fail where
@@ -738,6 +699,52 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
               if (combined) {
                 result = combined;
                 srcBody = seedBody; // result is built on the base; repoint baseline + lineage
+              }
+            }
+          }
+        }
+
+        // Topological-order fallback (OCC-16): when the corner involves a round edge
+        // (circle/arc) adjacent to a linear edge, applying round-before-linear in
+        // separate passes gives OCC enough blended topology to close the corner.
+        // This handles the "1mm fillet on line edge adjacent to notch-arc fillet" case
+        // that all previous fallbacks cannot solve.  Seed on the same earliest base body
+        // as combined-on-base, remapping siblings and current edges onto it.
+        if (!result) {
+          const seedCandTopo = remappedBodyCandidates
+            .filter((c) => c.featureIndex >= 0 && c.body.id !== srcBody.id)
+            .sort((a, b) => a.featureIndex - b.featureIndex)[0];
+          const topoBaseBody = seedCandTopo?.body ?? srcBody;
+          const topoBaseEdgeIds = seedCandTopo?.edgeIds ?? numericEdgeIds;
+
+          const topoSiblingSets: OccFilletEdgeSet[] = [];
+          let topoRemapOk = true;
+          if (seedCandTopo) {
+            for (let i = 0; i < limit; i++) {
+              const f = allFeatures[i];
+              if (f.type !== 'fillet' || f.suppressed || f.id === featureId) continue;
+              const mode = f.params.mode as string | undefined;
+              if (mode === 'full-round' || mode === 'rule-fillet') continue;
+              const sibIds = remapStoredEdgeIdsToBody(storedEdgeIds(f.params.edgeIds), f.id, topoBaseBody);
+              if (!sibIds || sibIds.length === 0) { topoRemapOk = false; break; }
+              topoSiblingSets.push(...resolveOccFilletEdgeSets(sibIds, topoBaseBody, f.params as Record<string, unknown>));
+            }
+          }
+
+          if (topoRemapOk) {
+            const topoCurrentSets = resolveOccFilletEdgeSets(
+              topoBaseEdgeIds, topoBaseBody, filletParams, radius ?? DEFAULT_FILLET_RADIUS,
+            );
+            const topoAllSets = [...topoSiblingSets, ...topoCurrentSets];
+            if (topoAllSets.length > 0) {
+              console.warn(`[${tool}] all combined fallbacks failed — trying topological-order fallback`);
+              const topoResult = occFilletEdgeSetsTopologicalWithInstance(
+                occ.oc, topoBaseBody, topoAllSets,
+                { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
+              );
+              if (topoResult) {
+                result = topoResult;
+                if (seedCandTopo) srcBody = topoBaseBody;
               }
             }
           }
@@ -840,11 +847,40 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       });
     }
     if (!result) {
-      return markOccEdgeModificationError(
-        featureId,
-        tool,
-        `OCC operation failed for the selected edge set; kept the previous body unchanged.${edgeModSizeHint(tool, radius, distance, "may")}`,
-      );
+      // When all fallbacks fail for a Fillet, probe for the largest radius that
+      // does work (up to 3 bisection steps) to give the user an actionable suggestion.
+      let radiusSuggestion = "";
+      if (tool === "Fillet" && typeof radius === "number" && radius > 0) {
+        let lo = 0, hi = radius;
+        let bestRadius: number | null = null;
+        for (let probe = 0; probe < 3; probe++) {
+          const mid = (lo + hi) / 2;
+          const testSets = resolveOccFilletEdgeSets(
+            numericEdgeIds, srcBody, filletParams, mid,
+          );
+          const testResult = occFilletEdgeSetsWithInstance(
+            occ.oc, srcBody, testSets,
+            { sourceFeatureId: `${featureId}_probe` },
+          );
+          if (testResult) {
+            bestRadius = mid;
+            lo = mid;
+            testResult.dispose?.();
+          } else {
+            hi = mid;
+          }
+        }
+        if (bestRadius !== null) {
+          const suggestion = Math.floor(bestRadius * 100) / 100;
+          radiusSuggestion = ` Try ${suggestion} mm (verified max) or apply this fillet before the neighbouring one.`;
+        } else {
+          radiusSuggestion = edgeModSizeHint(tool, radius, distance, "may");
+        }
+      }
+      const cornerMessage = tool === "Fillet"
+        ? `Fillet at ${radius} mm could not be solved at this corner — the edge meets an adjacent fillet and no ordering worked.${radiusSuggestion}`
+        : `OCC operation failed for the selected edge set; kept the previous body unchanged.${edgeModSizeHint(tool, radius, distance, "may")}`;
+      return markOccEdgeModificationError(featureId, tool, cornerMessage);
     }
     if (result.faceIds.size <= srcBody.faceIds.size) {
       const resultFaceCount = result.faceIds.size;
