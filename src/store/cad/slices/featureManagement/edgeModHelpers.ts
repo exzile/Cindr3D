@@ -55,11 +55,18 @@ export function resolveOccFilletEdgeSets(
   const occ = shouldPropagate ? getOccSync() : null;
   const expand = (edgeIds: number[]): number[] => {
     if (!shouldPropagate || !occ || edgeIds.length === 0) return edgeIds;
-    const hasRoundSeed = edgeIds.some((edgeId) => computeEdgeAnchor(occ.oc, srcBody, edgeId)?.kind === 'circle');
-    if (hasRoundSeed) return edgeIds;
+    // Never tangent-propagate from a round (circular) seed — propagating from a full
+    // circle would extend around the whole cylinder rim. For a MIXED set (circle + lines)
+    // we still propagate the linear members; only the circular ones are held back.
+    const roundSet = new Set(
+      edgeIds.filter((id) => computeEdgeAnchor(occ.oc, srcBody, id)?.kind === 'circle'),
+    );
+    const linearIds = edgeIds.filter((id) => !roundSet.has(id));
+    if (linearIds.length === 0) return edgeIds; // all-round set — nothing to propagate
     try {
-      const expanded = collectTangentChainEdges(occ.oc, srcBody, edgeIds);
-      return expanded.length > edgeIds.length ? expanded : edgeIds;
+      const expandedLinear = collectTangentChainEdges(occ.oc, srcBody, linearIds);
+      const combined = [...new Set([...roundSet, ...expandedLinear])];
+      return combined.length > edgeIds.length ? combined : edgeIds;
     } catch (err) {
       console.warn('[fillet.propagate] tangent-chain walk failed:', err);
       return edgeIds;

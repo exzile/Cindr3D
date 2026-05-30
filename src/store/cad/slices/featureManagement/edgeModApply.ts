@@ -472,7 +472,17 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     // GAP B/C: Propagation for chamfer (fillet propagation is handled in commitFillet
     // before filletEdgeSets are built; chamfer propagation is handled here).
     if (propagate && tool === "Chamfer") {
-      numericEdgeIds = propagateTangentEdges(occ, srcBody, numericEdgeIds);
+      // Mirror the fillet propagation guard: never tangent-propagate from a circular
+      // edge (over-propagates around a cylinder rim). Per-edge: only propagate the
+      // linear edges so a mixed selection still extends the linear chain correctly.
+      const chamferRoundSet = new Set(
+        numericEdgeIds.filter((id) => computeEdgeAnchor(occ.oc, srcBody, id)?.kind === 'circle'),
+      );
+      const chamferLinearIds = numericEdgeIds.filter((id) => !chamferRoundSet.has(id));
+      if (chamferLinearIds.length > 0) {
+        const expandedLinear = propagateTangentEdges(occ, srcBody, chamferLinearIds);
+        numericEdgeIds = [...new Set([...chamferRoundSet, ...expandedLinear])];
+      }
     }
 
     // The "current" edge sets for this specific fillet commit.
@@ -912,7 +922,14 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       // count a DIFFERENT collinear edge (e.g. a rim split into two segments by a
       // notch) as "survived", wrongly rejecting a perfectly good fillet. The margin
       // is the fillet radius (the blend trims one end of any genuine survivor).
-      const margin = (radius ?? distance ?? DEFAULT_FILLET_RADIUS) + 0.5;
+      // Derive margin from the actual edge-set max radius so variable-radius,
+      // chord-length, and asymmetric fillets (where `radius` is undefined) are
+      // handled correctly. Fall back to the operation-level `radius`/`distance`.
+      const maxEdgeSetRadius = effectiveFilletEdgeSets.reduce((max, es) =>
+        Math.max(max, es.radius ?? 0, es.startRadius ?? 0, es.endRadius ?? 0, es.chordLength ?? 0),
+        0,
+      );
+      const margin = (maxEdgeSetRadius > 0 ? maxEdgeSetRadius : (radius ?? distance ?? DEFAULT_FILLET_RADIUS)) + 0.5;
       const survivedCount = seedAnchorsForCheck
         .filter((a) => isAnchorEdgePresent(occ.oc, result!, a, margin)).length;
       // A sequentially-skipped edge is a KNOWN, already-reported non-consumption: the

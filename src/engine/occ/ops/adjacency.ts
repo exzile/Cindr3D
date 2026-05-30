@@ -395,16 +395,46 @@ export function collectTangentChainEdges(
       let vStart = -1, vEnd = -1;
       const vexp = new occ.TopExp_Explorer_2(rawEdge, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
       trash.push(vexp);
-      const verts: number[] = [];
-      while (vexp.More() && verts.length < 2) {
-        const v = vexp.Current();
+      // Keep vertex shapes alive so we can look up positions for correct t0/t1 assignment.
+      // TopExp walk order is NOT guaranteed to match parameter order; we sort by comparing
+      // vertex positions (via BRep_Tool.Pnt) with the already-computed D0(t0) endpoint.
+      const vertShapes: Array<{ idx: number; shape: { delete(): void } }> = [];
+      while (vexp.More() && vertShapes.length < 2) {
+        const v = vexp.Current(); // OWNED
         const vIdx = findShapeIndex(vertMap, v);
-        v.delete();
-        if (vIdx > 0) verts.push(vIdx);
+        if (vIdx > 0) vertShapes.push({ idx: vIdx, shape: v });
+        else v.delete();
         vexp.Next();
       }
-      if (verts.length >= 1) vStart = verts[0];
-      if (verts.length >= 2) vEnd = verts[1]; else vEnd = vStart;
+      if (vertShapes.length >= 1) {
+        const brep = oc as OcctRaw & {
+          BRep_Tool?: { Pnt(v: unknown): { X(): number; Y(): number; Z(): number; delete(): void } };
+        };
+        let assigned = false;
+        if (vertShapes.length === 2 && typeof brep.BRep_Tool?.Pnt === 'function') {
+          try {
+            // TopoDS.Vertex_1 returns a VIEW (same ptr) — do NOT delete.
+            const vs1: unknown = oc.TopoDS.Vertex_1 ? oc.TopoDS.Vertex_1(vertShapes[0].shape) : vertShapes[0].shape;
+            const vs2: unknown = oc.TopoDS.Vertex_1 ? oc.TopoDS.Vertex_1(vertShapes[1].shape) : vertShapes[1].shape;
+            const pos1 = brep.BRep_Tool.Pnt(vs1);
+            const pos2 = brep.BRep_Tool.Pnt(vs2);
+            // p0 = D0(t0): compare each vertex with the curve's first-parameter endpoint.
+            const d1 = Math.hypot(pos1.X() - p0.X(), pos1.Y() - p0.Y(), pos1.Z() - p0.Z());
+            const d2 = Math.hypot(pos2.X() - p0.X(), pos2.Y() - p0.Y(), pos2.Z() - p0.Z());
+            pos1.delete(); pos2.delete();
+            vStart = d1 <= d2 ? vertShapes[0].idx : vertShapes[1].idx;
+            vEnd   = d1 <= d2 ? vertShapes[1].idx : vertShapes[0].idx;
+            assigned = true;
+          } catch { /* fall through */ }
+        }
+        if (!assigned) {
+          // Fallback to walk order (often correct for well-formed BRep, but not guaranteed).
+          vStart = vertShapes[0].idx;
+          vEnd = vertShapes.length >= 2 ? vertShapes[1].idx : vStart;
+        }
+      }
+      // Delete vertex shapes now that position lookup is done.
+      for (const vd of vertShapes) { try { vd.shape.delete(); } catch { /* already freed */ } }
 
       const info: EdgeInfo = {
         vStart,
@@ -718,26 +748,20 @@ export function buildVertexEdgeMap(
           const vertShapeView = findShapeByKey(vertMap, vIdx);
           if (vertShapeView) {
             try {
-              const pnt = new occ.gp_Pnt_1();
-              try {
-                // BRep_Tool.Pnt is the canonical way; fall back to parsing ptr.
-                const brep = oc as OcctRaw & { BRep_Tool?: { Pnt(v: unknown): unknown } };
-                if (typeof brep.BRep_Tool?.Pnt === 'function') {
-                  const rawVertex = oc.TopoDS.Vertex_1
-                    ? oc.TopoDS.Vertex_1(vertShapeView)
-                    : vertShapeView;
-                  const p = brep.BRep_Tool.Pnt(rawVertex) as { X(): number; Y(): number; Z(): number; delete(): void };
-                  key = `${p.X().toFixed(3)},${p.Y().toFixed(3)},${p.Z().toFixed(3)}`;
-                  p.delete?.();
-                } else {
-                  key = `v${vIdx}`;
-                }
-              } finally {
-                pnt.delete();
+              // BRep_Tool.Pnt is the only reliable way to get the vertex coordinate.
+              // If it is unavailable, leave key=null: we skip the vertex rather than
+              // inserting a `v${vIdx}` fallback key that can never match a coordinate
+              // key from another call, producing spurious "no shared vertex" results.
+              const brep = oc as OcctRaw & { BRep_Tool?: { Pnt(v: unknown): { X(): number; Y(): number; Z(): number; delete(): void } } };
+              if (typeof brep.BRep_Tool?.Pnt === 'function') {
+                const rawVertex = oc.TopoDS.Vertex_1
+                  ? oc.TopoDS.Vertex_1(vertShapeView)
+                  : vertShapeView;
+                const p = brep.BRep_Tool.Pnt(rawVertex);
+                key = `${p.X().toFixed(3)},${p.Y().toFixed(3)},${p.Z().toFixed(3)}`;
+                p.delete();
               }
-            } catch {
-              key = `v${vIdx}`;
-            }
+            } catch { /* skip vertex if position lookup fails */ }
           }
         }
         v.delete();
