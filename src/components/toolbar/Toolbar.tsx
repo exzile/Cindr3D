@@ -2,7 +2,6 @@ import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { useCADStore } from '../../store/cadStore';
 import { useComponentStore } from '../../store/componentStore';
 import type { Tool, Feature } from '../../types/cad';
-import type * as THREE from 'three';
 import './Toolbar.css';
 import { errorMessage } from '../../utils/errorHandling';
 import { QuickAccessBar } from './QuickAccessBar';
@@ -130,7 +129,7 @@ export default function Toolbar() {
         name: file.name,
         type: 'import',
         params: { fileName: file.name },
-        mesh: group as unknown as THREE.Mesh,
+        mesh: group,
         visible: true,
         suppressed: false,
         timestamp: Date.now(),
@@ -155,7 +154,7 @@ export default function Toolbar() {
         name: file.name,
         type: 'import',
         params: { fileName: file.name, bodyKind: 'mesh' },
-        mesh: group as unknown as THREE.Mesh,
+        mesh: group,
         bodyKind: 'mesh',
         visible: true,
         suppressed: false,

@@ -9,7 +9,7 @@
  * before being replaced to prevent GPU memory leaks.
  */
 
-import { useRef, useCallback, useEffect, useMemo, useState } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useCADStore } from '../../../store/cadStore';
@@ -46,8 +46,15 @@ export default function ShellFacePicker() {
 
   // Per-instance clone of the shared HOVER_MAT so we can pulse opacity without
   // mutating the module-level singleton (one clone per component lifetime).
-  const pulseHoverMat = useMemo(() => HOVER_MAT.clone(), []);
-  useEffect(() => () => { pulseHoverMat.dispose(); }, [pulseHoverMat]);
+  const pulseHoverMatRef = useRef<THREE.MeshBasicMaterial | null>(null);
+  useEffect(() => {
+    const material = HOVER_MAT.clone();
+    pulseHoverMatRef.current = material;
+    return () => {
+      pulseHoverMatRef.current = null;
+      material.dispose();
+    };
+  }, []);
 
   // Crosshair cursor while a pickable face is hovered.
   const [hovering, setHovering] = useState(false);
@@ -59,6 +66,7 @@ export default function ShellFacePicker() {
   const selectedBoundariesRef = useRef<Map<string, THREE.Vector3[]>>(new Map());
 
   const hoverMeshRef = useRef<THREE.Mesh | null>(null);
+  const hoverSigRef = useRef<string | null>(null);
   usePickerSceneCleanup([hoverMeshRef]);
   // The Map of selected per-face meshes also needs unmount cleanup so HMR /
   // viewport teardown doesn't strand them in the scene with leaked geometries.
@@ -119,6 +127,7 @@ export default function ShellFacePicker() {
         hoverMeshRef.current.geometry.dispose();
         hoverMeshRef.current = null;
       }
+      hoverSigRef.current = null;
       selectedMeshesRef.current.forEach((mesh) => {
         scene.remove(mesh);
         mesh.geometry.dispose();
@@ -132,14 +141,21 @@ export default function ShellFacePicker() {
     // ── Hover overlay ────────────────────────────────────────────────────────
     const hr = hoverResultRef.current;
     if (hr) {
-      if (!hoverMeshRef.current) {
-        const mesh = new THREE.Mesh(buildFaceGeometry(hr.boundary), pulseHoverMat);
-        mesh.renderOrder = 99;
-        scene.add(mesh);
-        hoverMeshRef.current = mesh;
-      } else {
-        hoverMeshRef.current.geometry.dispose();
-        hoverMeshRef.current.geometry = buildFaceGeometry(hr.boundary);
+      const pulseHoverMat = pulseHoverMatRef.current;
+      if (!pulseHoverMat) return;
+      const sig = hr.centroid.toArray().join(',');
+      if (!hoverMeshRef.current || hoverSigRef.current !== sig) {
+        const geometry = buildFaceGeometry(hr.boundary);
+        if (hoverMeshRef.current) {
+          hoverMeshRef.current.geometry.dispose();
+          hoverMeshRef.current.geometry = geometry;
+        } else {
+          const mesh = new THREE.Mesh(geometry, pulseHoverMat);
+          mesh.renderOrder = 99;
+          scene.add(mesh);
+          hoverMeshRef.current = mesh;
+        }
+        hoverSigRef.current = sig;
       }
       // Subtle breathing pulse on the hover highlight (per-instance clone).
       pulseHoverMat.opacity = 0.25 + 0.35 * pulseFactor(clock.elapsedTime * 1000);
@@ -147,6 +163,7 @@ export default function ShellFacePicker() {
       scene.remove(hoverMeshRef.current);
       hoverMeshRef.current.geometry.dispose();
       hoverMeshRef.current = null;
+      hoverSigRef.current = null;
     }
 
     // ── Selected face overlays ───────────────────────────────────────────────

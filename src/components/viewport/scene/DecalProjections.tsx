@@ -63,8 +63,8 @@ function readSpec(f: Feature): DecalSpec | null {
 }
 
 /** Find the body mesh whose userData.featureId matches, preferring the
- *  highest-vertex-count mesh (the final merged body after CSG, mirroring the
- *  face-picker's disambiguation). Returns null until the body mounts. */
+ *  highest-vertex-count mesh when multiple rendered pieces share a feature.
+ *  Returns null until the body mounts. */
 function resolveTargetMesh(scene: THREE.Object3D, featureId: string): THREE.Mesh | null {
   let best: THREE.Mesh | null = null;
   let bestVerts = -1;
@@ -111,6 +111,13 @@ function DecalProjection({ spec }: { spec: DecalSpec }) {
   const targetRef = useRef<THREE.Mesh | null>(null);
   const pollAttemptsRef = useRef(0);
   const [targetReady, setTargetReady] = useState(false);
+  // Reset resolution state when the target feature changes so we re-poll
+  // against the new mesh rather than continuing with the stale ref.
+  useEffect(() => {
+    targetRef.current = null;
+    pollAttemptsRef.current = 0;
+    setTargetReady(false);
+  }, [spec.targetFeatureId]);
   useFrame(() => {
     if (targetRef.current) return;
     const t = resolveTargetMesh(scene, spec.targetFeatureId);

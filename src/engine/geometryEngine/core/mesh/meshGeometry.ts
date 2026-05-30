@@ -136,6 +136,39 @@ export function bakeMeshWorldGeometry(mesh: THREE.Mesh): THREE.BufferGeometry {
   mesh.updateMatrixWorld(true);
   const geometry = mesh.geometry.clone();
   geometry.applyMatrix4(mesh.matrixWorld);
+  // After applyMatrix4 the position attribute is in world space. Any
+  // `_manifoldData` cache (from Manifold-native builders) holds vertex
+  // coordinates in the original local frame, so transform those coordinates
+  // too before downstream mesh CSG consumers read them.
+  //
+  // We deep-copy vertProperties because clone() gives a shallow userData copy
+  // that would share the array with the live mesh; mutating in place corrupts
+  // the rendered mesh. Then apply the world matrix to every position.
+  // triVerts are indices, unchanged by a rigid transform.
+  //
+  // Without this, mesh CSG can hit a false NotManifold path and produce
+  // invalid topology from otherwise valid Manifold-native builders.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const md = (geometry.userData as any)?._manifoldData;
+  if (md?.vertProperties) {
+    const vp = new Float32Array(md.vertProperties as Float32Array);
+    const mat = mesh.matrixWorld;
+    const v = new THREE.Vector3();
+    for (let i = 0; i + 2 < vp.length; i += 3) {
+      v.set(vp[i], vp[i + 1], vp[i + 2]).applyMatrix4(mat);
+      vp[i] = v.x; vp[i + 1] = v.y; vp[i + 2] = v.z;
+    }
+    // Break the shallow reference THREE.js BufferGeometry.copy() leaves:
+    // clone() does `this.userData = source.userData` (same object), so writing
+    // below would also mutate the live mesh's _manifoldData with world-space
+    // positions, causing a double-transform on any subsequent fillet/chamfer.
+    geometry.userData = { ...geometry.userData };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (geometry.userData as any)._manifoldData = {
+      vertProperties: vp,
+      triVerts: md.triVerts,
+    };
+  }
   return geometry;
 }
 

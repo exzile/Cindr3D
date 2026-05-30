@@ -28,12 +28,14 @@ export function DraftDialog({ onClose }: { onClose: () => void }) {
 
   // SOL-I3: parting line face picker
   const draftPartingFaceId = useCADStore((s) => s.draftPartingFaceId);
+  const draftPartingOccFaceId = useCADStore((s) => s.draftPartingOccFaceId);
   const draftPartingFaceNormal = useCADStore((s) => s.draftPartingFaceNormal);
   const draftPartingFaceCentroid = useCADStore((s) => s.draftPartingFaceCentroid);
   const clearDraftPartingFace = useCADStore((s) => s.clearDraftPartingFace);
 
   // SOL-F2: pull direction face picker
   const draftPullFaceId = useCADStore((s) => s.draftPullFaceId);
+  const draftPullOccFaceId = useCADStore((s) => s.draftPullOccFaceId);
   const draftPullFaceNormal = useCADStore((s) => s.draftPullFaceNormal);
   const draftPullFacePickActive = useCADStore((s) => s.draftPullFacePickActive);
   const clearDraftPullFace = useCADStore((s) => s.clearDraftPullFace);
@@ -67,14 +69,29 @@ export function DraftDialog({ onClose }: { onClose: () => void }) {
     }
     const dir = getPullAxisDir();
     const offset = draftType === 'parting-line' ? partingPlaneOffset : fixedPlaneY;
-    const params = { draftType, angle, mode, pullAxis, fixedPlaneOffset: fixedPlaneY, bodyId: selectedBodyId, partingFaceId: draftPartingFaceId };
+    const pickedFaceIds = [
+      draftPullOccFaceId,
+      draftType === 'parting-line' ? draftPartingOccFaceId : null,
+    ].filter((faceId): faceId is number => Number.isInteger(faceId));
+    const neutralPlaneOrigin = draftPartingFaceCentroid
+      ? new THREE.Vector3(...draftPartingFaceCentroid)
+      : dir.clone().multiplyScalar(offset);
+    const params = { draftType, angle, mode, pullAxis, fixedPlaneOffset: fixedPlaneY, bodyId: selectedBodyId, partingFaceId: draftPartingFaceId, draftFaceIds: pickedFaceIds };
 
     if (editing) {
       updateFeatureParams(editing.id, params);
-      if (selectedBodyId) commitDraft(selectedBodyId, dir, angle, offset);
+      if (selectedBodyId) commitDraft(selectedBodyId, dir, angle, offset, {
+        faceIds: pickedFaceIds,
+        neutralPlaneOrigin,
+        neutralPlaneNormal: dir,
+      });
       setStatusMessage(`Updated draft: ${angle}° (${mode})`);
     } else if (selectedBodyId) {
-      commitDraft(selectedBodyId, dir, angle, offset);
+      commitDraft(selectedBodyId, dir, angle, offset, {
+        faceIds: pickedFaceIds,
+        neutralPlaneOrigin,
+        neutralPlaneNormal: dir,
+      });
       setStatusMessage(`Draft applied: ${angle}° (${draftType})`);
     } else {
       const feature: Feature = {

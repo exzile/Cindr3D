@@ -1,6 +1,6 @@
 // @refresh reset
 import "./overlays/ViewportOverlay.css";
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, ContactShadows } from '@react-three/drei';
 import type { PresetsType } from '@react-three/drei/helpers/environment-assets';
@@ -40,10 +40,8 @@ import SketchPlaneDragger from './sketch/SketchPlaneDragger';
 import Sketch3DPlaneIndicator from './sketch/Sketch3DPlaneIndicator';
 import FilletEdgeHighlight from './scene/FilletEdgeHighlight';
 import FilletGizmo from './scene/FilletGizmo';
-import FilletPreview from './scene/FilletPreview';
 import ChamferEdgeHighlight from './scene/ChamferEdgeHighlight';
 import ChamferGizmo from './scene/ChamferGizmo';
-import ChamferPreview from './scene/ChamferPreview';
 import ConstructionGeometryInteraction from './scene/ConstructionGeometryInteraction';
 import ConstructionGeometryRenderer from './scene/ConstructionGeometryRenderer';
 import ReplaceFaceInteraction from './scene/ReplaceFaceInteraction';
@@ -57,6 +55,8 @@ import RemoveFacePicker from './scene/RemoveFacePicker';
 import DeleteFacePicker from './scene/DeleteFacePicker';
 import DraftPartingLinePicker from './scene/DraftPartingLinePicker';
 import DraftPullDirectionPicker from './scene/DraftPullDirectionPicker';
+import OffsetFacePicker from './scene/OffsetFacePicker';
+import FilletFullRoundPicker from './scene/FilletFullRoundPicker';
 import JointDialogPicker from './scene/JointDialogPicker';
 import AlignPicker from './scene/AlignPicker';
 import MeshExporter from './scene/MeshExporter';
@@ -102,9 +102,22 @@ export default function Viewport() {
   const showGroundPlane = useCADStore((s) => s.showGroundPlane);
   const groundPlaneOffset = useCADStore((s) => s.groundPlaneOffset);
   const shadowSoftness = useCADStore((s) => s.shadowSoftness);
+  // ContactShadows re-render key: remount whenever the visible feature set changes
+  // so cached shadows reflect the current geometry. Does NOT change on camera moves,
+  // which is the whole point — shadows are baked once per scene-change, not per frame.
+  const features = useCADStore((s) => s.features);
+  const shadowKey = useMemo(() => {
+    const visibleFeatureIds: string[] = [];
+    for (const feature of features) {
+      if (feature.visible && !feature.suppressed) visibleFeatureIds.push(feature.id);
+    }
+    return visibleFeatureIds.join(',');
+  }, [features]);
   const ambientOcclusionEnabled = useCADStore((s) => s.ambientOcclusionEnabled);
+  const activeDialog = useCADStore((s) => s.activeDialog);
   const setCameraTargetQuaternion = useCADStore((s) => s.setCameraTargetQuaternion);
   const themeColors = useThemeStore((s) => s.colors);
+  const edgeOperationActive = activeDialog === 'fillet' || activeDialog === 'chamfer';
 
   // D204/D205 — Window & Lasso selection
   // D207
@@ -201,6 +214,8 @@ export default function Viewport() {
         )}
         {showShadows && showGroundPlane && (
           <ContactShadows
+            key={shadowKey}
+            frames={1}
             position={[0, groundPlaneOffset - 0.01, 0]}
             opacity={0.3}
             scale={100}
@@ -230,11 +245,15 @@ export default function Viewport() {
         <SketchPlaneSelector />
 
         {/* CAD Content */}
-        <SketchRenderer />
-        <SketchConstraintOverlay />
-        <SketchDimensionAnnotations />
-        <SketchDimensionPreview />
-        <SketchSplineHandles />
+        {!edgeOperationActive && (
+          <>
+            <SketchRenderer />
+            <SketchConstraintOverlay />
+            <SketchDimensionAnnotations />
+            <SketchDimensionPreview />
+            <SketchSplineHandles />
+          </>
+        )}
         <ExtrudedBodies />
         <PrimitiveBodies />
         <FastenerBodies />
@@ -251,13 +270,11 @@ export default function Viewport() {
         <JointAnimationPlayer />
         <SketchPlaneDragger />
         <Sketch3DPlaneIndicator />
-        <CrashBoundary label="EdgeOp">
+        <CrashBoundary label="EdgeOp" resetKey={activeDialog}>
           <FilletEdgeHighlight />
           <FilletGizmo />
-          <FilletPreview />
           <ChamferEdgeHighlight />
           <ChamferGizmo />
-          <ChamferPreview />
         </CrashBoundary>
         <ConstructionGeometryInteraction />
         <ConstructionGeometryRenderer />
@@ -272,6 +289,8 @@ export default function Viewport() {
         <DeleteFacePicker />
         <DraftPartingLinePicker />
         <DraftPullDirectionPicker />
+        <OffsetFacePicker />
+        <FilletFullRoundPicker />
         <MeshExporter />
         <SnapFitFacePicker />
         <LipGrooveEdgePicker />

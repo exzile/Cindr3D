@@ -13,6 +13,9 @@ export default function DraftPullDirectionPicker() {
       result.centroid.toArray().join(','),
       [result.normal.x, result.normal.y, result.normal.z],
       [result.centroid.x, result.centroid.y, result.centroid.z],
+      result.occBodyId && result.occFaceId !== undefined
+        ? { bodyId: result.occBodyId, faceId: result.occFaceId }
+        : null,
     );
   }, [setDraftPullFace]);
 

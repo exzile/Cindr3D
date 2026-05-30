@@ -331,6 +331,22 @@ export function useSketchInteractionEvents({
       }
     };
 
+    const deleteSelectedSketchEntities = () => {
+      const state = useCADStore.getState();
+      const sketch = state.activeSketch;
+      if (!sketch || state.selectedEntityIds.length === 0) return false;
+
+      const selectedIds = new Set(state.selectedEntityIds);
+      const nextEntities = sketch.entities.filter((entity) => !selectedIds.has(entity.id));
+      if (nextEntities.length === sketch.entities.length) return false;
+
+      state.pushUndo();
+      state.setSelectedEntityIds([]);
+      replaceSketchEntities(nextEntities);
+      setStatusMessage(`Deleted ${sketch.entities.length - nextEntities.length} sketch entit${sketch.entities.length - nextEntities.length === 1 ? 'y' : 'ies'}`);
+      return true;
+    };
+
     const findNearestEditablePoint = (worldPoint: THREE.Vector3): SketchPointDragTarget | null => {
       let best: SketchPointDragTarget | null = null;
       let bestDist = SELECT_DRAG_PICK_RADIUS;
@@ -569,6 +585,12 @@ export function useSketchInteractionEvents({
       const activeTag = (document.activeElement as HTMLElement)?.tagName?.toLowerCase();
       if (activeTag === 'input' || activeTag === 'textarea') return;
 
+      if ((event.key === 'Delete' || event.key === 'Backspace') && deleteSelectedSketchEntities()) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
       if (event.ctrlKey || event.metaKey || event.altKey) return;
 
       const k = event.key.toLowerCase();
@@ -760,6 +782,7 @@ export function useSketchInteractionEvents({
     getWorldPoint,
     findSnapCandidate,
     addSketchEntity,
+    addSketchConstraint,
     replaceSketchEntities,
     cycleEntityLinetype,
     setStatusMessage,

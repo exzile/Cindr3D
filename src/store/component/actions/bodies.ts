@@ -4,6 +4,8 @@ import { GeometryEngine } from '../../../engine/GeometryEngine';
 import { defaultComponentMaterial } from '../defaults';
 import type { ComponentStore } from '../types';
 import type { ComponentStoreApi } from '../storeApi';
+import { globalBRepBodyRegistry } from '../../../engine/occ/globalRegistry';
+import { detachTessellationFromMesh, BREP_BODY_ID_KEY } from '../../../engine/occ/picking';
 
 function copyObjectTransform(target: THREE.Object3D, source: THREE.Object3D): void {
   target.position.copy(source.position);
@@ -27,7 +29,14 @@ export function createBodyActions({ get, set }: ComponentStoreApi): Pick<
   | 'setBodyOpacity'
   | 'toggleBodySelectable'
   | 'addFeatureToBody'
+  | 'removeFeatureFromBody'
   | 'mirrorBody'
+  | 'copyBody'
+  | 'createComponentFromBody'
+  | 'clipboardBodyId'
+  | 'setClipboardBody'
+  | 'pasteBody'
+  | 'setBodyDeflectionOverride'
 > {
   return {
     addBody: (componentId, name) => {
@@ -58,6 +67,35 @@ export function createBodyActions({ get, set }: ComponentStoreApi): Pick<
       const { components, bodies } = get();
       const body = bodies[id];
       if (!body) return;
+
+      // Dispose GPU resources so the old geometry doesn't linger on the GPU heap.
+      const brepBodyIds = new Set<string>();
+      if (body.mesh instanceof THREE.Mesh) {
+        const brepBodyId = body.mesh.userData['brepBodyId'] as string | undefined;
+        if (brepBodyId) brepBodyIds.add(brepBodyId);
+        body.mesh.geometry?.dispose();
+        detachTessellationFromMesh(body.mesh);
+        // Only dispose materials this body owns exclusively (shared library materials are singletons).
+        const mat = body.mesh.material;
+        if (mat) {
+          const mats = Array.isArray(mat) ? mat : [mat];
+          for (const m of mats) {
+            if (!m.userData?.shared) m.dispose?.();
+          }
+        }
+      } else if (body.mesh instanceof THREE.Group) {
+        body.mesh.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            const brepBodyId = child.userData['brepBodyId'] as string | undefined;
+            if (brepBodyId) brepBodyIds.add(brepBodyId);
+            child.geometry?.dispose();
+            detachTessellationFromMesh(child);
+          }
+        });
+      }
+
+      // Evict the OCC body from the registry (calls body.dispose() internally).
+      for (const brepBodyId of brepBodyIds) globalBRepBodyRegistry.delete(brepBodyId);
 
       const comp = components[body.componentId];
       const updatedBodies = { ...bodies };
@@ -146,6 +184,13 @@ export function createBodyActions({ get, set }: ComponentStoreApi): Pick<
       set({ bodies: { ...bodies, [bodyId]: { ...body, featureIds: [...body.featureIds, featureId] } } });
     },
 
+    removeFeatureFromBody: (bodyId, featureId) => {
+      const { bodies } = get();
+      const body = bodies[bodyId];
+      if (!body) return;
+      set({ bodies: { ...bodies, [bodyId]: { ...body, featureIds: body.featureIds.filter((fid) => fid !== featureId) } } });
+    },
+
     mirrorBody: (bodyId, plane) => {
       const { bodies, components } = get();
       const body = bodies[bodyId];
@@ -192,6 +237,164 @@ export function createBodyActions({ get, set }: ComponentStoreApi): Pick<
       });
 
       return id;
+    },
+
+    copyBody: (bodyId) => {
+      const { bodies, components } = get();
+      const body = bodies[bodyId];
+      if (!body) return null;
+
+      // Clone the display mesh geometry so the copy owns independent GPU buffers.
+      // OCC BRep ownership is NOT shared: removeBody on either body calls
+      // globalBRepBodyRegistry.delete(brepBodyId), which would dispose the WASM
+      // shape and leave the other body with a dangling brepBodyId. Clear OCC refs
+      // from the clone so the copy is treated as a tessellation-only (no-BRep) body.
+      let clonedMesh: THREE.Mesh | THREE.Group | null = null;
+      if (body.mesh instanceof THREE.Mesh) {
+        clonedMesh = body.mesh.clone();
+        (clonedMesh as THREE.Mesh).geometry = (body.mesh as THREE.Mesh).geometry.clone();
+        detachTessellationFromMesh(clonedMesh as THREE.Mesh);
+        delete (clonedMesh as THREE.Mesh).userData[BREP_BODY_ID_KEY];
+      } else if (body.mesh instanceof THREE.Group) {
+        clonedMesh = body.mesh.clone(true);
+        clonedMesh.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            detachTessellationFromMesh(child);
+            delete child.userData[BREP_BODY_ID_KEY];
+          }
+        });
+      }
+
+      const id = crypto.randomUUID();
+      const copied: Body = {
+        ...body,
+        id,
+        name: `${body.name} (Copy)`,
+        mesh: clonedMesh,
+        featureIds: [],
+      };
+
+      const comp = components[body.componentId];
+      set({
+        bodies: { ...bodies, [id]: copied },
+        components: comp
+          ? {
+              ...components,
+              [body.componentId]: { ...comp, bodyIds: [...comp.bodyIds, id] },
+            }
+          : components,
+        selectedBodyId: id,
+      });
+
+      return id;
+    },
+
+    clipboardBodyId: null,
+
+    setClipboardBody: (bodyId) => set({ clipboardBodyId: bodyId }),
+
+    pasteBody: () => {
+      const { clipboardBodyId, bodies, components, activeComponentId } = get();
+      if (!clipboardBodyId) return null;
+
+      const srcBody = bodies[clipboardBodyId];
+      const targetCompId = activeComponentId ?? srcBody?.componentId;
+      if (!srcBody || !targetCompId) return null;
+
+      const comp = components[targetCompId];
+      if (!comp) return null;
+
+      let clonedMesh: THREE.Mesh | THREE.Group | null = null;
+      if (srcBody.mesh instanceof THREE.Mesh) {
+        clonedMesh = srcBody.mesh.clone();
+        (clonedMesh as THREE.Mesh).geometry = (srcBody.mesh as THREE.Mesh).geometry.clone();
+        detachTessellationFromMesh(clonedMesh as THREE.Mesh);
+        delete (clonedMesh as THREE.Mesh).userData[BREP_BODY_ID_KEY];
+      } else if (srcBody.mesh instanceof THREE.Group) {
+        clonedMesh = srcBody.mesh.clone(true);
+        clonedMesh.traverse((child) => {
+          if (child instanceof THREE.Mesh) {
+            detachTessellationFromMesh(child);
+            delete child.userData[BREP_BODY_ID_KEY];
+          }
+        });
+      }
+
+      const id = crypto.randomUUID();
+      const pasted: Body = {
+        ...srcBody,
+        id,
+        name: `${srcBody.name} (Paste)`,
+        componentId: targetCompId,
+        mesh: clonedMesh,
+        featureIds: [],
+      };
+
+      set((state) => {
+        const freshComp = state.components[targetCompId];
+        if (!freshComp) return state;
+        return {
+          bodies: { ...state.bodies, [id]: pasted },
+          components: {
+            ...state.components,
+            [targetCompId]: { ...freshComp, bodyIds: [...freshComp.bodyIds, id] },
+          },
+          selectedBodyId: id,
+        };
+      });
+
+      return id;
+    },
+
+    createComponentFromBody: (bodyId) => {
+      const { bodies, components } = get();
+      const body = bodies[bodyId];
+      if (!body) return null;
+
+      const srcComp = components[body.componentId];
+      if (!srcComp) return null;
+
+      // New component lives as a sibling of srcComp (child of srcComp's parent),
+      // or under srcComp if it is the root (no parent).
+      const parentId = srcComp.parentId ?? srcComp.id;
+
+      const newCompId = get().addComponent(parentId, body.name);
+      if (!newCompId) return null;
+
+      // Reassign body to the new component using a single functional updater
+      // to avoid tearing from multiple get() calls around an addComponent set().
+      set((state) => {
+        const freshSrcComp = state.components[body.componentId];
+        const freshNewComp = state.components[newCompId];
+        if (!freshSrcComp || !freshNewComp) return state;
+        return {
+          bodies: {
+            ...state.bodies,
+            [bodyId]: { ...state.bodies[bodyId], componentId: newCompId },
+          },
+          components: {
+            ...state.components,
+            [body.componentId]: {
+              ...freshSrcComp,
+              bodyIds: freshSrcComp.bodyIds.filter((id) => id !== bodyId),
+            },
+            [newCompId]: {
+              ...freshNewComp,
+              bodyIds: [bodyId],
+            },
+          },
+          activeComponentId: newCompId,
+        };
+      });
+
+      return newCompId;
+    },
+
+    setBodyDeflectionOverride: (bodyId, deflection) => {
+      const { bodies } = get();
+      const body = bodies[bodyId];
+      if (!body) return;
+      set({ bodies: { ...bodies, [bodyId]: { ...body, deflectionOverride: deflection } } });
     },
   };
 }

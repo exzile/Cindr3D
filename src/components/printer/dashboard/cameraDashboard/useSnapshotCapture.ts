@@ -70,6 +70,14 @@ export function useSnapshotCapture(deps: UseSnapshotCaptureDeps) {
   // Internal — both refs are only read by the effects below.
   const scheduledSnapshotTimerRef = useRef<number | null>(null);
   const staleAnomalyCapturedRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const drawFrame = useCallback(() => {
     const image = isVideoStream ? videoRef.current : imgRef.current;
@@ -102,10 +110,11 @@ export function useSnapshotCapture(deps: UseSnapshotCaptureDeps) {
   }, [canvasRef]);
 
   const captureSnapshot = useCallback(async (label?: string) => {
-    if (!hasCamera) return;
+    if (!hasCamera || !mountedRef.current) return;
     try {
       drawFrame();
       const blob = await canvasBlob('image/png');
+      if (!mountedRef.current) return;
       const now = Date.now();
       setBusy(true);
       await saveClip({
@@ -123,21 +132,28 @@ export function useSnapshotCapture(deps: UseSnapshotCaptureDeps) {
         size: blob.size,
         blob,
       });
+      if (!mountedRef.current) return;
       setMessage(label ? `Saved ${label}.` : 'Saved camera snapshot.');
       await refreshClips();
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to save camera snapshot.');
+      if (mountedRef.current) {
+        setMessage(error instanceof Error ? error.message : 'Unable to save camera snapshot.');
+      }
     } finally {
-      setBusy(false);
+      if (mountedRef.current) setBusy(false);
     }
   }, [canvasBlob, drawFrame, hasCamera, jobFileName, printerId, printerName, refreshClips, setBusy, setMessage]);
 
   const capturePoseStill = useCallback(async () => {
-    if (!hasCamera) return;
+    if (!hasCamera || !mountedRef.current) return;
     try {
       drawFrame();
       const blob = await canvasBlob('image/png');
       const nextUrl = URL.createObjectURL(blob);
+      if (!mountedRef.current) {
+        URL.revokeObjectURL(nextUrl);
+        return;
+      }
       setPoseStillUrl((currentUrl) => {
         if (currentUrl) URL.revokeObjectURL(currentUrl);
         return nextUrl;
@@ -146,16 +162,22 @@ export function useSnapshotCapture(deps: UseSnapshotCaptureDeps) {
       setNextBedCornerIndex(0);
       setMessage('Frozen camera frame. Pick the four bed corners to calibrate AR pose.');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to freeze camera frame.');
+      if (mountedRef.current) {
+        setMessage(error instanceof Error ? error.message : 'Unable to freeze camera frame.');
+      }
     }
   }, [canvasBlob, drawFrame, hasCamera, setMeasurementMode, setMessage, setNextBedCornerIndex, setPoseStillUrl]);
 
   const captureFinalComparisonFrame = useCallback(async () => {
-    if (!hasCamera || !calibrationPose) return;
+    if (!hasCamera || !calibrationPose || !mountedRef.current) return;
     try {
       drawFrame();
       const blob = await canvasBlob('image/png');
       const nextUrl = URL.createObjectURL(blob);
+      if (!mountedRef.current) {
+        URL.revokeObjectURL(nextUrl);
+        return;
+      }
       setFinalComparisonUrl((currentUrl) => {
         if (currentUrl) URL.revokeObjectURL(currentUrl);
         return nextUrl;
@@ -163,12 +185,14 @@ export function useSnapshotCapture(deps: UseSnapshotCaptureDeps) {
       setCameraOverlayMode('both');
       setMessage('Frozen final frame for AR print comparison.');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Unable to freeze final comparison frame.');
+      if (mountedRef.current) {
+        setMessage(error instanceof Error ? error.message : 'Unable to freeze final comparison frame.');
+      }
     }
   }, [calibrationPose, canvasBlob, drawFrame, hasCamera, setCameraOverlayMode, setFinalComparisonUrl, setMessage]);
 
   const captureAnomaly = useCallback((reason: string) => {
-    if (!anomalyCapture || !hasCamera) return;
+    if (!anomalyCapture || !hasCamera || !mountedRef.current) return;
     void captureSnapshot(`Anomaly: ${reason}`);
   }, [anomalyCapture, captureSnapshot, hasCamera]);
 

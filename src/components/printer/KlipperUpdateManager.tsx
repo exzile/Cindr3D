@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 import { errorMessage } from '../../utils/errorHandling';
 import { RefreshCw, WifiOff, ArrowUpCircle, CheckCircle2, AlertCircle, Loader2, Download } from 'lucide-react';
@@ -70,7 +70,7 @@ export default function KlipperUpdateManager({ embedded = false }: { embedded?: 
   const [loading, setLoading] = useState(false);
   const [updatingComponent, setUpdatingComponent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [service] = useState(() => connected ? new MoonrakerService(config.hostname) : null);
+  const service = useMemo(() => connected ? new MoonrakerService(config.hostname) : null, [connected, config.hostname]);
 
   const run = useAsyncAction(setLoading, setError, 'Failed to load update status');
   const refresh = useCallback(async (forceRefresh = false) => {

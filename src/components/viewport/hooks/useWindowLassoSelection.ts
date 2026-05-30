@@ -9,8 +9,10 @@ const _selBox3 = new THREE.Box3();
 const _selVec3 = new THREE.Vector3();
 // Scratch vectors reused across sampleSketchEntity calls — avoids per-sample allocs
 const _samplePt = new THREE.Vector3();
-const _sampleA = new THREE.Vector3();
-const _sampleB = new THREE.Vector3();
+const _sampleA  = new THREE.Vector3();
+const _sampleB  = new THREE.Vector3();
+const _sampleC  = new THREE.Vector3(); // rectangle corner c1
+const _sampleD  = new THREE.Vector3(); // rectangle corner c2/c3
 const SKETCH_ENTITY_SAMPLE_COUNT = 48;
 const PAINT_RADIUS = 15;
 // Module-level flag for the active gesture — safe as singleton because there is only one Viewport.
@@ -83,10 +85,12 @@ function sampleSketchEntity(
     const dt2x = t2.x * (dx * t2.x + dy * t2.y + dz * t2.z);
     const dt2y = t2.y * (dx * t2.x + dy * t2.y + dz * t2.z);
     const dt2z = t2.z * (dx * t2.x + dy * t2.y + dz * t2.z);
+    // Reuse module-level scratch vectors — _sampleB is safe to overwrite here
+    // because dx/dy/dz were already extracted from it above.
     const c0 = _sampleA;
-    const c1 = new THREE.Vector3(_sampleA.x + dt1x, _sampleA.y + dt1y, _sampleA.z + dt1z);
-    const c2 = new THREE.Vector3(_sampleA.x + dt1x + dt2x, _sampleA.y + dt1y + dt2y, _sampleA.z + dt1z + dt2z);
-    const c3 = new THREE.Vector3(_sampleA.x + dt2x, _sampleA.y + dt2y, _sampleA.z + dt2z);
+    const c1 = _sampleB.set(_sampleA.x + dt1x, _sampleA.y + dt1y, _sampleA.z + dt1z);
+    const c2 = _sampleC.set(_sampleA.x + dt1x + dt2x, _sampleA.y + dt1y + dt2y, _sampleA.z + dt1z + dt2z);
+    const c3 = _sampleD.set(_sampleA.x + dt2x, _sampleA.y + dt2y, _sampleA.z + dt2z);
     pushSegmentSamples(c0, c1); pushSegmentSamples(c1, c2);
     pushSegmentSamples(c2, c3); pushSegmentSamples(c3, c0);
     return projected;

@@ -25,6 +25,12 @@ Always `getSketchAxes(sketch)` → `t1`/`t2` dot products. Raw `p.x, p.y` only w
 
 `polygon-clipping` (npm) for 2D planar arrangement; Clipper2 WASM is faster fast-path with polygon-clipping fallback. `computeAtomicRegions(shapes)` in `core/sketch/profileGeometry.ts` splits closed 2D shapes into atomic regions.
 
+## 3D CSG
+
+CAD solid booleans should use the OCC BRep registry. Mesh CSG is retained for slicer/preview geometry helpers and explicitly bounded utility paths, not as a fallback for CAD solid operations.
+
+Fillet/chamfer edge modification is no longer mesh-CSG: it is OCC-only through the BRep registry and OCC edge IDs. See `csg_edge_cut.md` for the removed legacy edge-cut archive.
+
 ## Persistence caches
 
 `store/cad/persistence.ts` exports `serializeFeature`/`deserializeFeature` with two `WeakMap`s: per-geometry mesh-data cache + per-Feature serialized cache. `cadStore.onRehydrateStorage` waits for `componentStore.persist.onFinishHydration` to prevent double-add on refresh.

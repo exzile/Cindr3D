@@ -1,5 +1,4 @@
 import { Gauge } from 'lucide-react';
-import type { MutableRefObject } from 'react';
 import { clipDurationLabel } from './clipStore';
 import { formatLastFrame } from './snapshotEdit';
 
@@ -18,11 +17,11 @@ export function HealthSection(props: {
   nowTick: number;
   frameCount: number;
   reconnectCount: number;
-  reconnectHistoryRef: MutableRefObject<number[]>;
+  lastReconnectAt: number | null;
 }) {
   const {
     estimatedFps, healthPanelOpen, setHealthPanelOpen, droppedFrameWarning,
-    frameAgeMs, lastFrameAt, nowTick, frameCount, reconnectCount, reconnectHistoryRef,
+    frameAgeMs, lastFrameAt, nowTick, frameCount, reconnectCount, lastReconnectAt,
   } = props;
   return (
     <section className="cam-panel__control-section" aria-label="Camera health diagnostics controls">
@@ -35,8 +34,8 @@ export function HealthSection(props: {
           <span>Frames {frameCount}</span>
           <span>Reconnects {reconnectCount}</span>
           <span>{droppedFrameWarning ? `Frame stale: ${clipDurationLabel(frameAgeMs ?? 0)}` : formatLastFrame(lastFrameAt, nowTick)}</span>
-          {reconnectHistoryRef.current.length > 0 && (
-            <span>Last reconnect {new Date(reconnectHistoryRef.current[reconnectHistoryRef.current.length - 1]).toLocaleTimeString()}</span>
+          {lastReconnectAt !== null && (
+            <span>Last reconnect {new Date(lastReconnectAt).toLocaleTimeString()}</span>
           )}
         </div>
       )}

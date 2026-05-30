@@ -193,14 +193,11 @@ export function sketchToShapes(sketch: Sketch): THREE.Shape[] {
 export function sketchToProfileShapesFlat(sketch: Sketch): THREE.Shape[] {
   const { t1, t2 } = getSketchAxesUtil(sketch);
   const origin = sketch.planeOrigin;
-  const rawShapes = entitiesToShapes(
-    sketch.entities,
-    (p) => {
-      const d = new THREE.Vector3(p.x - origin.x, p.y - origin.y, p.z - origin.z);
-      return { u: d.dot(t1), v: d.dot(t2) };
-    },
-    { nestHoles: false },
-  );
+  const project = (p: SketchPoint) => {
+    const d = new THREE.Vector3(p.x - origin.x, p.y - origin.y, p.z - origin.z);
+    return { u: d.dot(t1), v: d.dot(t2) };
+  };
+  const rawShapes = entitiesToShapes(sketch.entities, project, { nestHoles: false });
 
   const atomic = computeAtomicRegions(rawShapes);
   if (atomic.length === 0) return rawShapes;
@@ -234,12 +231,56 @@ export function sketchToProfileShapesFlat(sketch: Sketch): THREE.Shape[] {
   };
 
   const originalSignatures = rawShapes.map(shapeSignature);
+
+  // Start from a mutable copy. For each atomic region we either:
+  //  (a) replace the corresponding raw shape in-place when the atomic version
+  //      adds holes that the raw shape lacks (e.g. a rectangle that contains
+  //      circles: raw shape has holes=[], atomic version has holes=[circle1, circle2]),
+  //  (b) append it as a new independent region if no raw shape matches.
+  //
+  // Replacing in-place preserves the index positions stored in existing
+  // feature.params.profileIndex / profileIndices so saved models stay valid.
   const combined: THREE.Shape[] = [...rawShapes];
+  const matchedRawIndices = new Set<number>();
+
   for (const atom of atomic) {
     const atomSignature = shapeSignature(atom);
-    if (originalSignatures.some((signature) => sameShape(signature, atomSignature))) continue;
-    combined.push(atom);
+    const matchIdx = originalSignatures.findIndex(
+      (sig, i) => !matchedRawIndices.has(i) && sameShape(sig, atomSignature),
+    );
+
+    if (matchIdx >= 0) {
+      matchedRawIndices.add(matchIdx);
+      // Replace the raw shape when the atomic version carries holes that the
+      // raw (nestHoles:false) shape is missing — this is the fix for the
+      // "circles inside a rectangle don't become through-holes" bug.
+      if (atom.holes.length > combined[matchIdx].holes.length) {
+        combined[matchIdx] = atom;
+      }
+    } else {
+      // Genuinely new atomic region (a sub-region from overlapping shapes).
+      combined.push(atom);
+    }
   }
+
+  // Pure-JS fallback: apply holes from entitiesToShapes(nestHoles:true) onto any
+  // combined shape that still has no holes but should have some.  This runs without
+  // Clipper2 WASM and catches the common "circles inside a rectangle" case even
+  // when the WASM hasn't loaded yet, guaranteeing the primary profile always
+  // carries its through-holes.
+  const nestedShapes = entitiesToShapes(sketch.entities, project, { nestHoles: true });
+  for (const nested of nestedShapes) {
+    if (nested.holes.length === 0) continue;
+    const nestedSig = shapeSignature(nested);
+    for (let i = 0; i < combined.length; i++) {
+      if (combined[i].holes.length >= nested.holes.length) continue;
+      if (sameShape(shapeSignature(combined[i]), nestedSig)) {
+        combined[i] = nested;
+        break;
+      }
+    }
+  }
+
   return combined;
 }
 
@@ -423,12 +464,14 @@ export function entitiesToShape(
       case 'arc': {
         if (entity.points.length >= 1 && entity.radius) {
           const c = project(entity.points[0]);
+          const sa = entity.startAngle ?? 0;
+          let ea = entity.endAngle ?? Math.PI;
+          if (ea <= sa) ea += Math.PI * 2;
           if (!hasContent) {
-            const sa = entity.startAngle || 0;
             shape.moveTo(c.u + Math.cos(sa) * entity.radius, c.v + Math.sin(sa) * entity.radius);
             hasContent = true;
           }
-          shape.absarc(c.u, c.v, entity.radius, entity.startAngle || 0, entity.endAngle || Math.PI, false);
+          shape.absarc(c.u, c.v, entity.radius, sa, ea, false);
         }
         break;
       }
@@ -465,7 +508,8 @@ export function entitiesToShape(
           const c = project(entity.points[0]);
           const rot = entity.rotation ?? 0;
           const sa = entity.startAngle ?? 0;
-          const ea = entity.endAngle ?? Math.PI;
+          let ea = entity.endAngle ?? Math.PI;
+          if (ea <= sa) ea += Math.PI * 2;
           if (!hasContent) {
             const cos = Math.cos(rot);
             const sin = Math.sin(rot);

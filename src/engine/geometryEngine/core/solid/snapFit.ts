@@ -1,7 +1,11 @@
 import * as THREE from 'three';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { csgUnion } from './csg';
-import { extractEdgeTopology } from './edgeTopology';
+import { getOcc } from '../../../occ/loader';
+import { occBoxWithInstance } from '../../../occ/ops/box';
+import { performOccBooleanWithInstance } from '../../../occ/ops/booleanCore';
+import { occExtrudeWithInstance } from '../../../occ/ops/extrude';
+import { createOccPlaneFrame } from '../../../occ/plane';
+import { tessellateWithInstance, tessellationToGeometry } from '../../../occ/tessellate';
+import type { SketchProfile } from '../../../occ/ops/sketchToWire';
 
 /**
  * Builds a cantilever snap-fit hook solid from the SnapFitDialog parameters.
@@ -10,103 +14,90 @@ import { extractEdgeTopology } from './edgeTopology';
  *   - The flexing **beam** runs along +X for `length`, has cross-section
  *     `width` (Z) × `thickness` (Y). Its bottom face sits on Y=0.
  *   - A **base block** at the root (X≈0) is a slightly taller/wider pad that
- *     represents the wall the cantilever grows out of (acts as the fillet/root
- *     so the part reads as anchored rather than a floating bar).
+ *     represents the wall the cantilever grows out of.
  *   - A **hook/barb** at the free end (X≈length): a triangular prism that
- *     protrudes `overhang` in +Y. The lead-in (insertion) ramp rises at
- *     `overhangAngle` from the beam's top; the **retaining face** drops back
- *     toward the root at `returnAngle` (a smaller return angle ⇒ steeper,
- *     harder-to-release latch — the classic snap behaviour).
+ *     protrudes `overhang` in +Y.
  *
- * The three primitives are CSG-unioned into one watertight solid. The result
- * is a plain `THREE.BufferGeometry` in local space — the commit action wraps
- * it in a mesh, positions it, and stores it on the feature so `ExtrudedBodies`
- * renders it via the stored-mesh path.
+ * OCC implementation: boxes fused via BRepAlgoAPI_Fuse, barb extruded via
+ * BRepPrimAPI_MakePrism.  Produces an exact BRep solid tessellated to a
+ * THREE.BufferGeometry — no CSG / Manifold dependency.
  *
  * `annular` / `torsional` snap types reuse the same cantilever construction
  * (a correct, useful hook solid) until dedicated builders exist.
  */
-export function snapFitGeometry(
+export async function snapFitGeometry(
   length: number,
   width: number,
   thickness: number,
   overhang: number,
   overhangAngleDeg: number,
   returnAngleDeg: number,
-): THREE.BufferGeometry {
+): Promise<THREE.BufferGeometry> {
+  const { oc } = await getOcc();
+
   const L = Math.max(0.5, length);
   const W = Math.max(0.5, width);
   const T = Math.max(0.2, thickness);
   const O = Math.max(0, overhang);
 
-  // Clamp the angles into the dialog's intended (0,89] range so tan() stays
-  // finite and the ramps don't invert.
   const inAng = (Math.min(89, Math.max(1, overhangAngleDeg)) * Math.PI) / 180;
   const retAng = (Math.min(89, Math.max(1, returnAngleDeg)) * Math.PI) / 180;
 
-  const created: THREE.BufferGeometry[] = [];
+  // ── Beam: spans X:[0,L], Y:[0,T], Z:[-W/2, W/2] ──────────────────────────
+  // BRepPrimAPI_MakeBox_2 creates box from (0,0,0) → (w,h,d).
+  // Translate (0, 0, -W/2) centres it on Z.
+  const beamTf = new THREE.Matrix4().makeTranslation(0, 0, -W / 2);
+  const beamBody = occBoxWithInstance(oc, L, T, W, { transform: beamTf });
 
-  // ── Cantilever beam ──────────────────────────────────────────────────────
-  // Box is created centred at origin; translate so it spans X:[0,L], Y:[0,T],
-  // centred on Z.
-  const beam = new THREE.BoxGeometry(L, T, W);
-  beam.translate(L / 2, T / 2, 0);
-  created.push(beam);
-
-  // ── Root base block ──────────────────────────────────────────────────────
-  // A short, fatter pad anchoring the beam — extends slightly behind the root
-  // (−X) and is taller/wider than the beam so the cantilever reads as fixed.
+  // ── Base block: spans X:[-baseLen/2, baseLen/2], Y:[0, baseH], Z:[-baseW/2, baseW/2]
   const baseLen = Math.max(T, L * 0.18);
   const baseH = T + Math.max(O * 0.5, T * 0.6);
   const baseW = W + Math.min(W * 0.4, T * 2);
-  const base = new THREE.BoxGeometry(baseLen, baseH, baseW);
-  base.translate(baseLen / 2 - baseLen * 0.5, baseH / 2, 0);
-  created.push(base);
+  const baseTf = new THREE.Matrix4().makeTranslation(-baseLen / 2, 0, -baseW / 2);
+  const baseBody = occBoxWithInstance(oc, baseLen, baseH, baseW, { transform: baseTf });
 
-  let solid = csgUnion(beam, base);
+  // ── Fuse beam + base ─────────────────────────────────────────────────────
+  let solid = performOccBooleanWithInstance(oc, 'union', beamBody, baseBody);
+  beamBody.dispose();
+  baseBody.dispose();
+  if (!solid) throw new Error('[snapFitGeometry] OCC fuse beam+base failed');
 
-  // ── Hook / barb at the free end ──────────────────────────────────────────
+  // ── Hook / barb (triangular prism extruded along Z) ───────────────────────
   if (O > 1e-3) {
-    // Barb profile in the X–Y plane, extruded across the beam width (Z).
-    // Walking from the root side toward the tip: a gentle lead-in (insertion)
-    // ramp climbs to the peak at `inAng`, then a steeper retaining face drops
-    // back toward the root at `retAng`. The peak (where ramp meets retaining
-    // face) is pulled to the tip so the latch sits at the free end.
-    const rampRun = O / Math.tan(inAng); // X covered by the lead-in ramp
-    const retRun = O / Math.tan(retAng); // X covered by the return face
-    const peakX = L; // peak at the very tip of the beam
+    const rampRun = O / Math.tan(inAng);
+    const retRun = O / Math.tan(retAng);
+    const peakX = L;
     const rampStartX = Math.max(0, peakX - rampRun);
-    // Retaining face folds back toward the root from the peak; clamp its run
-    // so the triangle base never collapses to a degenerate edge.
     const retBaseX = Math.min(peakX - 1e-3, peakX - Math.min(retRun, L * 0.99));
 
-    const shape = new THREE.Shape();
-    shape.moveTo(rampStartX, T); // start of the lead-in ramp, on the beam top
-    shape.lineTo(peakX, T + O); // climb the insertion ramp to the peak
-    shape.lineTo(retBaseX, T); // retaining face back down toward the root
-    shape.closePath();
+    // Barb profile: triangle in the XY plane (u=X, v=Y).
+    // Extruded by W along +Z starting from z=-W/2 → z=W/2.
+    const barbProfile: SketchProfile = {
+      outer: [
+        new THREE.Vector2(rampStartX, T),
+        new THREE.Vector2(peakX, T + O),
+        new THREE.Vector2(retBaseX, T),
+      ],
+      holes: [],
+    };
+    const barbFrame = createOccPlaneFrame(
+      new THREE.Vector3(0, 0, -W / 2),
+      new THREE.Vector3(0, 0, 1),   // extrude in +Z
+      new THREE.Vector3(1, 0, 0),   // uDir = X
+    );
 
-    const barb = new THREE.ExtrudeGeometry(shape, {
-      depth: W,
-      bevelEnabled: false,
-    });
-    // ExtrudeGeometry extrudes along +Z from z=0; centre it on the beam width.
-    barb.translate(0, 0, -W / 2);
-    created.push(barb);
-
-    const withHook = csgUnion(solid, barb);
+    const barbBody = occExtrudeWithInstance(oc, barbProfile, W, barbFrame);
+    const withHook = performOccBooleanWithInstance(oc, 'union', solid, barbBody);
+    barbBody.dispose();
     solid.dispose();
+    if (!withHook) throw new Error('[snapFitGeometry] OCC fuse barb failed');
     solid = withHook;
   }
 
-  // Dispose every intermediate primitive we created (not shared singletons).
-  for (const g of created) g.dispose();
+  const tess = tessellateWithInstance(oc, solid);
+  const geo = tessellationToGeometry(tess);
+  solid.dispose();
 
-  solid.computeVertexNormals();
-  try {
-    const forTopo = mergeVertices(solid, 1e-6);
-    solid.userData.topology = extractEdgeTopology(forTopo);
-    forTopo.dispose();
-  } catch { /* non-fatal */ }
-  return solid;
+  geo.computeVertexNormals();
+  return geo;
 }

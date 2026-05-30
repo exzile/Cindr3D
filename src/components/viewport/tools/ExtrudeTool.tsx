@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
@@ -8,6 +8,7 @@ import SketchProfile from '../extrude/SketchProfile';
 import ExtrudePreview from '../extrude/ExtrudePreview';
 import ExtrudeGizmo from '../extrude/ExtrudeGizmo';
 import FaceHighlight from '../extrude/FaceHighlight';
+import { getExtrudeProfileUsage } from '../extrude/profileSelection';
 import { useFacePicker } from '../../../hooks/useFacePicker';
 import type { FacePickResult } from '../../../hooks/useFacePicker';
 
@@ -72,11 +73,17 @@ export default function ExtrudeTool() {
   });
 
   const features = useCADStore((s) => s.features);
+  const sketchById = useMemo(() => new Map(sketches.map((sketch) => [sketch.id, sketch])), [sketches]);
 
   const focusedSketchId = useMemo(() => {
     const selectedFeature = features.find((f) => f.id === selectedFeatureId);
     return selectedFeature?.type === 'sketch' ? selectedFeature.sketchId : null;
   }, [features, selectedFeatureId]);
+
+  const profileUsage = useMemo(
+    () => getExtrudeProfileUsage(features, editingFeatureId),
+    [features, editingFeatureId],
+  );
 
   // Only hide profiles that are already consumed by an extrude feature.
   const extrudable = useMemo(() => {
@@ -85,19 +92,10 @@ export default function ExtrudeTool() {
         .filter((feature) => feature.type === 'sketch' && feature.sketchId)
         .map((feature) => feature.sketchId),
     );
-    const fullyUsedSketchIds = new Set<string>();
-    for (const feature of features.filter((f) => f.type === 'extrude' && !f.suppressed && f.id !== editingFeatureId)) {
-      const sketchId = feature.sketchId?.split('::')[0];
-      if (!sketchId) continue;
-      const profileIndex = feature.params.profileIndex;
-      if (!(typeof profileIndex === 'number' && Number.isFinite(profileIndex))) {
-        fullyUsedSketchIds.add(sketchId);
-      }
-    }
     const candidates = sketches.filter((s) =>
       s.entities.length > 0 &&
       timelineSketchIds.has(s.id) &&
-      !fullyUsedSketchIds.has(s.id) &&
+      !profileUsage.fullyUsedSketchIds.has(s.id) &&
       (!focusedSketchId || s.id === focusedSketchId)
     );
     const sketchTimelineIndex = new Map<string, number>();
@@ -123,43 +121,32 @@ export default function ExtrudeTool() {
         return otherFeatureIndex > sketchIndex;
       })
     );
-  }, [sketches, features, focusedSketchId, editingFeatureId]);
-
-  const consumedProfileIds = useMemo(() => new Set(
-      features
-        .filter((f) => f.type === 'extrude' && !f.suppressed && f.id !== editingFeatureId)
-        .map((f) => {
-          const sketchId = f.sketchId?.split('::')[0];
-          const profileIndex = f.params.profileIndex;
-          return sketchId && typeof profileIndex === 'number' && Number.isFinite(profileIndex)
-            ? buildSelectionId(sketchId, profileIndex)
-            : null;
-        })
-        .filter((id): id is string => !!id),
-    ),
-    [features, editingFeatureId],
-  );
+  }, [sketches, features, focusedSketchId, profileUsage.fullyUsedSketchIds]);
 
   const profileEntries = useMemo(() => {
     // Use the FLAT shape list so every closed region is a selectable profile
     // (rectangle + each inner circle are all clickable, Fusion 360 parity).
-    return extrudable.flatMap((sketch) => {
+    const entries: Array<{ sketch: Sketch; profileIndex: number; selectionId: string }> = [];
+    for (const sketch of extrudable) {
       const count = GeometryEngine.sketchToProfileShapesFlat(sketch).length;
-      return Array.from({ length: count }, (_, profileIndex) => ({
-        sketch,
-        profileIndex,
-        selectionId: buildSelectionId(sketch.id, profileIndex),
-      })).filter(({ selectionId, profileIndex }) =>
-        !consumedProfileIds.has(selectionId) &&
-        GeometryEngine.createProfileSketch(sketch, profileIndex) !== null
-      );
-    });
-  }, [extrudable, consumedProfileIds]);
+      for (let profileIndex = 0; profileIndex < count; profileIndex += 1) {
+        const selectionId = buildSelectionId(sketch.id, profileIndex);
+        if (profileUsage.consumedProfileIds.has(selectionId)) continue;
+        if (GeometryEngine.createProfileSketch(sketch, profileIndex) === null) continue;
+        entries.push({ sketch, profileIndex, selectionId });
+      }
+    }
+    return entries;
+  }, [extrudable, profileUsage.consumedProfileIds]);
 
-  const availableProfileIds = useMemo(
-    () => new Set(profileEntries.map((entry) => entry.selectionId)),
-    [profileEntries],
-  );
+  const availableProfileIds = useMemo(() => {
+    const ids = new Set(profileEntries.map((entry) => entry.selectionId));
+    for (const id of selectedIds) {
+      if (!id.includes('::')) ids.add(id);
+    }
+    return ids;
+  }, [profileEntries, selectedIds]);
+  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   useEffect(() => {
     if (activeTool !== 'extrude') return;
@@ -169,15 +156,15 @@ export default function ExtrudeTool() {
     }
   }, [activeTool, availableProfileIds, selectedIds, setSelectedIds]);
 
-  const getSketchForSelection = (selectionId: string): Sketch | null => {
+  const getSketchForSelection = useCallback((selectionId: string): Sketch | null => {
     const { sketchId, profileIndex } = parseSelectionId(selectionId);
-    const sketch = sketches.find((s) => s.id === sketchId);
+    const sketch = sketchById.get(sketchId);
     if (!sketch) return null;
     if (profileIndex === null) return sketch;
     return GeometryEngine.createProfileSketch(sketch, profileIndex);
-  };
+  }, [sketchById]);
 
-  const isSamePlane = (a: Sketch, b: Sketch) => {
+  const isSamePlane = useCallback((a: Sketch, b: Sketch) => {
     const aN = a.planeNormal.clone().normalize();
     const bN = b.planeNormal.clone().normalize();
     const dot = aN.dot(bN);
@@ -185,9 +172,9 @@ export default function ExtrudeTool() {
     const aD = aN.dot(a.planeOrigin);
     const bD = dot >= 0 ? aN.dot(b.planeOrigin) : -aN.dot(b.planeOrigin);
     return Math.abs(aD - bD) <= 1e-2;
-  };
+  }, []);
 
-  const toggleSelection = (selectionId: string, additive = false) => {
+  const toggleSelection = useCallback((selectionId: string, additive = false) => {
     if (selectedIds.includes(selectionId)) {
       const next = selectedIds.filter((id) => id !== selectionId);
       setSelectedIds(next);
@@ -208,7 +195,14 @@ export default function ExtrudeTool() {
         setStatusMessage('Profile selection moved to the clicked sketch plane');
         return;
       }
-      if (!additive && !sameSourceSketch) {
+      // Non-additive click always replaces — Shift/Ctrl required to add profiles
+      if (!additive) {
+        setSelectedIds([selectionId]);
+        setStatusMessage('1 profile selected — drag arrow or set distance, then OK');
+        return;
+      }
+      // Additive (Shift/Ctrl) cross-sketch on same plane: replace (can only multi-select within one sketch)
+      if (!sameSourceSketch) {
         setSelectedIds([selectionId]);
         setStatusMessage('1 profile selected — drag arrow or set distance, then OK');
         return;
@@ -222,7 +216,7 @@ export default function ExtrudeTool() {
     const next = [...selectedIds, selectionId];
     setSelectedIds(next);
     setStatusMessage(`${next.length} profile${next.length > 1 ? 's' : ''} selected — drag arrow or set distance, then OK`);
-  };
+  }, [getSketchForSelection, isSamePlane, selectedIds, setSelectedIds, setStatusMessage]);
 
   // ─── Native DOM profile picking ───────────────────────────────────────
   // R3F's <primitive> onClick is unreliable for dynamically-created meshes.
@@ -235,13 +229,16 @@ export default function ExtrudeTool() {
 
   // Refs to avoid stale closures in DOM event handlers
   const toggleSelectionRef = useRef(toggleSelection);
-  toggleSelectionRef.current = toggleSelection;
   const setHoveredIdRef = useRef(setHoveredId);
-  setHoveredIdRef.current = setHoveredId;
   const setStatusMessageRef = useRef(setStatusMessage);
-  setStatusMessageRef.current = setStatusMessage;
   const hoveredIdRef = useRef(hoveredId);
-  hoveredIdRef.current = hoveredId;
+
+  useEffect(() => {
+    toggleSelectionRef.current = toggleSelection;
+    setHoveredIdRef.current = setHoveredId;
+    setStatusMessageRef.current = setStatusMessage;
+    hoveredIdRef.current = hoveredId;
+  }, [hoveredId, setStatusMessage, toggleSelection]);
 
   useEffect(() => {
     if (!profilePickEnabled) {
@@ -389,6 +386,7 @@ export default function ExtrudeTool() {
       canvas.removeEventListener('pointerdown', handlePointerDown);
       canvas.removeEventListener('pointermove', handlePointerMove);
       canvas.removeEventListener('click', handleClick, true);
+      cachedMeshes = null;
       if (hoveredIdRef.current !== null) {
         hoveredIdRef.current = null;
         setHoveredIdRef.current(null);
@@ -409,30 +407,27 @@ export default function ExtrudeTool() {
     );
   }, [faceHit, selectedIds.length, setStatusMessage]);
 
-  const selectedSketches = useMemo(() =>
-    selectedIds.map((id) => ({ id, sketch: getSketchForSelection(id) })).filter(
-      (e): e is { id: string; sketch: Sketch } => e.sketch !== null,
-    ),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedIds, sketches],
-  );
+  const selectedSketches = useMemo(() => {
+    const entries: Array<{ id: string; sketch: Sketch }> = [];
+    for (const id of selectedIds) {
+      const { sketchId, profileIndex } = parseSelectionId(id);
+      const sketch = sketchById.get(sketchId);
+      if (!sketch) continue;
+      const selectedSketch = profileIndex === null ? sketch : GeometryEngine.createProfileSketch(sketch, profileIndex);
+      if (selectedSketch) entries.push({ id, sketch: selectedSketch });
+    }
+    return entries;
+  }, [selectedIds, sketchById]);
 
   // Use the first selected sketch for the gizmo arrow position
   const gizmoSketch = selectedSketches.length > 0 ? selectedSketches[0].sketch : null;
 
   if (activeTool !== 'extrude') return null;
 
-  // Once a preview is active, hide the SELECTED profile overlays visually —
-  // they would ghost through the solid preview fill. But keep the meshes
-  // IN THE SCENE (hidden via opacity 0, not unmounted) so the DOM profile
-  // picker can still raycast them for deselect/toggle clicks. Idle and hover
-  // overlays always stay visible so the user can add more profiles.
-  const previewActive = Math.abs(distance) >= 0.001;
-
   return (
     <group>
       {profileEntries.map(({ sketch, profileIndex, selectionId }) => {
-        const isSelected = selectedIds.includes(selectionId);
+        const isSelected = selectedIdSet.has(selectionId);
         return (
           <SketchProfile
             key={selectionId}
@@ -442,7 +437,6 @@ export default function ExtrudeTool() {
               isSelected ? 'selected' :
               selectionId === hoveredId ? 'hover' : 'idle'
             }
-            hidden={previewActive && isSelected}
           />
         );
       })}

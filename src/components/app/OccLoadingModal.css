@@ -1,0 +1,134 @@
+/* ── Backdrop ──────────────────────────────────────────────────────────────── */
+.occ-loading-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  opacity: 0;
+  pointer-events: none; /* invisible phases must not block interaction */
+  transition: opacity 0.2s ease;
+}
+.occ-loading-backdrop--visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.occ-loading-backdrop--out {
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+/* ── Card ──────────────────────────────────────────────────────────────────── */
+.occ-loading-card {
+  background: var(--bg-panel, #ffffff);
+  border: 1px solid var(--border-light, #e5e5e5);
+  border-radius: 18px;
+  padding: 36px 44px 32px;
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+  box-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.08),
+    0 12px 40px rgba(0, 0, 0, 0.16),
+    0 0 0 1px rgba(0, 0, 0, 0.04);
+  transform: translateY(0);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.occ-loading-backdrop--in .occ-loading-card {
+  transform: translateY(12px);
+}
+
+/* ── Gear area ─────────────────────────────────────────────────────────────── */
+.occ-loading-gear-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 120px;
+  height: 120px;
+}
+
+.occ-gear-svg {
+  overflow: visible;
+}
+
+/* Assembled state: transition from blue glow → green, then pulse */
+.occ-gear-svg--assembled {
+  animation: occ-gear-pulse-green 1.4s ease-in-out infinite;
+}
+
+@keyframes occ-gear-pulse-green {
+  /* 0–20 %: cross-fade from accent blue glow to green */
+  0% {
+    filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent, #0078d7) 65%, transparent));
+  }
+  20% {
+    filter: hue-rotate(-90deg) drop-shadow(0 0 5px rgba(0, 210, 80, 0.75));
+  }
+  /* 20–100 %: pulse between dim and bright green glow */
+  60% {
+    filter: hue-rotate(-90deg) drop-shadow(0 0 14px rgba(0, 255, 100, 1));
+  }
+  100% {
+    filter: hue-rotate(-90deg) drop-shadow(0 0 5px rgba(0, 210, 80, 0.75));
+  }
+}
+
+/* ── Percentage overlay ────────────────────────────────────────────────────── */
+.occ-loading-pct {
+  position: absolute;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent, #0078d7);
+  letter-spacing: -0.02em;
+  pointer-events: none;
+  /* Smooth to green when gear assembles */
+  transition: color 0.4s ease 0.1s;
+}
+
+.occ-loading-gear-wrap--assembled .occ-loading-pct {
+  color: #00cc55;
+}
+
+/* ── Text block ────────────────────────────────────────────────────────────── */
+.occ-loading-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+}
+
+.occ-loading-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+  letter-spacing: 0.005em;
+}
+
+.occ-loading-sub {
+  font-size: 12px;
+  color: var(--text-muted, #888888);
+  min-width: 160px;
+  text-align: center;
+}
+
+/* ── Animated ellipsis ─────────────────────────────────────────────────────── */
+.occ-loading-dots::after {
+  content: '';
+  display: inline-block;
+  animation: occ-dots 1.6s steps(4, end) infinite;
+}
+
+@keyframes occ-dots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+  100% { content: ''; }
+}

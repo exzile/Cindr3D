@@ -275,10 +275,14 @@ export default function SketchInteraction() {
         // where the line from drawStart to that point is tangent to the circle.
         // PLANE-AWARE: must use sketch t1/t2 axes, not world x/y, so this works on
         // XZ / YZ / arbitrary construction-plane sketches — not just XY.
-        if (snapToTangent && drawStart && e.points.length >= 2 && activeSketch) {
+        // Circles store radius in entity.radius (single center point); arcs may use points[1].
+        const hasExplicitRadius = typeof e.radius === 'number' && e.radius > 1e-6;
+        const hasTwoPoints = e.points.length >= 2;
+        if (snapToTangent && drawStart && (hasExplicitRadius || hasTwoPoints) && activeSketch) {
           const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
-          const radiusPt = new THREE.Vector3(e.points[1].x, e.points[1].y, e.points[1].z);
-          const r = center.distanceTo(radiusPt);
+          const r = hasExplicitRadius
+            ? e.radius!
+            : center.distanceTo(new THREE.Vector3(e.points[1].x, e.points[1].y, e.points[1].z));
           if (r > 1e-6) {
             const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
             const dVec = center.clone().sub(drawStart);

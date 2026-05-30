@@ -1,6 +1,14 @@
-import * as THREE from 'three';
-import type { AlignGeomPick, DimensionToolType, Parameter, SketchDimension } from '../../../types/cad';
-import type { ExtrudeDirection, ExtrudeOperation } from '../../../types/cad-extrude.types';
+import * as THREE from "three";
+import type {
+  AlignGeomPick,
+  DimensionToolType,
+  Parameter,
+  SketchDimension,
+} from "../../../types/cad";
+import type {
+  ExtrudeDirection,
+  ExtrudeOperation,
+} from "../../../types/cad-extrude.types";
 
 export interface CADModelingState {
   // Extrude tool (Fusion 360-style interactive extrude)
@@ -18,7 +26,11 @@ export interface CADModelingState {
   extrudeOperation: ExtrudeOperation;
   setExtrudeOperation: (o: ExtrudeOperation) => void;
   startExtrudeTool: () => void;
-  startExtrudeFromFace: (boundary: THREE.Vector3[], normal: THREE.Vector3, centroid: THREE.Vector3) => void;
+  startExtrudeFromFace: (
+    boundary: THREE.Vector3[],
+    normal: THREE.Vector3,
+    centroid: THREE.Vector3,
+  ) => void;
   /** EX-13: load an existing extrude feature into the panel for editing. */
   loadExtrudeForEdit: (featureId: string) => void;
   cancelExtrudeTool: () => void;
@@ -28,17 +40,17 @@ export interface CADModelingState {
   setExtrudeThinEnabled: (v: boolean) => void;
   extrudeThinThickness: number;
   setExtrudeThinThickness: (t: number) => void;
-  extrudeThinSide: 'side1' | 'side2' | 'center';
-  setExtrudeThinSide: (s: 'side1' | 'side2' | 'center') => void;
+  extrudeThinSide: "side1" | "side2" | "center";
+  setExtrudeThinSide: (s: "side1" | "side2" | "center") => void;
   // EX-7: independent wall location per side for two-sided thin extrude
-  extrudeThinSide2: 'side1' | 'side2' | 'center';
-  setExtrudeThinSide2: (s: 'side1' | 'side2' | 'center') => void;
+  extrudeThinSide2: "side1" | "side2" | "center";
+  setExtrudeThinSide2: (s: "side1" | "side2" | "center") => void;
   // EX-8: independent thickness per side for two-sided thin extrude
   extrudeThinThickness2: number;
   setExtrudeThinThickness2: (t: number) => void;
   // Extrude start options (D67 / CORR-8)
-  extrudeStartType: 'profile' | 'offset' | 'entity';
-  setExtrudeStartType: (t: 'profile' | 'offset' | 'entity') => void;
+  extrudeStartType: "profile" | "offset" | "entity";
+  setExtrudeStartType: (t: "profile" | "offset" | "entity") => void;
   extrudeStartOffset: number;
   setExtrudeStartOffset: (v: number) => void;
   // CORR-8: EntityStartDefinition — face/plane ID to start from
@@ -47,25 +59,40 @@ export interface CADModelingState {
   /** EX-4: face normal + centroid for From-Entity start (picked via viewport) */
   extrudeStartFaceNormal: [number, number, number] | null;
   extrudeStartFaceCentroid: [number, number, number] | null;
-  setExtrudeStartFace: (normal: [number, number, number], centroid: [number, number, number]) => void;
+  setExtrudeStartFace: (
+    normal: [number, number, number],
+    centroid: [number, number, number],
+  ) => void;
   clearExtrudeStartFace: () => void;
   // Extrude extent types (D68) — EX-3: added 'to-object', EX-F1: added 'to-next'
-  extrudeExtentType: 'distance' | 'all' | 'to-object' | 'to-next';
-  setExtrudeExtentType: (t: 'distance' | 'all' | 'to-object' | 'to-next') => void;
+  extrudeExtentType: "distance" | "all" | "to-object" | "to-next";
+  setExtrudeExtentType: (
+    t: "distance" | "all" | "to-object" | "to-next",
+  ) => void;
   // EX-10: independent extent type for side 2 when direction=two-sides
-  extrudeExtentType2: 'distance' | 'all' | 'to-object' | 'to-next';
-  setExtrudeExtentType2: (t: 'distance' | 'all' | 'to-object' | 'to-next') => void;
+  extrudeExtentType2: "distance" | "all" | "to-object" | "to-next";
+  setExtrudeExtentType2: (
+    t: "distance" | "all" | "to-object" | "to-next",
+  ) => void;
   /** EX-3: face data for To-Object terminus (picked via viewport) */
   extrudeToEntityFaceId: string | null;
   extrudeToEntityFaceNormal: [number, number, number] | null;
   extrudeToEntityFaceCentroid: [number, number, number] | null;
-  setExtrudeToEntityFace: (id: string, normal: [number, number, number], centroid: [number, number, number]) => void;
+  setExtrudeToEntityFace: (
+    id: string,
+    normal: [number, number, number],
+    centroid: [number, number, number],
+  ) => void;
   clearExtrudeToEntityFace: () => void;
   /** EX-12: directionHint — flip the "to-object" direction when the face is behind the profile */
   extrudeToObjectFlipDirection: boolean;
   setExtrudeToObjectFlipDirection: (v: boolean) => void;
   /** EX-11: add a planar face as an additional profile while a sketch is already selected */
-  addFaceToExtrude: (boundary: THREE.Vector3[], normal: THREE.Vector3, centroid: THREE.Vector3) => void;
+  addFaceToExtrude: (
+    boundary: THREE.Vector3[],
+    normal: THREE.Vector3,
+    centroid: THREE.Vector3,
+  ) => void;
   // Extrude taper angle (D69)
   extrudeTaperAngle: number;
   setExtrudeTaperAngle: (a: number) => void;
@@ -76,8 +103,8 @@ export interface CADModelingState {
   extrudeSymmetricFullLength: boolean;
   setExtrudeSymmetricFullLength: (v: boolean) => void;
   // Extrude body kind (D102)
-  extrudeBodyKind: 'solid' | 'surface';
-  setExtrudeBodyKind: (k: 'solid' | 'surface') => void;
+  extrudeBodyKind: "solid" | "surface";
+  setExtrudeBodyKind: (k: "solid" | "surface") => void;
   // EX-9 / CORR-14: participant bodies (empty = apply to all)
   extrudeParticipantBodyIds: string[];
   setExtrudeParticipantBodyIds: (ids: string[]) => void;
@@ -94,29 +121,34 @@ export interface CADModelingState {
   // Revolve tool
   revolveSelectedSketchId: string | null;
   setRevolveSelectedSketchId: (id: string | null) => void;
-  revolveAxis: 'X' | 'Y' | 'Z' | 'centerline';
-  setRevolveAxis: (a: 'X' | 'Y' | 'Z' | 'centerline') => void;
+  revolveAxis: "X" | "Y" | "Z" | "centerline";
+  setRevolveAxis: (a: "X" | "Y" | "Z" | "centerline") => void;
   revolveAngle: number;
   setRevolveAngle: (angle: number) => void;
   // Revolve direction modes (D70)
-  revolveDirection: 'one-side' | 'symmetric' | 'two-sides';
-  setRevolveDirection: (d: 'one-side' | 'symmetric' | 'two-sides') => void;
+  revolveDirection: "one-side" | "symmetric" | "two-sides";
+  setRevolveDirection: (d: "one-side" | "symmetric" | "two-sides") => void;
   revolveAngle2: number;
   setRevolveAngle2: (a: number) => void;
   // Revolve body kind (D103)
-  revolveBodyKind: 'solid' | 'surface';
-  setRevolveBodyKind: (k: 'solid' | 'surface') => void;
-  revolveOperation: 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component';
-  setRevolveOperation: (op: 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component') => void;
+  revolveBodyKind: "solid" | "surface";
+  setRevolveBodyKind: (k: "solid" | "surface") => void;
+  revolveOperation: "new-body" | "join" | "cut" | "intersect" | "new-component";
+  setRevolveOperation: (
+    op: "new-body" | "join" | "cut" | "intersect" | "new-component",
+  ) => void;
   // CORR-10: project axis onto profile plane before revolving
   revolveIsProjectAxis: boolean;
   setRevolveIsProjectAxis: (v: boolean) => void;
-  revolveProfileMode: 'sketch' | 'face';
-  setRevolveProfileMode: (m: 'sketch' | 'face') => void;
+  revolveProfileMode: "sketch" | "face";
+  setRevolveProfileMode: (m: "sketch" | "face") => void;
   revolveFaceBoundary: number[] | null;
   revolveFaceNormal: [number, number, number] | null;
   clearRevolveFace: () => void;
-  startRevolveFromFace: (boundary: THREE.Vector3[], normal: THREE.Vector3) => void;
+  startRevolveFromFace: (
+    boundary: THREE.Vector3[],
+    normal: THREE.Vector3,
+  ) => void;
   startRevolveTool: () => void;
   cancelRevolveTool: () => void;
   commitRevolve: () => void;
@@ -127,28 +159,32 @@ export interface CADModelingState {
   sweepPathSketchId: string | null;
   setSweepPathSketchId: (id: string | null) => void;
   // D104 surface sweep
-  sweepBodyKind: 'solid' | 'surface';
-  setSweepBodyKind: (k: 'solid' | 'surface') => void;
+  sweepBodyKind: "solid" | "surface";
+  setSweepBodyKind: (k: "solid" | "surface") => void;
   // D71 sweep upgrades
-  sweepOrientation: 'perpendicular' | 'parallel' | 'default';
-  sweepProfileScaling: 'none' | 'scale-to-path' | 'scale-to-rail';  // SDK-4
+  sweepOrientation: "perpendicular" | "parallel" | "default";
+  sweepProfileScaling: "none" | "scale-to-path" | "scale-to-rail"; // SDK-4
   sweepTwistAngle: number;
   sweepTaperAngle: number;
   sweepGuideRailId: string | null;
-  sweepOperation: 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component';
-  sweepDistance: 'entire' | 'distance';
+  sweepOperation: "new-body" | "join" | "cut" | "intersect" | "new-component";
+  sweepDistance: "entire" | "distance";
   // SDK-5: path parametric start/end (0–1 fraction of path length)
   sweepDistanceOne: number;
   sweepDistanceTwo: number;
   setSweepDistanceOne: (v: number) => void;
   setSweepDistanceTwo: (v: number) => void;
-  setSweepOrientation: (v: 'perpendicular' | 'parallel' | 'default') => void;
-  setSweepProfileScaling: (v: 'none' | 'scale-to-path' | 'scale-to-rail') => void;  // SDK-4
+  setSweepOrientation: (v: "perpendicular" | "parallel" | "default") => void;
+  setSweepProfileScaling: (
+    v: "none" | "scale-to-path" | "scale-to-rail",
+  ) => void; // SDK-4
   setSweepTwistAngle: (v: number) => void;
   setSweepTaperAngle: (v: number) => void;
   setSweepGuideRailId: (v: string | null) => void;
-  setSweepOperation: (v: 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component') => void;
-  setSweepDistance: (v: 'entire' | 'distance') => void;
+  setSweepOperation: (
+    v: "new-body" | "join" | "cut" | "intersect" | "new-component",
+  ) => void;
+  setSweepDistance: (v: "entire" | "distance") => void;
   startSweepTool: () => void;
   cancelSweepTool: () => void;
   commitSweep: () => void;
@@ -156,21 +192,23 @@ export interface CADModelingState {
   // Loft tool (D31 / D105)
   loftProfileSketchIds: string[];
   setLoftProfileSketchIds: (ids: string[]) => void;
-  loftBodyKind: 'solid' | 'surface';
-  setLoftBodyKind: (k: 'solid' | 'surface') => void;
+  loftBodyKind: "solid" | "surface";
+  setLoftBodyKind: (k: "solid" | "surface") => void;
   // D72 loft upgrades
   loftClosed: boolean;
-  loftTangentEdgesMerged: boolean;  // SDK-8
-  loftStartCondition: 'free' | 'tangent' | 'curvature';
-  loftEndCondition: 'free' | 'tangent' | 'curvature';
+  loftTangentEdgesMerged: boolean; // SDK-8
+  loftStartCondition: "free" | "tangent" | "curvature";
+  loftEndCondition: "free" | "tangent" | "curvature";
   loftRailSketchId: string | null;
-  loftOperation: 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component';
+  loftOperation: "new-body" | "join" | "cut" | "intersect" | "new-component";
   setLoftClosed: (v: boolean) => void;
-  setLoftTangentEdgesMerged: (v: boolean) => void;  // SDK-8
-  setLoftStartCondition: (v: 'free' | 'tangent' | 'curvature') => void;
-  setLoftEndCondition: (v: 'free' | 'tangent' | 'curvature') => void;
+  setLoftTangentEdgesMerged: (v: boolean) => void; // SDK-8
+  setLoftStartCondition: (v: "free" | "tangent" | "curvature") => void;
+  setLoftEndCondition: (v: "free" | "tangent" | "curvature") => void;
   setLoftRailSketchId: (v: string | null) => void;
-  setLoftOperation: (v: 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component') => void;
+  setLoftOperation: (
+    v: "new-body" | "join" | "cut" | "intersect" | "new-component",
+  ) => void;
   startLoftTool: () => void;
   cancelLoftTool: () => void;
   commitLoft: () => void;
@@ -198,8 +236,8 @@ export interface CADModelingState {
   setRibThickness: (t: number) => void;
   ribHeight: number;
   setRibHeight: (h: number) => void;
-  ribDirection: 'normal' | 'flip' | 'symmetric';
-  setRibDirection: (d: 'normal' | 'flip' | 'symmetric') => void;
+  ribDirection: "normal" | "flip" | "symmetric";
+  setRibDirection: (d: "normal" | "flip" | "symmetric") => void;
   startRibTool: () => void;
   cancelRibTool: () => void;
   commitRib: () => void;
@@ -224,7 +262,18 @@ export interface CADModelingState {
   commitMeshCombine: (featureIds: string[]) => void;
 
   // MSH11 — Mesh Transform (commit)
-  commitMeshTransform: (featureId: string, params: { tx: number; ty: number; tz: number; rx: number; ry: number; rz: number; scale: number }) => void;
+  commitMeshTransform: (
+    featureId: string,
+    params: {
+      tx: number;
+      ty: number;
+      tz: number;
+      rx: number;
+      ry: number;
+      rz: number;
+      scale: number;
+    },
+  ) => void;
 
   // SLD13 — Scale (commit)
   commitScale: (featureId: string, sx: number, sy: number, sz: number) => void;
@@ -232,33 +281,61 @@ export interface CADModelingState {
   // 3D edge fillet (commit) — rounds edges in filletEdgeIds on the target body.
   // featureId: non-destructive path — store result on the fillet feature node.
   // filletParams: extended params (mode, chordLength, startRadius, endRadius, propagate).
-  commitFillet: (radius: number, segments: number, featureId?: string, filletParams?: Record<string, unknown>) => void;
+  commitFillet: (
+    radius: number,
+    segments: number,
+    featureId?: string,
+    filletParams?: Record<string, unknown>,
+  ) => void;
 
   // 3D edge chamfer (commit) — bevels edges in chamferEdgeIds. distance is the
   // face-1 / live setback; distance2 (optional) is the face-2 setback.
-  commitChamfer: (distance: number, distance2?: number, featureId?: string, chamferParams?: Record<string, unknown>) => void;
+  commitChamfer: (
+    distance: number,
+    distance2?: number,
+    featureId?: string,
+    chamferParams?: Record<string, unknown>,
+  ) => void;
 
-  // Replay (re-run CSG) an existing fillet/chamfer feature — used on edit.
-  replayEdgeCutFeature: (featureId: string) => void;
+  // Replay an existing OCC fillet/chamfer feature — used on edit.
+  replayEdgeModificationFeature: (featureId: string) => void;
 
   // Align tool — geometry-pair picking + transform commit
-  alignPickStage: 'idle' | 'source' | 'target';
-  alignPickKind: 'face' | 'edge' | 'vertex';
+  alignPickStage: "idle" | "source" | "target";
+  alignPickKind: "face" | "edge" | "vertex";
   alignSource: AlignGeomPick | null;
   alignTarget: AlignGeomPick | null;
-  setAlignPickStage: (stage: 'idle' | 'source' | 'target') => void;
-  setAlignPickKind: (kind: 'face' | 'edge' | 'vertex') => void;
+  setAlignPickStage: (stage: "idle" | "source" | "target") => void;
+  setAlignPickKind: (kind: "face" | "edge" | "vertex") => void;
   setAlignSource: (pick: AlignGeomPick | null) => void;
   setAlignTarget: (pick: AlignGeomPick | null) => void;
   resetAlign: () => void;
-  commitAlign: (opts: { moveType: 'align' | 'translate' | 'rotate'; flip: boolean; allowRotation: boolean }) => void;
+  commitAlign: (opts: {
+    moveType: "align" | "translate" | "rotate";
+    flip: boolean;
+    allowRotation: boolean;
+  }) => void;
 
   // SLD12 — Combine / Boolean (commit)
-  commitCombine: (targetFeatureId: string, toolFeatureId: string, operation: 'join' | 'cut' | 'intersect', keepTool: boolean) => void;
-  recommitCombine: (featureId: string, params: { operation: 'join' | 'cut' | 'intersect'; keepTools: boolean; targetId: string; toolId: string }) => void;
+  commitCombine: (
+    targetFeatureId: string,
+    toolFeatureId: string | string[],
+    operation: "join" | "cut" | "intersect",
+    keepTool: boolean,
+  ) => void;
+  recommitCombine: (
+    featureId: string,
+    params: {
+      operation: "join" | "cut" | "intersect";
+      keepTools: boolean;
+      targetId: string;
+      toolId: string;
+      toolIds?: string[];
+    },
+  ) => void;
 
   // SLD17 — Mirror feature (commit)
-  commitMirrorFeature: (featureId: string, plane: 'XY' | 'XZ' | 'YZ') => void;
+  commitMirrorFeature: (featureId: string, plane: "XY" | "XZ" | "YZ") => void;
 
   // D6 Fillet edge selection + live radius (synced with FilletGizmo drag)
   filletEdgeIds: string[];
@@ -267,9 +344,24 @@ export interface CADModelingState {
   clearFilletEdges: () => void;
   filletLiveRadius: number;
   setFilletLiveRadius: (r: number) => void;
-  /** Task 13/12: 'edge' picks individual edges; 'face' picks whole face boundaries. */
-  filletPickMode: 'edge' | 'face';
-  setFilletPickMode: (mode: 'edge' | 'face') => void;
+
+  // D6b Full-round fillet face picker (center face + two side faces)
+  filletFullRoundCenterFaceId: string | null;
+  filletFullRoundCenterOccBodyId: string | null;
+  filletFullRoundCenterOccFaceId: number | null;
+  filletFullRoundSide1FaceId: string | null;
+  filletFullRoundSide1OccFaceId: number | null;
+  filletFullRoundSide2FaceId: string | null;
+  filletFullRoundSide2OccFaceId: number | null;
+  filletFullRoundPickSlot: 'center' | 'side1' | 'side2' | null;
+  setFilletFullRoundFace: (
+    slot: 'center' | 'side1' | 'side2',
+    faceId: string | null,
+    occBodyId: string | null,
+    occFaceId: number | null,
+  ) => void;
+  clearFilletFullRoundFaces: () => void;
+  setFilletFullRoundPickSlot: (slot: 'center' | 'side1' | 'side2' | null) => void;
 
   // D7 Chamfer edge selection + live distance (synced with ChamferGizmo drag)
   chamferEdgeIds: string[];
@@ -295,8 +387,8 @@ export interface CADModelingState {
   setStatusMessage: (message: string) => void;
 
   // Units
-  units: 'mm' | 'cm' | 'in';
-  setUnits: (units: 'mm' | 'cm' | 'in') => void;
+  units: "mm" | "cm" | "in";
+  setUnits: (units: "mm" | "cm" | "in") => void;
   // D39/D206 Selection Filter — multi-toggle object
   selectionFilter: {
     bodies: boolean;
@@ -306,7 +398,7 @@ export interface CADModelingState {
     sketches: boolean;
     construction: boolean;
   };
-  setSelectionFilter: (f: Partial<CADModelingState['selectionFilter']>) => void;
+  setSelectionFilter: (f: Partial<CADModelingState["selectionFilter"]>) => void;
 
   // D207 — Sketch Grid / Snap settings
   sketchGridEnabled: boolean;
@@ -317,22 +409,48 @@ export interface CADModelingState {
   // Camera
   cameraHomeCounter: number;
   triggerCameraHome: () => void;
-  cameraNavMode: 'orbit' | 'pan' | 'zoom' | 'zoom-window' | 'look-at' | null;
-  setCameraNavMode: (mode: 'orbit' | 'pan' | 'zoom' | 'zoom-window' | 'look-at' | null) => void;
+  cameraNavMode: "orbit" | "pan" | "zoom" | "zoom-window" | "look-at" | null;
+  setCameraNavMode: (
+    mode: "orbit" | "pan" | "zoom" | "zoom-window" | "look-at" | null,
+  ) => void;
   // NAV-19: multi-viewport layout
-  viewportLayout: '1' | '2h' | '2v' | '4';
-  setViewportLayout: (layout: '1' | '2h' | '2v' | '4') => void;
+  viewportLayout: "1" | "2h" | "2v" | "4";
+  setViewportLayout: (layout: "1" | "2h" | "2v" | "4") => void;
   zoomToFitCounter: number;
   triggerZoomToFit: () => void;
   // NAV-5: Zoom Window
-  zoomWindowTrigger: { x1: number; y1: number; x2: number; y2: number; vpW: number; vpH: number } | null;
-  triggerZoomWindow: (rect: { x1: number; y1: number; x2: number; y2: number; vpW: number; vpH: number }) => void;
+  zoomWindowTrigger: {
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    vpW: number;
+    vpH: number;
+  } | null;
+  triggerZoomWindow: (rect: {
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    vpW: number;
+    vpH: number;
+  }) => void;
   clearZoomWindow: () => void;
 
   // Parameters
   parameters: Parameter[];
-  addParameter: (name: string, expression: string, description?: string, group?: string) => void;
-  updateParameter: (id: string, updates: Partial<Pick<Parameter, 'name' | 'expression' | 'description' | 'group'>>) => void;
+  addParameter: (
+    name: string,
+    expression: string,
+    description?: string,
+    group?: string,
+  ) => void;
+  updateParameter: (
+    id: string,
+    updates: Partial<
+      Pick<Parameter, "name" | "expression" | "description" | "group">
+    >,
+  ) => void;
   removeParameter: (id: string) => void;
   evaluateExpression: (expr: string) => number | null;
 
@@ -352,7 +470,16 @@ export interface CADModelingState {
   setSketchTextBold: (v: boolean) => void;
   setSketchTextItalic: (v: boolean) => void;
   startSketchTextTool: () => void;
-  commitSketchTextEntities: (segments: Array<{ x1: number; y1: number; z1: number; x2: number; y2: number; z2: number }>) => void;
+  commitSketchTextEntities: (
+    segments: Array<{
+      x1: number;
+      y1: number;
+      z1: number;
+      x2: number;
+      y2: number;
+      z2: number;
+    }>,
+  ) => void;
   cancelSketchTextTool: () => void;
 
   // D28 — Dimension tool
@@ -361,9 +488,9 @@ export interface CADModelingState {
   /** SK-A3: when true, newly created dimensions are marked driven (reference) */
   dimensionDrivenMode: boolean;
   /** CORR-1: orientation for newly created linear/aligned dimensions */
-  dimensionOrientation: 'horizontal' | 'vertical' | 'auto';
+  dimensionOrientation: "horizontal" | "vertical" | "auto";
   /** SK-A8: tolerance mode and values for newly created dimensions */
-  dimensionToleranceMode: 'none' | 'symmetric' | 'deviation';
+  dimensionToleranceMode: "none" | "symmetric" | "deviation";
   dimensionToleranceUpper: number;
   dimensionToleranceLower: number;
   pendingDimensionEntityIds: string[];
@@ -397,7 +524,7 @@ export interface CADModelingState {
   pendingOverConstraint: {
     dimension: SketchDimension;
     activeSketchId: string;
-    mode: 'add' | 'edit';
+    mode: "add" | "edit";
     previousValue?: number;
   } | null;
   /** Resolve the prompt by committing the candidate as a driven (reference) dimension. */
@@ -407,8 +534,8 @@ export interface CADModelingState {
   setActiveDimensionType: (t: DimensionToolType) => void;
   setDimensionOffset: (v: number) => void;
   setDimensionDrivenMode: (v: boolean) => void;
-  setDimensionOrientation: (v: 'horizontal' | 'vertical' | 'auto') => void;
-  setDimensionToleranceMode: (v: 'none' | 'symmetric' | 'deviation') => void;
+  setDimensionOrientation: (v: "horizontal" | "vertical" | "auto") => void;
+  setDimensionToleranceMode: (v: "none" | "symmetric" | "deviation") => void;
   setDimensionToleranceUpper: (v: number) => void;
   setDimensionToleranceLower: (v: number) => void;
   startDimensionTool: () => void;
@@ -420,8 +547,14 @@ export interface CADModelingState {
   // A9 — Component Pattern (linear/circular array of component instances)
   createComponentPattern: (
     sourceId: string,
-    type: 'linear' | 'circular',
-    params: { axis: 'X' | 'Y' | 'Z'; count: number; spacing: number; circularAxis: 'X' | 'Y' | 'Z'; circularCount: number }
+    type: "linear" | "circular",
+    params: {
+      axis: "X" | "Y" | "Z";
+      count: number;
+      spacing: number;
+      circularAxis: "X" | "Y" | "Z";
+      circularCount: number;
+    },
   ) => void;
 
   // S10 — Spline post-commit handle editing
@@ -431,7 +564,13 @@ export interface CADModelingState {
   setEditingSplineEntityId: (id: string | null) => void;
   setHoveredSplinePointIndex: (i: number | null) => void;
   setDraggingSplinePointIndex: (i: number | null) => void;
-  updateSplineControlPoint: (entityId: string, pointIndex: number, x: number, y: number, z: number) => void;
+  updateSplineControlPoint: (
+    entityId: string,
+    pointIndex: number,
+    x: number,
+    y: number,
+    z: number,
+  ) => void;
 
   // D45 — Project / Include live-link toggle
   projectLiveLink: boolean;

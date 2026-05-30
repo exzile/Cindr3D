@@ -1,0 +1,707 @@
+/**
+ * OCC-3.3 helper — Convert a closed 2-D point loop (world-space Vector3 array)
+ * into a TopoDS_Wire via BRepBuilderAPI_MakeEdge + BRepBuilderAPI_MakeWire.
+ *
+ * The caller is responsible for transforming sketch-plane UV coordinates to
+ * world space before calling this (use planePointToWorld from plane.ts).
+ */
+import * as THREE from 'three';
+import type { OcctRaw } from '../types';
+
+export interface SketchProfile {
+  outer: THREE.Vector2[];
+  holes: THREE.Vector2[][];
+}
+
+export interface SketchPlaneFrame {
+  origin: THREE.Vector3;
+  normal: THREE.Vector3;
+  uDir: THREE.Vector3;
+  vDir: THREE.Vector3;
+}
+
+export const OCC_OWNED_RESOURCES = Symbol.for('cindr3d.occOwnedResources');
+
+type OccOwnedResource = { delete?: () => void };
+
+const DEFAULT_LOOP_TOLERANCE = 1e-5;
+const DEFAULT_LOOP_TOLERANCE_SQ = DEFAULT_LOOP_TOLERANCE * DEFAULT_LOOP_TOLERANCE;
+const MIN_LOOP_AREA = 1e-10;
+
+function safeDeleteOcc(value: { delete?: () => void } | null | undefined): void {
+  try {
+    value?.delete?.();
+  } catch {
+    // Some OCC builder result proxies are invalidated by their owning builder.
+  }
+}
+
+export function takeOccOwnedResources(value: unknown): OccOwnedResource[] {
+  const carrier = value as { [OCC_OWNED_RESOURCES]?: OccOwnedResource[] } | null | undefined;
+  const resources = carrier?.[OCC_OWNED_RESOURCES] ?? [];
+  if (carrier) carrier[OCC_OWNED_RESOURCES] = undefined;
+  return resources;
+}
+
+export function signedArea2D(points: readonly THREE.Vector2[]): number {
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    area += a.x * b.y - b.x * a.y;
+  }
+  return area / 2;
+}
+
+export function normalizeClosedLoop2D(
+  points: readonly THREE.Vector2[],
+  tolerance = DEFAULT_LOOP_TOLERANCE,
+): THREE.Vector2[] | null {
+  if (points.length < 3) return null;
+
+  const toleranceSq = tolerance * tolerance;
+  const normalized: THREE.Vector2[] = [];
+  for (const point of points) {
+    const previous = normalized.at(-1);
+    if (previous && previous.distanceToSquared(point) <= toleranceSq) continue;
+    normalized.push(point.clone());
+  }
+
+  if (normalized.length > 1 && normalized[0].distanceToSquared(normalized.at(-1)!) <= toleranceSq) {
+    normalized.pop();
+  }
+
+  if (normalized.length < 3 || Math.abs(signedArea2D(normalized)) <= MIN_LOOP_AREA) {
+    return null;
+  }
+
+  return normalized;
+}
+
+export function orientLoop2D(points: readonly THREE.Vector2[], clockwise: boolean): THREE.Vector2[] {
+  const area = signedArea2D(points);
+  const isClockwise = area < 0;
+  const oriented = points.map((point) => point.clone());
+  return isClockwise === clockwise ? oriented : oriented.reverse();
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function makeGpPnt(oc: OcctRaw, v: THREE.Vector3): any {
+  return new oc.gp_Pnt_3(v.x, v.y, v.z);
+}
+
+/** Convert a list of world-space points (closed polygon) into a TopoDS_Wire. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function pointLoopToWire(oc: OcctRaw, points: THREE.Vector3[]): any | null {
+  if (points.length < 3) return null;
+
+  const loop = points.slice();
+  if (loop.length > 1 && loop[0].distanceToSquared(loop.at(-1)!) <= DEFAULT_LOOP_TOLERANCE_SQ) {
+    loop.pop();
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let polygonMaker: any | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const retainedPoints: any[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const retainedBuilders: any[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const retainedEdges: any[] = [];
+  let keepPolygonMakerAlive = false;
+  try {
+    for (let i = 0; i < loop.length; i++) {
+      const point = loop[i];
+      if (i > 0 && point.distanceToSquared(loop[i - 1]) < 1e-12) continue;
+      const gp = makeGpPnt(oc, point);
+      retainedPoints.push(gp);
+    }
+
+    if (retainedPoints.length < 3) return null;
+    if (retainedPoints.length === 3) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      polygonMaker = new (oc as any).BRepBuilderAPI_MakePolygon_3(
+        retainedPoints[0],
+        retainedPoints[1],
+        retainedPoints[2],
+        true,
+      );
+    } else if (retainedPoints.length === 4) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      polygonMaker = new (oc as any).BRepBuilderAPI_MakePolygon_4(
+        retainedPoints[0],
+        retainedPoints[1],
+        retainedPoints[2],
+        retainedPoints[3],
+        true,
+      );
+    } else {
+      // Use BRepBuilderAPI_MakePolygon incremental API — avoids the
+      // BRepBuilderAPI_MakeEdge_3 WASM "memory access out of bounds" crash
+      // that occurs with 5+ point polygons on some OCC WASM builds.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      polygonMaker = new (oc as any).BRepBuilderAPI_MakePolygon_1();
+      for (const pt of retainedPoints) {
+        polygonMaker.Add_1(pt);
+      }
+      polygonMaker.Close();
+    }
+    if (!polygonMaker?.IsDone()) return null;
+
+    const wire = polygonMaker.Wire();
+    keepPolygonMakerAlive = true;
+    (wire as { [OCC_OWNED_RESOURCES]?: OccOwnedResource[] })[OCC_OWNED_RESOURCES] = [
+      polygonMaker,
+      ...retainedPoints,
+    ];
+    return wire;
+  } finally {
+    if (!keepPolygonMakerAlive) safeDeleteOcc(polygonMaker);
+    if (!keepPolygonMakerAlive) {
+      for (const builder of retainedBuilders) safeDeleteOcc(builder);
+    }
+    if (!keepPolygonMakerAlive) {
+      for (const edge of retainedEdges) safeDeleteOcc(edge);
+    }
+    if (!keepPolygonMakerAlive) {
+      for (const point of retainedPoints) safeDeleteOcc(point);
+    }
+  }
+}
+
+// ── Analytic wire from THREE.Shape curves (OCC-15) ────────────────────────────
+//
+// The SketchProfile path above samples arcs/circles into ~96-point polygons, which
+// makes BRepPrimAPI_MakePrism sweep each segment into its own planar facet — a
+// faceted "cylinder" with ~100 flat faces. THREE.Shape.curves still carry the
+// analytic ArcCurve/EllipseCurve data, so we can build true gp_Circ / arc edges
+// and get a single analytic cylindrical face per wall (matching Fusion).
+//
+// Supported curve types: LineCurve, circular ArcCurve/EllipseCurve (full + partial).
+// Any other curve (ellipse with xRadius≠yRadius, spline, bezier) aborts the analytic
+// build and returns null, so the caller falls back to the proven faceted path.
+
+type ThreeCurve = {
+  type: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [k: string]: any;
+  getPoint(t: number, target?: THREE.Vector2): THREE.Vector2;
+};
+
+function uvToWorld3(frame: SketchPlaneFrame, p: THREE.Vector2): THREE.Vector3 {
+  return frame.origin.clone().addScaledVector(frame.uDir, p.x).addScaledVector(frame.vDir, p.y);
+}
+
+/** Sampled signed area (UV) of a curve loop — sign gives winding (CCW > 0). */
+function curveLoopSignedAreaUV(curves: ThreeCurve[]): number {
+  const pts: THREE.Vector2[] = [];
+  for (const c of curves) {
+    const n = c.type === 'LineCurve' ? 1 : 8;
+    for (let i = 0; i < n; i++) pts.push(c.getPoint(i / n));
+  }
+  let area = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length];
+    area += a.x * b.y - b.x * a.y;
+  }
+  return area / 2;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function lineEdgeWorld(oc: OcctRaw, a: THREE.Vector3, b: THREE.Vector3): any | null {
+  if (a.distanceToSquared(b) < 1e-12) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const occ = oc as any;
+  const gp1 = makeGpPnt(oc, a);
+  const gp2 = makeGpPnt(oc, b);
+  try {
+    const mk = new occ.BRepBuilderAPI_MakeEdge_3(gp1, gp2);
+    if (!mk.IsDone()) { mk.delete(); return null; }
+    const edge = mk.Edge();
+    mk.delete();
+    return edge;
+  } finally { gp1.delete(); gp2.delete(); }
+}
+
+/**
+ * Build a circular-arc edge from its circle (centre + radius in UV) and endpoints.
+ * Uses gp_Circ + BRepBuilderAPI_MakeEdge_10(circ, P1, P2). MakeEdge_24 (Geom curve
+ * handle) THROWS in this opencascade.js build even on a clean arc, so we never use
+ * it. The arc runs CCW around the circle axis from a→b; we pick the axis sign from
+ * the (a, mid, b) UV winding so the arc passes through `mid` (the correct half).
+ */
+function arcEdgeUV(
+  oc: OcctRaw,
+  frame: SketchPlaneFrame,
+  centre: { x: number; y: number },
+  radius: number,
+  aUV: THREE.Vector2,
+  midUV: THREE.Vector2,
+  bUV: THREE.Vector2,
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+): any | null {
+  if (!(radius > 0)) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const occ = oc as any;
+  const crossZ = (midUV.x - aUV.x) * (bUV.y - aUV.y) - (midUV.y - aUV.y) * (bUV.x - aUV.x);
+  const normal = crossZ >= 0 ? frame.normal.clone() : frame.normal.clone().negate();
+  const gc = makeGpPnt(oc, uvToWorld3(frame, new THREE.Vector2(centre.x, centre.y)));
+  const gn = new occ.gp_Dir_4(normal.x, normal.y, normal.z);
+  const ax2 = new occ.gp_Ax2_3(gc, gn);
+  gc.delete(); gn.delete();
+  const gA = makeGpPnt(oc, uvToWorld3(frame, aUV));
+  const gB = makeGpPnt(oc, uvToWorld3(frame, bUV));
+  try {
+    const circ = new occ.gp_Circ_2(ax2, radius);
+    ax2.delete();
+    const edgeMk = new occ.BRepBuilderAPI_MakeEdge_10(circ, gA, gB);
+    circ.delete();
+    if (!edgeMk.IsDone()) { edgeMk.delete(); return null; }
+    const edge = edgeMk.Edge();
+    edgeMk.delete();
+    return edge;
+  } catch { return null; } finally { gA.delete(); gB.delete(); }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function circleEdgeWorld(oc: OcctRaw, centre: THREE.Vector3, normal: THREE.Vector3, radius: number): any | null {
+  if (radius <= 0) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const occ = oc as any;
+  const gc = makeGpPnt(oc, centre);
+  const gn = new occ.gp_Dir_4(normal.x, normal.y, normal.z);
+  const ax2 = new occ.gp_Ax2_3(gc, gn);
+  gc.delete(); gn.delete();
+  try {
+    const circ = new occ.gp_Circ_2(ax2, radius);
+    ax2.delete();
+    const edgeMk = new occ.BRepBuilderAPI_MakeEdge_8(circ);
+    circ.delete();
+    if (!edgeMk.IsDone()) { edgeMk.delete(); return null; }
+    const edge = edgeMk.Edge();
+    edgeMk.delete();
+    return edge;
+  } catch { return null; }
+}
+
+/**
+ * Build an OCC edge for one THREE curve (already in UV), or null if the curve type
+ * is not analytically supported here (→ caller aborts to the faceted fallback).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function curveToAnalyticEdge(oc: OcctRaw, curve: ThreeCurve, frame: SketchPlaneFrame, reverse: boolean): any | null {
+  if (curve.type === 'LineCurve') {
+    const v1 = curve.v1 as THREE.Vector2, v2 = curve.v2 as THREE.Vector2;
+    const a = uvToWorld3(frame, reverse ? v2 : v1);
+    const b = uvToWorld3(frame, reverse ? v1 : v2);
+    return lineEdgeWorld(oc, a, b);
+  }
+  if (curve.type === 'EllipseCurve' || curve.type === 'ArcCurve') {
+    const xR = curve.xRadius as number, yR = curve.yRadius as number;
+    if (Math.abs(xR - yR) > 1e-7) return null; // true ellipse — fall back
+    const start = curve.getPoint(0);
+    const end = curve.getPoint(1);
+    const span = Math.abs((curve.aEndAngle as number) - (curve.aStartAngle as number));
+    const full = start.distanceTo(end) < 1e-7 && span > Math.PI;
+    if (full) {
+      const centre = uvToWorld3(frame, new THREE.Vector2(curve.aX as number, curve.aY as number));
+      const normal = reverse ? frame.normal.clone().negate() : frame.normal.clone();
+      return circleEdgeWorld(oc, centre, normal, xR);
+    }
+    // Partial circular arc — build from its circle + endpoints.
+    const mid = curve.getPoint(0.5);
+    const a = reverse ? end : start;
+    const b = reverse ? start : end;
+    return arcEdgeUV(oc, frame, { x: curve.aX as number, y: curve.aY as number }, xR, a, mid, b);
+  }
+  return null; // spline / bezier / unknown — fall back
+}
+
+// ── Arc refit (recover analytic arcs from faceted polyline loops) ─────────────
+//
+// The region/profile path (profileGeometry.ts) builds THREE.Shapes from Clipper2
+// polygon POINTS, so a sketch arc arrives as a run of LineCurves. Those points lie
+// (within float epsilon) on the original circle, so we detect runs that share a
+// circle and rebuild them as ONE analytic arc edge — de-faceting the wall without
+// touching region detection. Straight sides (2 corner points) never form an arc run
+// and stay lines. On any uncertainty the run stays lines, and the whole analytic
+// build still falls back to the faceted path if it can't close.
+
+const ARC_FIT_TOL = 1e-3;       // mm — max point deviation from the fitted circle
+const ARC_MIN_PTS = 4;          // need ≥4 points to treat a run as an arc
+const ARC_MAX_RADIUS = 1e5;     // reject near-straight "arcs"
+const ARC_MIN_ANGLE = 0.12;     // rad (~7°) — reject near-straight runs that fit a huge circle
+const SEG_MIN_LEN = 1e-6;       // mm — drop degenerate (zero-length) segments
+
+function circumcircle2D(a: THREE.Vector2, b: THREE.Vector2, c: THREE.Vector2): { x: number; y: number; r: number } | null {
+  const d = 2 * (a.x * (b.y - c.y) + b.x * (c.y - a.y) + c.x * (a.y - b.y));
+  if (Math.abs(d) < 1e-12) return null; // collinear
+  const a2 = a.x * a.x + a.y * a.y, b2 = b.x * b.x + b.y * b.y, c2 = c.x * c.x + c.y * c.y;
+  const x = (a2 * (b.y - c.y) + b2 * (c.y - a.y) + c2 * (a.y - b.y)) / d;
+  const y = (a2 * (c.x - b.x) + b2 * (a.x - c.x) + c2 * (b.x - a.x)) / d;
+  return { x, y, r: Math.hypot(a.x - x, a.y - y) };
+}
+
+type LoopSegment =
+  | { kind: 'line'; a: THREE.Vector2; b: THREE.Vector2 }
+  | { kind: 'arc'; a: THREE.Vector2; mid: THREE.Vector2; b: THREE.Vector2; centre: { x: number; y: number }; radius: number };
+
+/**
+ * Detect a faceted FULL circle: every vertex on a common circle and the loop sweeps
+ * ~360°. Returns the circle (UV) or null. Lets a polygon-approximated circle loop
+ * (from a Clipper2 region) become one analytic gp_Circ edge instead of N facets —
+ * the refit's 3-point arc can't do a closed circle (start≈end).
+ */
+function detectFullCircleLoop(pts: THREE.Vector2[]): { x: number; y: number; r: number } | null {
+  const n = pts.length;
+  if (n < 8) return null;
+  const circ = circumcircle2D(pts[0], pts[Math.floor(n / 3)], pts[Math.floor((2 * n) / 3)]);
+  if (!circ || circ.r > ARC_MAX_RADIUS || circ.r < 1e-6) return null;
+  const tol = Math.max(ARC_FIT_TOL, circ.r * 5e-3);
+  let sweep = 0;
+  for (let i = 0; i < n; i++) {
+    const cur = pts[i], nxt = pts[(i + 1) % n];
+    if (Math.abs(Math.hypot(cur.x - circ.x, cur.y - circ.y) - circ.r) > tol) return null;
+    // A segment whose MIDPOINT is off the circle is a chord across it (e.g. the flat
+    // diameter of a half-disc whose endpoints happen to sit on the circle), not a
+    // facet of a real circle. Also reject big angular steps (a true faceted circle
+    // has small steps; a chord across the centre spans a large angle).
+    const mx = (cur.x + nxt.x) / 2, my = (cur.y + nxt.y) / 2;
+    if (Math.abs(Math.hypot(mx - circ.x, my - circ.y) - circ.r) > tol) return null;
+    const a1 = Math.atan2(cur.y - circ.y, cur.x - circ.x);
+    const a2 = Math.atan2(nxt.y - circ.y, nxt.x - circ.x);
+    const step = Math.abs(Math.atan2(Math.sin(a2 - a1), Math.cos(a2 - a1)));
+    if (step > Math.PI / 3) return null;
+    sweep += step;
+  }
+  return Math.abs(sweep - 2 * Math.PI) < 0.2 ? circ : null;
+}
+
+const CORNER_ANGLE = 0.349; // rad (~20°) — turn above this is a real corner, not a facet
+
+/** Turn angle (rad) at vertex i between edges (i-1→i) and (i→i+1) in a cyclic loop. */
+function turnAngleAt(pts: THREE.Vector2[], i: number): number {
+  const n = pts.length;
+  const p = pts[(i - 1 + n) % n], q = pts[i], r = pts[(i + 1) % n];
+  const v1x = q.x - p.x, v1y = q.y - p.y, v2x = r.x - q.x, v2y = r.y - q.y;
+  const l1 = Math.hypot(v1x, v1y), l2 = Math.hypot(v2x, v2y);
+  if (l1 < 1e-9 || l2 < 1e-9) return 0;
+  return Math.acos(Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / (l1 * l2))));
+}
+
+/**
+ * Group a closed polygon's vertices into line + arc segments.
+ *
+ * Strategy: split the loop at REAL corners (turn angle > CORNER_ANGLE), then for
+ * each run between two corners decide line-vs-arc ONCE over the whole run. This
+ * de-facets a circular wall into a SINGLE analytic arc instead of several — the
+ * earlier greedy circumcircle-membership split a clean arc into 2-3 sub-arcs with
+ * slightly different centres (facet-noise sensitivity), which extrude into mismatched
+ * cylindrical faces and produce an invalid solid. One arc per run avoids that.
+ *
+ * A run with ≥ARC_MIN_PTS points that all lie on a common circle (relative tol) and
+ * sweeps ≥ARC_MIN_ANGLE becomes one arc through (start, mid, end). Otherwise the run
+ * is emitted as its constituent line segments (straight sides collapse to one line
+ * because profileGeometry already removed collinear interior points; a faceted spline
+ * stays a polyline rather than being wrongly chorded).
+ */
+function refitLoopArcs(pts: THREE.Vector2[]): LoopSegment[] {
+  const n = pts.length;
+  const allLines = (): LoopSegment[] =>
+    pts.map((p, i) => ({ kind: 'line' as const, a: p, b: pts[(i + 1) % n] }));
+  if (n < ARC_MIN_PTS + 1) return allLines();
+
+  // Real corners split the loop into runs. Without ≥2 corners we can't bound a run,
+  // so stay safe with plain lines (a full faceted circle is handled by the caller's
+  // detectFullCircleLoop before we get here).
+  const corners: number[] = [];
+  for (let i = 0; i < n; i++) if (turnAngleAt(pts, i) > CORNER_ANGLE) corners.push(i);
+  if (corners.length < 2) return allLines();
+
+  const segs: LoopSegment[] = [];
+  const emitLines = (idxs: number[]) => {
+    for (let k = 0; k + 1 < idxs.length; k++) {
+      const a = pts[idxs[k]], b = pts[idxs[k + 1]];
+      if (a.distanceTo(b) >= SEG_MIN_LEN) segs.push({ kind: 'line', a, b });
+    }
+  };
+
+  for (let c = 0; c < corners.length; c++) {
+    const start = corners[c], end = corners[(c + 1) % corners.length];
+    const idxs: number[] = [];
+    for (let i = start; ; i = (i + 1) % n) { idxs.push(i); if (i === end) break; }
+
+    if (idxs.length < ARC_MIN_PTS) { emitLines(idxs); continue; }
+
+    const a = pts[start], b = pts[end];
+    const mid = pts[idxs[Math.floor(idxs.length / 2)]];
+    const fc = circumcircle2D(a, mid, b);
+    let isArc = false;
+    if (fc && fc.r <= ARC_MAX_RADIUS && fc.r > 1e-6) {
+      const tol = Math.max(ARC_FIT_TOL, fc.r * 5e-3);
+      isArc = idxs.every((id) => Math.abs(Math.hypot(pts[id].x - fc.x, pts[id].y - fc.y) - fc.r) <= tol);
+      if (isArc) {
+        const a1 = Math.atan2(a.y - fc.y, a.x - fc.x);
+        const a2 = Math.atan2(b.y - fc.y, b.x - fc.x);
+        const sweep = Math.abs(Math.atan2(Math.sin(a2 - a1), Math.cos(a2 - a1)));
+        if (sweep < ARC_MIN_ANGLE) isArc = false;
+      }
+    }
+
+    if (isArc && fc) {
+      segs.push({ kind: 'arc', a, mid, b, centre: { x: fc.x, y: fc.y }, radius: fc.r });
+    } else {
+      emitLines(idxs);
+    }
+  }
+  return segs;
+}
+
+/**
+ * Build an analytic TopoDS_Wire from a THREE loop's curves, wound to `targetSign`
+ * (positive = CCW). Returns null if any curve is unsupported or the wire fails to
+ * close — the caller then uses the faceted point-loop path. The returned wire
+ * carries its MakeWire builder in OCC_OWNED_RESOURCES for cleanup.
+ *
+ * For an all-LineCurve loop (a faceted region from profileGeometry) the polygon
+ * vertices are arc-refit first, so circular walls become true arc edges instead of
+ * ~50 facets. Loops that already carry analytic curves use the per-curve path.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildAnalyticWire(oc: OcctRaw, curves: ThreeCurve[], frame: SketchPlaneFrame, targetSign: number): any | null {
+  if (curves.length === 0) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const occ = oc as any;
+  const area = curveLoopSignedAreaUV(curves);
+  const reverse = area !== 0 && Math.sign(area) !== Math.sign(targetSign);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const edges: any[] = [];
+  const cleanup = () => { for (const e of edges) { try { e.delete(); } catch { /* ignore */ } } };
+
+  if (curves.every((c) => c.type === 'LineCurve')) {
+    // Faceted region loop → recover arcs from the polygon vertices.
+    // Each LineCurve contributes its START vertex (v1); the loop's FINAL vertex is the
+    // last curve's END (v2). THREE.Shape does NOT append a closing segment to `.curves`
+    // for a point-built shape, so `curves.map(c => c.v1)` alone DROPS that final vertex.
+    // When it is a load-bearing corner (e.g. a rectangle's last corner) the loop then
+    // re-closes across it diagonally → a triangle. Always include the last v2 (deduped
+    // against the first vertex when the curve list is already explicitly closed).
+    let pts = curves.map((c) => (c.v1 as THREE.Vector2).clone());
+    const lastV2 = curves[curves.length - 1]?.v2 as THREE.Vector2 | undefined;
+    if (lastV2 && (pts.length === 0 || pts[0].distanceTo(lastV2) > SEG_MIN_LEN)) {
+      pts.push(lastV2.clone());
+    }
+    if (reverse) pts = pts.reverse();
+    // A faceted full circle becomes ONE analytic circle edge (the refit's 3-point
+    // arc can't close a circle since start≈end).
+    const fullCircle = detectFullCircleLoop(pts);
+    if (fullCircle) {
+      // A gp_Circ about +frame.normal parametrises CCW (positive UV area). detectFullCircleLoop
+      // discards the source winding, so we reconstruct it to match targetSign directly — NOT
+      // from `reverse`. A hole (targetSign = outer's sign, so the circle is wound the SAME way
+      // as the outer) is then flipped to inner by wireToFace's .Reversed(). Choosing the normal
+      // from `reverse` instead made the hole CW, which .Reversed() double-negated back to outer
+      // orientation → an invalid face (two same-orientation boundaries).
+      const normal = targetSign >= 0 ? frame.normal.clone() : frame.normal.clone().negate();
+      const edge = circleEdgeWorld(oc, uvToWorld3(frame, new THREE.Vector2(fullCircle.x, fullCircle.y)), normal, fullCircle.r);
+      if (!edge) { cleanup(); return null; }
+      edges.push(edge);
+    } else {
+      for (const seg of refitLoopArcs(pts)) {
+        const edge = seg.kind === 'line'
+          ? lineEdgeWorld(oc, uvToWorld3(frame, seg.a), uvToWorld3(frame, seg.b))
+          : arcEdgeUV(oc, frame, seg.centre, seg.radius, seg.a, seg.mid, seg.b);
+        if (!edge) { cleanup(); return null; }
+        edges.push(edge);
+      }
+    }
+  } else {
+    const ordered = reverse ? [...curves].reverse() : curves;
+    for (const curve of ordered) {
+      // THREE's absarc/absellipse can insert a near-zero-length LineCurve to connect
+      // currentPoint to the arc start (floating-point: arc start ≈ but ≠ currentPoint).
+      // Skip those degenerate lines rather than failing the whole analytic build.
+      if (curve.type === 'LineCurve') {
+        const v1 = curve.v1 as THREE.Vector2, v2 = curve.v2 as THREE.Vector2;
+        if (v1.distanceTo(v2) < SEG_MIN_LEN) continue;
+      }
+      const edge = curveToAnalyticEdge(oc, curve, frame, reverse);
+      if (!edge) { cleanup(); return null; } // unsupported → fall back
+      edges.push(edge);
+    }
+  }
+
+  const wireMaker = new occ.BRepBuilderAPI_MakeWire_1();
+  let added = 0;
+  for (const edge of edges) { wireMaker.Add_1(edge); edge.delete(); added++; }
+  if (added === 0 || !wireMaker.IsDone()) { wireMaker.delete(); return null; }
+  const wire = wireMaker.Wire();
+  (wire as { [OCC_OWNED_RESOURCES]?: OccOwnedResource[] })[OCC_OWNED_RESOURCES] = [wireMaker];
+  return wire;
+}
+
+/**
+ * Analytic counterpart of sketchProfileToWires: builds (outerWire, holeWires) from
+ * a THREE.Shape's curves so arcs/circles become true OCC arc/circle edges. Returns
+ * null if any loop can't be built analytically — caller falls back to the faceted
+ * SketchProfile path. Holes are wound to match the outer loop (wireToFace reverses
+ * them to inner orientation), identical to the point-loop path's convention.
+ */
+export function sketchShapeToWires(
+  oc: OcctRaw,
+  shape: THREE.Shape,
+  frame: SketchPlaneFrame,
+): { outerWire: unknown; holeWires: unknown[] } | null {
+  const outerCurves = (shape.curves ?? []) as unknown as ThreeCurve[];
+  if (outerCurves.length === 0) return null;
+  const outerSign = curveLoopSignedAreaUV(outerCurves) >= 0 ? 1 : -1;
+
+  const outerWire = buildAnalyticWire(oc, outerCurves, frame, outerSign);
+  if (!outerWire) return null;
+
+  const holeWires: unknown[] = [];
+  for (const hole of shape.holes ?? []) {
+    const holeCurves = (hole.curves ?? []) as unknown as ThreeCurve[];
+    // Wind holes to the SAME sign as the outer loop; wireToFace reverses them.
+    const hw = buildAnalyticWire(oc, holeCurves, frame, outerSign);
+    if (!hw) {
+      // Abort: clean up everything built so far so the faceted fallback runs cleanly.
+      for (const r of takeOccOwnedResources(outerWire)) safeDeleteOcc(r);
+      for (const w of holeWires) for (const r of takeOccOwnedResources(w)) safeDeleteOcc(r);
+      return null;
+    }
+    holeWires.push(hw);
+  }
+  return { outerWire, holeWires };
+}
+
+/**
+ * Convert a SketchProfile (UV coords) + plane frame into (outerWire, holeWires[]).
+ * Returns null if the outer wire can't be built.
+ */
+export function sketchProfileToWires(
+  oc: OcctRaw,
+  profile: SketchProfile,
+  frame: SketchPlaneFrame,
+): {
+  outerWire: unknown;
+  holeWires: unknown[];
+} | null {
+  const toWorld = (uv: THREE.Vector2): THREE.Vector3 =>
+    frame.origin.clone()
+      .addScaledVector(frame.uDir, uv.x)
+      .addScaledVector(frame.vDir, uv.y);
+
+  const outerLoop = normalizeClosedLoop2D(profile.outer);
+  if (!outerLoop) return null;
+
+  const outerClockwise = signedArea2D(outerLoop) < 0;
+  const outerPts = outerLoop.map(toWorld);
+  const outerWire = pointLoopToWire(oc, outerPts);
+  if (!outerWire) return null;
+
+  const holeWires = profile.holes
+    .map((hole) => {
+      const normalizedHole = normalizeClosedLoop2D(hole);
+      if (!normalizedHole) return null;
+      // Keep hole wire in the SAME winding order as the outer wire (CCW for standard
+      // Three.js shapes). wireToFace calls holeWire.Reversed() before Add(), which
+      // sets the topological orientation to REVERSED (= inner/hole in OCCT) and makes
+      // the effective traversal CW — producing correct inward-facing hole-wall normals.
+      // Reversing the geometry here AND applying REVERSED topologically would double-negate,
+      // making inner walls face outward.
+      return pointLoopToWire(oc, orientLoop2D(normalizedHole, outerClockwise).map(toWorld));
+    })
+    .filter((w): w is unknown => w !== null);
+
+  return { outerWire, holeWires };
+}
+
+/**
+ * Build a TopoDS_Face from outer wire + optional hole wires.
+ * Caller owns cleanup of the returned face.
+ */
+export function wireToFace(
+  oc: OcctRaw,
+  outerWire: unknown,
+  holeWires: unknown[],
+  frame?: SketchPlaneFrame,
+  heal = false,
+): unknown | null {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const occ = oc as any;
+  const planePoint = frame ? new occ.gp_Pnt_3(frame.origin.x, frame.origin.y, frame.origin.z) : null;
+  const planeDir = frame ? new occ.gp_Dir_4(frame.normal.x, frame.normal.y, frame.normal.z) : null;
+  const plane = planePoint && planeDir ? new occ.gp_Pln_3(planePoint, planeDir) : null;
+  const faceMaker = plane
+    ? new occ.BRepBuilderAPI_MakeFace_16(plane, outerWire, true)
+    : new occ.BRepBuilderAPI_MakeFace_15(outerWire, false);
+  safeDeleteOcc(plane);
+  safeDeleteOcc(planeDir);
+  safeDeleteOcc(planePoint);
+  for (const holeWire of holeWires) {
+    // OCCT classifies wires in a face by topological orientation:
+    //   FORWARD  = outer boundary
+    //   REVERSED = inner boundary (hole)
+    // BRepBuilderAPI_MakePolygon always produces FORWARD wires.
+    // We must pass a REVERSED copy to Add() so OCCT treats it as a hole.
+    //
+    // TopoDS_Shape.Reversed() returns TopoDS_Shape (base class), but faceMaker.Add()
+    // expects TopoDS_Wire — the Emscripten binding does a strict instanceof check and
+    // throws if given a base-class instance. Cast to TopoDS_Wire via TopoDS.Wire_1()
+    // (a VIEW — same ptr, no extra ownership). Delete the owned TopoDS_Shape copy after.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const reversedShape = (holeWire as any).Reversed();
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const reversedWire = (occ as any).TopoDS.Wire_1(reversedShape); // VIEW — same ptr
+      faceMaker.Add(reversedWire);
+      // reversedWire is a VIEW (do NOT delete it); reversedShape is the owned copy (deleted in finally)
+    } finally {
+      reversedShape.delete?.();
+    }
+  }
+  if (!faceMaker.IsDone()) {
+    console.warn('[wireToFace] BRepBuilderAPI_MakeFace not done after', holeWires.length, 'holes');
+    faceMaker.delete();
+    return null;
+  }
+  const face = faceMaker.Face();
+  const ownedResources = [
+    ...takeOccOwnedResources(outerWire),
+    ...holeWires.flatMap((holeWire) => takeOccOwnedResources(holeWire)),
+    faceMaker,
+  ];
+
+  if (heal) {
+    // Analytic profiles refit a faceted arc into a single gp_Circ-based arc edge whose
+    // endpoints are the circle-projections of (slightly noisy) facet points. That leaves
+    // sub-µm gaps at the arc↔line junctions which BRepCheck flags as INVALID once a hole
+    // forces the stricter face checks — even though wire and face build fine. ShapeFix_Shape
+    // sews those gaps (the standard OCC remedy for geometry assembled from imperfect inputs).
+    // Only used on the analytic path; the faceted polygon path is already gap-free.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const occAny = oc as any;
+    try {
+      const fixer = new occAny.ShapeFix_Shape_2(face);
+      const progress = new occAny.Message_ProgressRange_1();
+      fixer.Perform(progress);
+      const fixedFace = fixer.Shape();
+      safeDeleteOcc(progress);
+      // The fixed face is a fresh shape; the original face + its builders + the fixer must
+      // outlive it for cleanup, so carry them all in the fixed face's owned-resources.
+      (fixedFace as { [OCC_OWNED_RESOURCES]?: OccOwnedResource[] })[OCC_OWNED_RESOURCES] = [
+        ...ownedResources,
+        face as OccOwnedResource,
+        fixer,
+      ];
+      return fixedFace;
+    } catch (e) {
+      console.warn('[wireToFace] ShapeFix heal failed; returning unhealed face:', e);
+    }
+  }
+
+  (face as { [OCC_OWNED_RESOURCES]?: OccOwnedResource[] })[OCC_OWNED_RESOURCES] = ownedResources;
+  return face;
+}

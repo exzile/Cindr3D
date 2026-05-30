@@ -37,6 +37,7 @@ export default function LipGrooveEdgePicker() {
   const overlayEnabled = activeDialog === 'lip-groove';
 
   const hoverLineRef = useRef<THREE.Line | null>(null);
+  const hoverSigRef = useRef<string | null>(null);
   // Note: also typed in usePickerSceneCleanup as Object3D — Line satisfies that.
   const hoverResultRef = useRef<EdgePickResult | null>(null);
   const selectedLineRef = useRef<THREE.Line | null>(null);
@@ -61,6 +62,7 @@ export default function LipGrooveEdgePicker() {
   useFrame(({ scene, invalidate }) => {
     if (!overlayEnabled) {
       if (hoverLineRef.current) { scene.remove(hoverLineRef.current); hoverLineRef.current.geometry.dispose(); hoverLineRef.current = null; }
+      hoverSigRef.current = null;
       if (selectedLineRef.current) { scene.remove(selectedLineRef.current); selectedLineRef.current.geometry.dispose(); selectedLineRef.current = null; }
       return;
     }
@@ -70,24 +72,31 @@ export default function LipGrooveEdgePicker() {
     if (pickEnabled) {
       const hr = hoverResultRef.current;
       if (hr) {
-        if (!hoverLineRef.current) {
-          const line = new THREE.Line(buildEdgeGeometry(hr.edgeVertexA, hr.edgeVertexB), HOVER_MAT);
-          line.renderOrder = 100;
-          scene.add(line);
-          hoverLineRef.current = line;
-        } else {
-          hoverLineRef.current.geometry.dispose();
-          hoverLineRef.current.geometry = buildEdgeGeometry(hr.edgeVertexA, hr.edgeVertexB);
+        const sig = `${hr.edgeVertexA.toArray().join(',')}|${hr.edgeVertexB.toArray().join(',')}`;
+        if (!hoverLineRef.current || hoverSigRef.current !== sig) {
+          const geometry = buildEdgeGeometry(hr.edgeVertexA, hr.edgeVertexB);
+          if (hoverLineRef.current) {
+            hoverLineRef.current.geometry.dispose();
+            hoverLineRef.current.geometry = geometry;
+          } else {
+            const line = new THREE.Line(geometry, HOVER_MAT);
+            line.renderOrder = 100;
+            scene.add(line);
+            hoverLineRef.current = line;
+          }
+          hoverSigRef.current = sig;
         }
       } else if (hoverLineRef.current) {
         scene.remove(hoverLineRef.current);
         hoverLineRef.current.geometry.dispose();
         hoverLineRef.current = null;
+        hoverSigRef.current = null;
       }
     } else if (hoverLineRef.current) {
       scene.remove(hoverLineRef.current);
       hoverLineRef.current.geometry.dispose();
       hoverLineRef.current = null;
+      hoverSigRef.current = null;
     }
 
     // Selected edge line

@@ -73,6 +73,79 @@ describe('Persistence round-trip', () => {
     expect(roundGeom.attributes.position.count).toBe(geom.attributes.position.count);
   });
 
+  it('group feature children survive round-trip', () => {
+    const group = new THREE.Group();
+    group.name = 'import-root';
+    group.position.set(2, 3, 4);
+    group.updateMatrix();
+
+    const childGeometry = new THREE.BoxGeometry(1, 2, 3).toNonIndexed();
+    const childMaterial = new THREE.MeshBasicMaterial({ color: 0x33aa55, opacity: 0.75, transparent: true });
+    const child = new THREE.Mesh(childGeometry, childMaterial);
+    child.name = 'import-child';
+    child.position.set(5, 6, 7);
+    child.updateMatrix();
+    group.add(child);
+
+    const feature: Feature = {
+      id: 'f-group',
+      name: 'Grouped import',
+      type: 'import',
+      params: {},
+      mesh: group,
+      visible: true,
+      suppressed: false,
+      timestamp: 789,
+    };
+
+    const serialized = serializeFeature(feature);
+    const objectData = (serialized as unknown as { _objectData?: { kind?: string } })._objectData;
+    expect(objectData?.kind).toBe('group');
+
+    const round = deserializeFeature(serialized as Feature);
+    expect(round.mesh).toBeInstanceOf(THREE.Group);
+    expect(round.mesh?.name).toBe('import-root');
+    expect(round.mesh?.position.toArray()).toEqual([2, 3, 4]);
+    expect(round.mesh?.children).toHaveLength(1);
+    expect(round.mesh?.children[0]).toBeInstanceOf(THREE.Mesh);
+    expect(round.mesh?.children[0].name).toBe('import-child');
+    expect(round.mesh?.children[0].position.toArray()).toEqual([5, 6, 7]);
+    childGeometry.dispose();
+    childMaterial.dispose();
+  });
+
+  it('line feature geometry survives round-trip', () => {
+    const geometry = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(1, 2, 3),
+      new THREE.Vector3(2, 4, 6),
+    ]);
+    const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xff8800 }));
+    line.name = 'cosmetic-thread';
+
+    const feature: Feature = {
+      id: 'f-line',
+      name: 'Cosmetic Thread',
+      type: 'thread',
+      params: { threadType: 'cosmetic' },
+      mesh: line,
+      visible: true,
+      suppressed: false,
+      timestamp: 790,
+    };
+
+    const serialized = serializeFeature(feature);
+    const objectData = (serialized as unknown as { _objectData?: { kind?: string } })._objectData;
+    expect(objectData?.kind).toBe('line');
+
+    const round = deserializeFeature(serialized as Feature);
+    expect(round.mesh).toBeInstanceOf(THREE.Line);
+    expect(round.mesh?.name).toBe('cosmetic-thread');
+    const roundGeometry = (round.mesh as THREE.Line).geometry;
+    expect(roundGeometry.attributes.position.count).toBe(3);
+    geometry.dispose();
+  });
+
   it('WeakMap cache returns identical object for same non-mesh feature reference', () => {
     const feature: Feature = {
       id: 'f3', name: 'x', type: 'extrude', params: {},
@@ -94,20 +167,6 @@ describe('Persistence round-trip', () => {
         polyline: [new THREE.Vector3(0, 0, 0), new THREE.Vector3(1, 0, 0)],
       }],
     };
-    geom.userData.displayTopology = {
-      edges: [{
-        id: 'display-a',
-        kind: 'crease',
-        polyline: [new THREE.Vector3(0, 1, 0), new THREE.Vector3(1, 1, 0)],
-      }],
-    };
-    geom.userData.ghostTopology = {
-      edges: [{
-        id: 'ghost-a',
-        kind: 'boundary',
-        polyline: [new THREE.Vector3(0, 2, 0), new THREE.Vector3(1, 2, 0)],
-      }],
-    };
     const feature: Feature = {
       id: 'f-topology', name: 'x', type: 'import', params: {}, mesh: new THREE.Mesh(geom),
       visible: true, suppressed: false, timestamp: 1,
@@ -119,9 +178,6 @@ describe('Persistence round-trip', () => {
 
     expect(roundGeom.userData._topoV).toBe(10);
     expect(roundGeom.userData.topology.edges[0].id).toBe('edge-a');
-    expect(roundGeom.userData.displayTopology.edges[0].polyline[1]).toBeInstanceOf(THREE.Vector3);
-    expect(roundGeom.userData.displayTopology.edges[0].polyline[1].x).toBe(1);
-    expect(roundGeom.userData.ghostTopology.edges[0].kind).toBe('boundary');
     geom.dispose();
   });
 

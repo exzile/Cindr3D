@@ -1,10 +1,11 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
-import { useFacePicker, type FacePickResult } from '../../../hooks/useFacePicker';
+import type { FacePickResult } from '../../../types/face-picker.types';
 import { usePickerSceneCleanup } from '../../../hooks/usePickerSceneCleanup';
-import { buildFaceGeometry } from './pickerGeometry';
 import { usePickCursor, pulseFactor } from './pickPulse';
+import { useOccFacePicker, type OccFacePickResult } from './OccFacePicker';
+import { getMeshTessellation, buildFaceHighlightGeometry, faceIdAtTriangle } from '../../../engine/occ/picking';
 
 export interface UseSimpleFacePickerOptions {
   overlayEnabled: boolean;
@@ -16,12 +17,7 @@ export interface UseSimpleFacePickerOptions {
 }
 
 /**
- * useSimpleFacePicker — shared implementation for the "hover blue / selected orange" face
- * picker pattern used by 9 of the 11 face picker components.
- *
- * Materials are created once per hook instance (lazy ref init) and disposed on unmount.
- * The useFrame body — hover overlay, selected overlay, invalidate while active — is
- * centralised here so bug fixes apply to all callers.
+ * Shared OCC face picker implementation for the hover blue / selected orange pattern.
  */
 export function useSimpleFacePicker({
   overlayEnabled,
@@ -31,10 +27,9 @@ export function useSimpleFacePicker({
   hoverColor = 0x2196f3,
   selectedColor = 0xff6600,
 }: UseSimpleFacePickerOptions): void {
-  // Lazy material init — created once, not per render
   const hoverMatRef = useRef<THREE.MeshBasicMaterial | null>(null);
   const selectedMatRef = useRef<THREE.MeshBasicMaterial | null>(null);
-  if (!hoverMatRef.current) {
+  if (hoverMatRef.current == null) {
     hoverMatRef.current = new THREE.MeshBasicMaterial({
       color: hoverColor,
       transparent: true,
@@ -43,7 +38,7 @@ export function useSimpleFacePicker({
       depthTest: false,
     });
   }
-  if (!selectedMatRef.current) {
+  if (selectedMatRef.current == null) {
     selectedMatRef.current = new THREE.MeshBasicMaterial({
       color: selectedColor,
       transparent: true,
@@ -60,78 +55,118 @@ export function useSimpleFacePicker({
     };
   }, []);
 
-  const hoverResultRef = useRef<FacePickResult | null>(null);
-  const selectedBoundaryRef = useRef<THREE.Vector3[] | null>(null);
   const hoverMeshRef = useRef<THREE.Mesh | null>(null);
   const selectedMeshRef = useRef<THREE.Mesh | null>(null);
+  const hoverSigRef = useRef<string | null>(null);
+  const selectedSigRef = useRef<string | null>(null);
   usePickerSceneCleanup([hoverMeshRef, selectedMeshRef]);
 
-  // Drive the crosshair cursor while a pickable face is under the pointer.
+  const occHoverRef = useRef<OccFacePickResult | null>(null);
+  const occSelectedRef = useRef<OccFacePickResult | null>(null);
+
   const [hovering, setHovering] = useState(false);
   usePickCursor(pickEnabled, hovering);
 
-  const handleHover = useCallback((result: FacePickResult | null) => {
-    hoverResultRef.current = result;
+  const handleOccHover = useCallback((result: OccFacePickResult | null) => {
+    occHoverRef.current = result;
     setHovering(result !== null);
   }, []);
 
-  const handleClick = useCallback((result: FacePickResult) => {
-    selectedBoundaryRef.current = result.boundary.map((v) => v.clone());
-    onCommit(result);
+  const handleOccClick = useCallback((result: OccFacePickResult) => {
+    occSelectedRef.current = result;
+    onCommit({
+      mesh: result.mesh,
+      faceIndex: result.triangleIndex,
+      boundary: [],
+      normal: result.normal,
+      centroid: result.point,
+      occBodyId: result.bodyId,
+      occFaceId: result.faceId,
+    });
   }, [onCommit]);
 
-  useFacePicker({ enabled: pickEnabled, onHover: handleHover, onClick: handleClick });
+  useOccFacePicker({ enabled: pickEnabled, onHover: handleOccHover, onClick: handleOccClick });
 
   useFrame(({ scene, invalidate, clock }) => {
     const hoverMat = hoverMatRef.current!;
     const selectedMat = selectedMatRef.current!;
 
     if (!overlayEnabled) {
-      if (hoverMeshRef.current) { scene.remove(hoverMeshRef.current); hoverMeshRef.current.geometry.dispose(); hoverMeshRef.current = null; }
-      if (selectedMeshRef.current) { scene.remove(selectedMeshRef.current); selectedMeshRef.current.geometry.dispose(); selectedMeshRef.current = null; }
-      selectedBoundaryRef.current = null;
+      if (hoverMeshRef.current) {
+        scene.remove(hoverMeshRef.current);
+        hoverMeshRef.current.geometry.dispose();
+        hoverMeshRef.current = null;
+      }
+      hoverSigRef.current = null;
+      if (selectedMeshRef.current) {
+        scene.remove(selectedMeshRef.current);
+        selectedMeshRef.current.geometry.dispose();
+        selectedMeshRef.current = null;
+      }
+      selectedSigRef.current = null;
+      occSelectedRef.current = null;
       return;
     }
-    invalidate();
+    if (pickEnabled && occHoverRef.current) invalidate();
 
-    // ── Hover overlay ────────────────────────────────────────────────────────
     if (pickEnabled) {
-      const hr = hoverResultRef.current;
-      if (hr) {
-        if (!hoverMeshRef.current) {
-          const mesh = new THREE.Mesh(buildFaceGeometry(hr.boundary), hoverMat);
-          mesh.renderOrder = 99;
-          scene.add(mesh);
-          hoverMeshRef.current = mesh;
-        } else {
-          hoverMeshRef.current.geometry.dispose();
-          hoverMeshRef.current.geometry = buildFaceGeometry(hr.boundary);
+      const occ = occHoverRef.current;
+      const tess = occ ? getMeshTessellation(occ.mesh) : null;
+      if (occ && tess) {
+        const faceId = faceIdAtTriangle(tess, occ.triangleIndex);
+        const sig = `${occ.bodyId}:${faceId}`;
+        if (!hoverMeshRef.current || hoverSigRef.current !== sig) {
+          const hoverGeo = buildFaceHighlightGeometry(tess, faceId);
+          if (hoverMeshRef.current) {
+            hoverMeshRef.current.geometry.dispose();
+            hoverMeshRef.current.geometry = hoverGeo;
+          } else {
+            const mesh = new THREE.Mesh(hoverGeo, hoverMat);
+            mesh.renderOrder = 99;
+            scene.add(mesh);
+            hoverMeshRef.current = mesh;
+          }
+          hoverSigRef.current = sig;
         }
-        // Subtle breathing pulse on the hover highlight (per-instance mat).
         hoverMat.opacity = 0.3 + 0.35 * pulseFactor(clock.elapsedTime * 1000);
       } else if (hoverMeshRef.current) {
         scene.remove(hoverMeshRef.current);
         hoverMeshRef.current.geometry.dispose();
         hoverMeshRef.current = null;
+        hoverSigRef.current = null;
       }
     } else if (hoverMeshRef.current) {
       scene.remove(hoverMeshRef.current);
       hoverMeshRef.current.geometry.dispose();
       hoverMeshRef.current = null;
+      hoverSigRef.current = null;
     }
 
-    // ── Selected face overlay ────────────────────────────────────────────────
-    if (selectedFaceId && selectedBoundaryRef.current && !selectedMeshRef.current) {
-      const mesh = new THREE.Mesh(buildFaceGeometry(selectedBoundaryRef.current), selectedMat);
-      mesh.renderOrder = 100;
-      scene.add(mesh);
-      selectedMeshRef.current = mesh;
-    }
-    if (!selectedFaceId && selectedMeshRef.current) {
+    const selectedOcc = occSelectedRef.current;
+    if (selectedFaceId && selectedOcc) {
+      const tess = getMeshTessellation(selectedOcc.mesh);
+      if (tess) {
+        const sig = `${selectedOcc.bodyId}:${selectedOcc.faceId}`;
+        if (!selectedMeshRef.current || selectedSigRef.current !== sig) {
+          const selectedGeo = buildFaceHighlightGeometry(tess, selectedOcc.faceId);
+          if (selectedMeshRef.current) {
+            selectedMeshRef.current.geometry.dispose();
+            selectedMeshRef.current.geometry = selectedGeo;
+          } else {
+            const mesh = new THREE.Mesh(selectedGeo, selectedMat);
+            mesh.renderOrder = 100;
+            scene.add(mesh);
+            selectedMeshRef.current = mesh;
+          }
+          selectedSigRef.current = sig;
+        }
+      }
+    } else if (selectedMeshRef.current) {
       scene.remove(selectedMeshRef.current);
       selectedMeshRef.current.geometry.dispose();
       selectedMeshRef.current = null;
-      selectedBoundaryRef.current = null;
+      selectedSigRef.current = null;
+      occSelectedRef.current = null;
     }
   });
 }

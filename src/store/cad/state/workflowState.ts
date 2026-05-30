@@ -6,6 +6,7 @@ import type {
   InterferenceResult,
   JointOriginRecord,
 } from '../../../types/cad';
+import type { SelectionSet } from '../../../types/cad/assembly/relationships';
 import type { InsertComponentParams } from '../../../components/dialogs/assembly/InsertComponentDialog';
 import type { DirectEditParams } from '../../../components/dialogs/solid/DirectEditDialog';
 import type { TextureExtrudeParams } from '../../../components/dialogs/solid/TextureExtrudeDialog';
@@ -103,17 +104,22 @@ export interface CADWorkflowState {
 
   // ── SOL-I3: Draft parting line face picker ───────────────────────────────
   draftPartingFaceId: string | null;
+  draftPartingOccBodyId: string | null;
+  draftPartingOccFaceId: number | null;
   draftPartingFaceNormal: [number, number, number] | null;
   draftPartingFaceCentroid: [number, number, number] | null;
   setDraftPartingFace: (
     id: string,
     normal: [number, number, number],
     centroid: [number, number, number],
+    occ?: { bodyId: string; faceId: number } | null,
   ) => void;
   clearDraftPartingFace: () => void;
 
   // ── SOL-F2: Draft pull direction face picker ─────────────────────────────
   draftPullFaceId: string | null;
+  draftPullOccBodyId: string | null;
+  draftPullOccFaceId: number | null;
   draftPullFaceNormal: [number, number, number] | null;
   draftPullFaceCentroid: [number, number, number] | null;
   draftPullFacePickActive: boolean;
@@ -121,9 +127,23 @@ export interface CADWorkflowState {
     id: string,
     normal: [number, number, number],
     centroid: [number, number, number],
+    occ?: { bodyId: string; faceId: number } | null,
   ) => void;
   clearDraftPullFace: () => void;
   setDraftPullFacePickActive: (v: boolean) => void;
+
+  offsetFaceId: string | null;
+  offsetOccBodyId: string | null;
+  offsetOccFaceId: number | null;
+  offsetFaceNormal: [number, number, number] | null;
+  offsetFaceCentroid: [number, number, number] | null;
+  setOffsetFace: (
+    id: string,
+    normal: [number, number, number],
+    centroid: [number, number, number],
+    occ?: { bodyId: string; faceId: number } | null,
+  ) => void;
+  clearOffsetFace: () => void;
 
   // ── SOL-I5: Remove Face face picker ─────────────────────────────────────
   removeFaceFaceId: string | null;
@@ -218,4 +238,13 @@ export interface CADWorkflowState {
   openInsertComponentDialog(): void;
   closeInsertComponentDialog(): void;
   commitInsertComponent(params: InsertComponentParams): void;
+
+  // ── Selection Sets ────────────────────────────────────────────────────────
+  selectionSets: SelectionSet[];
+  addSelectionSet(name: string, bodyIds: string[]): string;
+  removeSelectionSet(id: string): void;
+  renameSelectionSet(id: string, name: string): void;
+  addBodiesToSelectionSet(id: string, bodyIds: string[]): void;
+  removeBodyFromSelectionSet(setId: string, bodyId: string): void;
+  selectSelectionSet(id: string): void;
 }

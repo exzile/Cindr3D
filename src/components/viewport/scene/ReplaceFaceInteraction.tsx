@@ -67,6 +67,7 @@ export default function ReplaceFaceInteraction() {
   const hoverMeshRef = useRef<THREE.Mesh | null>(null);
   const sourceMeshRef = useRef<THREE.Mesh | null>(null);
   const targetMeshRef = useRef<THREE.Mesh | null>(null);
+  const hoverSigRef = useRef<string | null>(null);
   usePickerSceneCleanup([hoverMeshRef, sourceMeshRef, targetMeshRef]);
 
   const handleHover = useCallback((result: FacePickResult | null) => {
@@ -90,6 +91,7 @@ export default function ReplaceFaceInteraction() {
     if (!enabled) {
       // Clean up all overlays
       if (hoverMeshRef.current) { scene.remove(hoverMeshRef.current); hoverMeshRef.current.geometry.dispose(); hoverMeshRef.current = null; }
+      hoverSigRef.current = null;
       if (sourceMeshRef.current) { scene.remove(sourceMeshRef.current); sourceMeshRef.current.geometry.dispose(); sourceMeshRef.current = null; }
       if (targetMeshRef.current) { scene.remove(targetMeshRef.current); targetMeshRef.current.geometry.dispose(); targetMeshRef.current = null; }
       return;
@@ -100,20 +102,26 @@ export default function ReplaceFaceInteraction() {
     const hoverMat = replaceFaceSourceId === null ? HOVER_SOURCE_MAT : HOVER_TARGET_MAT;
     const hr = hoverResultRef.current;
     if (hr) {
-      if (!hoverMeshRef.current) {
-        const mesh = new THREE.Mesh(buildFaceGeometry(hr.boundary), hoverMat);
-        mesh.renderOrder = 99;
-        scene.add(mesh);
-        hoverMeshRef.current = mesh;
-      } else {
-        hoverMeshRef.current.geometry.dispose();
-        hoverMeshRef.current.geometry = buildFaceGeometry(hr.boundary);
-        hoverMeshRef.current.material = hoverMat;
+      const sig = `${replaceFaceSourceId === null ? 'source' : 'target'}:${hr.centroid.toArray().join(',')}`;
+      if (!hoverMeshRef.current || hoverSigRef.current !== sig) {
+        const geometry = buildFaceGeometry(hr.boundary);
+        if (hoverMeshRef.current) {
+          hoverMeshRef.current.geometry.dispose();
+          hoverMeshRef.current.geometry = geometry;
+          hoverMeshRef.current.material = hoverMat;
+        } else {
+          const mesh = new THREE.Mesh(geometry, hoverMat);
+          mesh.renderOrder = 99;
+          scene.add(mesh);
+          hoverMeshRef.current = mesh;
+        }
+        hoverSigRef.current = sig;
       }
     } else if (hoverMeshRef.current) {
       scene.remove(hoverMeshRef.current);
       hoverMeshRef.current.geometry.dispose();
       hoverMeshRef.current = null;
+      hoverSigRef.current = null;
     }
 
     // Source overlay

@@ -16,8 +16,7 @@
 import { useMemo, useEffect, useRef, useCallback } from 'react';
 import { useThree, useFrame, type ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
-import { liveBodyMeshes } from '../../../../store/meshRegistry';
-import { parseEdgeIds, computeEdgeGizmoDir } from '../../../../utils/geometry/edgeCutCore';
+import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
 import { setGizmoDragging } from '../gizmoDragGuard';
 
 // ── Module-level scratch (shared, no state — safe) ───────────────────────────
@@ -53,26 +52,45 @@ function computeGizmoAnchor(edgeIds: string[]): {
 } {
   const fallbackDir = new THREE.Vector3(0, 1, 0);
   const empty = { centroid: new THREE.Vector3(), dir: fallbackDir };
-  const parsed = parseEdgeIds(edgeIds);
-  if (!parsed || parsed.edges.length === 0) return empty;
+  const occEdgeIds = edgeIds
+    .map((id) => {
+      const parts = id.split(':');
+      const edgeId = Number(parts[2]);
+      return parts[0] === 'occ' && parts[1] && Number.isInteger(edgeId)
+        ? { bodyId: parts[1], edgeId }
+        : null;
+    })
+    .filter((item): item is { bodyId: string; edgeId: number } => item !== null);
+  if (occEdgeIds.length === 0) return empty;
 
   const centroid = new THREE.Vector3();
-  for (const e of parsed.edges) {
-    centroid.x += (e.a.x + e.b.x) * 0.5;
-    centroid.y += (e.a.y + e.b.y) * 0.5;
-    centroid.z += (e.a.z + e.b.z) * 0.5;
+  let pointCount = 0;
+  let bodyCenter: THREE.Vector3 | null = null;
+  for (const selection of occEdgeIds) {
+    const body = globalBRepBodyRegistry.get(selection.bodyId);
+    const tess = body?._tessellation;
+    const polyline = tess?.edgePolylines.get(selection.edgeId);
+    if (!polyline) continue;
+    if (!bodyCenter && tess && tess.positions.length >= 3) {
+      const box = new THREE.Box3();
+      const positions = tess.positions;
+      for (let i = 0; i + 2 < positions.length; i += 3) {
+        box.expandByPoint(new THREE.Vector3(positions[i], positions[i + 1], positions[i + 2]));
+      }
+      bodyCenter = box.getCenter(new THREE.Vector3());
+    }
+    for (let i = 0; i + 2 < polyline.length; i += 3) {
+      centroid.x += polyline[i];
+      centroid.y += polyline[i + 1];
+      centroid.z += polyline[i + 2];
+      pointCount += 1;
+    }
   }
-  centroid.divideScalar(parsed.edges.length);
+  if (pointCount === 0) return empty;
+  centroid.divideScalar(pointCount);
 
-  const liveMesh = liveBodyMeshes.get(parsed.meshUuid);
-  if (!liveMesh) return { centroid, dir: fallbackDir };
-  let dir: THREE.Vector3 | null = null;
-  try {
-    dir = computeEdgeGizmoDir(liveMesh.geometry, parsed.edges);
-  } catch (err) {
-    console.error('[EdgeOpGizmo] gizmoDir threw:', err);
-  }
-  return { centroid, dir: dir ?? fallbackDir };
+  const dir = bodyCenter ? centroid.clone().sub(bodyCenter).normalize() : fallbackDir;
+  return { centroid, dir: dir.lengthSq() > 1e-8 ? dir : fallbackDir };
 }
 
 export default function EdgeOpGizmo({
@@ -148,18 +166,17 @@ export default function EdgeOpGizmo({
     pos.needsUpdate = true;
 
     if (coneRef.current) {
-      /* eslint-disable react-hooks/immutability */
       coneRef.current.position.copy(tip);
       coneRef.current.quaternion.setFromUnitVectors(_coneLocalUp, gizmoDir);
-      /* eslint-enable react-hooks/immutability */
     }
     invalidate();
   });
 
-  // When the gizmo direction or centroid changes (different edges picked), the
-  // cached "last value" is stale relative to the new orientation — force a
-  // recompute next frame by clearing the guard.
+  // When the gizmo direction or centroid changes (different edges picked), or
+  // the gizmo becomes active (dialog opened / edges added), the cached "last
+  // value" is stale — force a recompute next frame by clearing the guard.
   useEffect(() => { lastAppliedValueRef.current = null; }, [gizmoDir, edgeCentroid]);
+  useEffect(() => { lastAppliedValueRef.current = null; }, [active]);
 
   const rayToAxis = useCallback((ndc: THREE.Vector2): number | null => {
     _scratchRay.origin.setFromMatrixPosition(camera.matrixWorld);
@@ -240,10 +257,8 @@ export default function EdgeOpGizmo({
         setLiveValue(liveValueRef.current);
       }
       liveValueRef.current = null;
-      /* eslint-disable react-hooks/immutability */
       if (controls) controls.enabled = true;
       gl.domElement.style.cursor = '';
-      /* eslint-enable react-hooks/immutability */
       // Defer clearing past the trailing synthetic `click` (which fires after
       // pointerup, before a 0ms task) so useEdgePicker still bails on it.
       window.setTimeout(() => setGizmoDragging(false), 0);

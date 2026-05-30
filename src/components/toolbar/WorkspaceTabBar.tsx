@@ -39,6 +39,7 @@ export function WorkspaceTabBar({
   sketchPlaneSelecting,
   onCancelPlaneSelect,
 }: WorkspaceTabBarProps) {
+  const focusFrameRef = React.useRef<number | null>(null);
   const language = useLanguageStore((s) => s.language);
   const currentTabs = workspace === 'design' ? designTabs : [];
   const t = (key: TranslationKey) => translate(language, key);
@@ -61,10 +62,16 @@ export function WorkspaceTabBar({
     event.preventDefault();
     const nextTab = currentTabs[nextIndex];
     onTabClick(nextTab.id);
-    requestAnimationFrame(() => {
+    if (focusFrameRef.current !== null) cancelAnimationFrame(focusFrameRef.current);
+    focusFrameRef.current = requestAnimationFrame(() => {
+      focusFrameRef.current = null;
       document.querySelector<HTMLButtonElement>(`[data-ribbon-tab="${nextTab.id}"]`)?.focus();
     });
   };
+
+  React.useEffect(() => () => {
+    if (focusFrameRef.current !== null) cancelAnimationFrame(focusFrameRef.current);
+  }, []);
 
   const handleWorkspaceOptionKeyDown = (
     event: React.KeyboardEvent<HTMLButtonElement>,
@@ -97,7 +104,9 @@ export function WorkspaceTabBar({
             if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
               event.preventDefault();
               setWsDropdownOpen(true);
-              requestAnimationFrame(() => {
+              if (focusFrameRef.current !== null) cancelAnimationFrame(focusFrameRef.current);
+              focusFrameRef.current = requestAnimationFrame(() => {
+                focusFrameRef.current = null;
                 document.querySelector<HTMLButtonElement>(`[data-workspace-option="${workspace}"]`)?.focus();
               });
             }

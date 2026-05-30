@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { mergeVertices, toCreasedNormals } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { csgSubtract } from './csg';
 import { circleSegments } from '../sketch/sketchProfiles';
 
 /**
@@ -91,6 +90,7 @@ export function buildExtrudeGeomHolesAware(
       curveSegments: adaptiveCurveSegments(shape),
       ...extrudeSettings,
     };
+
     if (shape.holes.length === 0) {
       const geometry = new THREE.ExtrudeGeometry(shape, shapeSettings);
       const nonIndexed = toNonIndexedGeometry(geometry);
@@ -100,20 +100,13 @@ export function buildExtrudeGeomHolesAware(
       continue;
     }
 
-    // Resample the outer ring (with its arcs) at the same adaptive
-    // density as the original — keeps holes-aware extrudes (circles
-    // with circular holes) looking round.
+    // Resample the outer ring at adaptive density and attach holes as
+    // THREE.Paths so ExtrudeGeometry triangulates them natively — no CSG needed.
     const outerSegs = adaptiveCurveSegments(shape);
     const outerShape = new THREE.Shape(shape.getPoints(outerSegs));
-    const outerRaw = new THREE.ExtrudeGeometry(outerShape, shapeSettings);
-    const outerNonIndexed = toNonIndexedGeometry(outerRaw);
-    outerRaw.dispose();
-    let solid = removeDegenerateTriangles(outerNonIndexed);
-    outerNonIndexed.dispose();
 
     for (const holePath of shape.holes) {
-      // Sample each hole's curves at an adaptive density driven by the
-      // largest arc in that hole — circular holes stay round.
+      // Adaptive arc density per hole — keeps circular holes round.
       let holeMaxR = 0;
       for (const c of holePath.curves) {
         if (c instanceof THREE.EllipseCurve) {
@@ -122,44 +115,36 @@ export function buildExtrudeGeomHolesAware(
         }
       }
       const holeSegs = holeMaxR > 0 ? circleSegments(holeMaxR) : 64;
-      const holeShape = new THREE.Shape(holePath.getPoints(holeSegs));
-      const holeSettings: THREE.ExtrudeGeometryOptions = {
-        ...extrudeSettings,
-        depth: (extrudeSettings.depth ?? 1) + 0.002,
-        curveSegments: holeSegs,
-      };
-      const holeRaw = new THREE.ExtrudeGeometry(holeShape, holeSettings);
-      const holeNonIndexed = toNonIndexedGeometry(holeRaw);
-      holeRaw.dispose();
-      const holeGeom = removeDegenerateTriangles(holeNonIndexed);
-      holeNonIndexed.dispose();
-      holeGeom.translate(0, 0, -0.001);
-      const subtracted = csgSubtract(solid, holeGeom);
-      solid.dispose();
-      holeGeom.dispose();
-      solid = subtracted;
+      outerShape.holes.push(new THREE.Path(holePath.getPoints(holeSegs)));
     }
 
+    const outerRaw = new THREE.ExtrudeGeometry(outerShape, shapeSettings);
+    const outerNonIndexed = toNonIndexedGeometry(outerRaw);
+    outerRaw.dispose();
+    const solid = removeDegenerateTriangles(outerNonIndexed);
+    outerNonIndexed.dispose();
     parts.push(solid);
   }
 
-  let combined: THREE.BufferGeometry;
   if (parts.length === 1) {
-    combined = parts[0];
-  } else {
-    const totalCount = parts.reduce((sum, geometry) => sum + geometry.attributes.position.count, 0);
-    const mergedPositions = new Float32Array(totalCount * 3);
-    let offset = 0;
-    for (const geometry of parts) {
-      const arr = (geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
-      mergedPositions.set(arr, offset);
-      offset += arr.length;
-      geometry.dispose();
-    }
-    combined = new THREE.BufferGeometry();
-    combined.setAttribute('position', new THREE.Float32BufferAttribute(mergedPositions, 3));
+    const merged = mergeVertices(parts[0], 1e-4);
+    parts[0].dispose();
+    return toCreasedNormals(merged, Math.PI / 6);
   }
 
+  // Multi-part case (sketch with several disconnected outer profiles):
+  // concatenate triangle soup, weld, recompute creases.
+  const totalCount = parts.reduce((sum, geometry) => sum + geometry.attributes.position.count, 0);
+  const mergedPositions = new Float32Array(totalCount * 3);
+  let offset = 0;
+  for (const geometry of parts) {
+    const arr = (geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
+    mergedPositions.set(arr, offset);
+    offset += arr.length;
+    geometry.dispose();
+  }
+  const combined = new THREE.BufferGeometry();
+  combined.setAttribute('position', new THREE.Float32BufferAttribute(mergedPositions, 3));
   const merged = mergeVertices(combined, 1e-4);
   combined.dispose();
   return toCreasedNormals(merged, Math.PI / 6);

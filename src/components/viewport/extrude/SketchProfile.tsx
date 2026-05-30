@@ -37,6 +37,7 @@ export default function SketchProfile({
   }, []);
 
   const meshRef = useRef<THREE.Mesh | null>(null);
+  const settledIdleKeyRef = useRef<string | null>(null);
 
   // Mesh (geometry) is keyed ONLY on sketch identity + profile index. State
   // changes must not recreate the geometry — that was the source of the
@@ -55,27 +56,46 @@ export default function SketchProfile({
   useFrame(({ clock, invalidate }) => {
     const m = meshRef.current?.material;
     if (!(m instanceof THREE.MeshBasicMaterial)) return;
+    if (hidden || state === 'idle') {
+      const idleKey = `${hidden}:${state}`;
+      if (settledIdleKeyRef.current === idleKey) return;
+
+      const targetColor = PROFILE_MATERIAL.color.getHex();
+      const targetOpacity = 0;
+      const targetDepthTest = state === 'idle';
+      const changed =
+        m.color.getHex() !== targetColor ||
+        Math.abs(m.opacity - targetOpacity) > 1e-4 ||
+        m.depthTest !== targetDepthTest;
+
+      settledIdleKeyRef.current = idleKey;
+      if (!changed) return;
+      m.color.setHex(targetColor);
+      m.opacity = targetOpacity;
+      m.depthTest = targetDepthTest;
+      invalidate();
+      return;
+    }
+    settledIdleKeyRef.current = null;
+
     // Resolve target color/opacity from state + hidden. Color is mutated in
     // place to avoid allocating a fresh THREE.Color each frame.
     let targetColor: number;
     let targetOpacity: number;
     let pulsing = false;
-    if (hidden) {
-      // Invisible but still pickable by the raycaster
-      targetColor = PROFILE_MATERIAL.color.getHex();
-      targetOpacity = 0;
-    } else if (state === 'selected') {
+    if (state === 'selected') {
       targetColor = PROFILE_SELECTED_MATERIAL.color.getHex();
-      targetOpacity = 0.48;
+      const pulse = 0.5 + 0.5 * Math.sin(clock.elapsedTime * 6);
+      targetOpacity = 0.34 + pulse * 0.24;
+      pulsing = true;
     } else if (state === 'hover') {
       targetColor = PROFILE_HOVER_MATERIAL.color.getHex();
       const pulse = 0.5 + 0.5 * Math.sin(clock.elapsedTime * 6);
       targetOpacity = 0.24 + pulse * 0.22;
       pulsing = true;
-    } else {
-      targetColor = PROFILE_MATERIAL.color.getHex();
-      targetOpacity = 0.18;
-    }
+    } else return;
+
+    m.depthTest = false;
     // Only invalidate (request a re-render) when a value actually changed OR
     // a pulse is active — keeps frameloop="demand" from running every frame.
     const prevColor = m.color.getHex();

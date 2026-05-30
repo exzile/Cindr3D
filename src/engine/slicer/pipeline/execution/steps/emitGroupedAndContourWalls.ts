@@ -538,7 +538,7 @@ function emitOuterLoop(params: EmitOuterLoopParams): number {
     const minCoastVol = pp.minVolumeBeforeCoasting ?? 0;
     const loopVol = minCoastVol > 0 ? (() => {
       let perim = segLen;
-      for (let ri = 1; ri < reordered.length - 1; ri++) perim += reordered[ri].distanceTo(reordered[ri + 1]);
+      for (let ri = 0; ri < reordered.length - 1; ri++) perim += reordered[ri].distanceTo(reordered[ri + 1]);
       return perim * fallbackLineWidth * layerH;
     })() : Infinity;
     const closingLineWidth = variableLineWidth ? segmentLineWidth(params.lineWidth, reordered.length - 1, 0) : fallbackLineWidth;
@@ -663,7 +663,7 @@ export function emitGroupedAndContourWalls(
       : 'classic';
     gcode.push(`;dzign.wall-gen:${generatorTag} walls=${wallSets.length} variable=${variableWallCount}`);
 
-    if (!groupOW && wallSets.length > 0 && pp.outerWallFirst) {
+    if (!groupOW && wallSets.length > 0 && wallSets[0].length >= 2 && pp.outerWallFirst) {
       if (isFirstLayer && pp.initialLayerOuterWallFlow != null) emitter.currentLayerFlow = pp.initialLayerOuterWallFlow / 100;
       layer.layerTime += emitOuterLoop({ pipeline: slicer, run, layer, pp, li, layerZ, layerH, isFirstLayer, outerWallSpeed, gcode, emitter, moves, loop: wallSets[0], lineWidth: wallLineWidths[0] ?? pp.wallLineWidth, isClosed: wallClosed?.[0] ?? true, allowCoasting: true });
     }
@@ -703,7 +703,7 @@ export function emitGroupedAndContourWalls(
     // since there are no inner walls to sequence with), then skip the
     // inner-wall block + outer-wall-after block by `continue`-ing.
     if (pp.spiralizeContour && !layer.isSolidBottom) {
-      if (!groupOW && wallSets.length > 0) {
+      if (!groupOW && wallSets.length > 0 && wallSets[0].length >= 2) {
         layer.layerTime += emitOuterLoop({ pipeline: slicer, run, layer, pp, li, layerZ, layerH, isFirstLayer, outerWallSpeed, gcode, emitter, moves, loop: wallSets[0], lineWidth: wallLineWidths[0] ?? pp.wallLineWidth, isClosed: wallClosed?.[0] ?? true, allowCoasting: false });
       }
       continue;
@@ -841,7 +841,7 @@ export function emitGroupedAndContourWalls(
     }
 
     emitter.currentLayerFlow = isFirstLayer && initialLayerFlow > 0 ? (initialLayerFlow / 100) : 1.0;
-    if (!groupOW && wallSets.length > 0 && !pp.outerWallFirst) {
+    if (!groupOW && wallSets.length > 0 && wallSets[0].length >= 2 && !pp.outerWallFirst) {
       if (isFirstLayer && pp.initialLayerOuterWallFlow != null) emitter.currentLayerFlow = pp.initialLayerOuterWallFlow / 100;
       layer.layerTime += emitOuterLoop({ pipeline: slicer, run, layer, pp, li, layerZ, layerH, isFirstLayer, outerWallSpeed, gcode, emitter, moves, loop: wallSets[0], lineWidth: wallLineWidths[0] ?? pp.wallLineWidth, isClosed: wallClosed?.[0] ?? true, allowCoasting: true });
       emitter.currentLayerFlow = isFirstLayer && initialLayerFlow > 0 ? (initialLayerFlow / 100) : 1.0;

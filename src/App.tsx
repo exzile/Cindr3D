@@ -1,10 +1,11 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
+import OccLoadingModal from './components/app/OccLoadingModal';
+import { WorkspaceContent } from './components/app/WorkspaceContent';
+import { useDeviceMode } from './components/app/useDeviceMode';
+import { useOccPreload } from './components/app/useOccPreload';
+import { useWorkspaceRouting } from './components/app/useWorkspaceRouting';
 import Toolbar from './components/toolbar/Toolbar';
-import Viewport from './components/viewport/Viewport';
-import Timeline from './components/panels/Timeline';
-import ComponentTree from './components/panels/ComponentTree';
 import StatusBar from './components/panels/StatusBar';
-import DuetPrinterPanel from './components/printer/DuetPrinterPanel';
 import DuetNotifications from './components/printer/DuetNotifications';
 import GCodeToast from './components/printer/GCodeToast';
 import { PrintSessionResumeBanner } from './components/printer/PrintSessionResumeBanner';
@@ -12,140 +13,26 @@ import { useCADStore } from './store/cadStore';
 import { DevFixtureLoader } from './devFixtures/orangePi3LtsCase';
 import { McpBridgeService } from './services/mcp/McpBridgeService';
 import AiAssistantPanel from './components/ai/AiAssistantPanel';
-import { TABS, type TabKey } from './components/printer/duetPrinterPanel/config';
-import { usePrinterStore } from './store/printerStore';
 import './App.css';
-
-type WorkspaceMode = 'design' | 'prepare' | 'printer';
-type DeviceMode = 'mobile' | 'tablet' | 'desktop';
 
 const ActiveDialog = lazy(() => import('./app/ActiveDialog'));
 const ExportDialog = lazy(() => import('./components/dialogs/ExportDialog'));
 const HomePage = lazy(() => import('./components/home/HomePage'));
-const SlicerWorkspace = lazy(() => import('./components/slicer/SlicerWorkspace'));
-
-const PRINTER_TABS = new Set<string>(['printers', ...TABS.map((tab) => tab.key)]);
-
-function routeFromPath(pathname: string): { workspaceMode?: WorkspaceMode; printerTab?: TabKey; isHome: boolean } {
-  if (pathname === '/home' || pathname.startsWith('/home/')) return { isHome: true };
-  if (pathname === '/prepare' || pathname === '/prepare/') return { workspaceMode: 'prepare', isHome: false };
-  if (pathname === '/' || pathname === '/home' || pathname.startsWith('/home/')) return { isHome: true };
-  if (pathname === '/design' || pathname === '/design/') return { workspaceMode: 'design', isHome: false };
-  if (pathname === '/printer' || pathname.startsWith('/printer/')) {
-    const candidate = pathname.split('/')[2] || 'dashboard';
-    return {
-      workspaceMode: 'printer',
-      printerTab: (PRINTER_TABS.has(candidate) ? candidate : 'dashboard') as TabKey,
-      isHome: false,
-    };
-  }
-  return { workspaceMode: 'design', isHome: false };
-}
-
-function pathForWorkspace(workspaceMode: WorkspaceMode, printerTab: TabKey) {
-  if (workspaceMode === 'prepare') return '/prepare';
-  if (workspaceMode === 'printer') return `/printer/${printerTab}`;
-  return '/design';
-}
-
-function detectDeviceMode(): { mode: DeviceMode; touch: boolean } {
-  const width = window.innerWidth;
-  const touch = window.matchMedia?.('(pointer: coarse)').matches
-    || navigator.maxTouchPoints > 0;
-  const mode: DeviceMode = width < 720 ? 'mobile' : width < 1100 ? 'tablet' : 'desktop';
-  return { mode, touch };
-}
-
-function WorkspaceContent() {
-  const workspaceMode = useCADStore((s) => s.workspaceMode);
-
-  if (workspaceMode === 'prepare') {
-    return (
-      <Suspense fallback={null}>
-        <SlicerWorkspace />
-      </Suspense>
-    );
-  }
-  if (workspaceMode === 'printer') return <DuetPrinterPanel fullscreen />;
-
-  return (
-    <div className="workspace">
-      <ComponentTree />
-      <div className="viewport-container">
-        <Viewport />
-      </div>
-      <DuetPrinterPanel />
-      <Timeline />
-    </div>
-  );
-}
 
 export default function App() {
   const workspaceMode = useCADStore((s) => s.workspaceMode);
-  const setWorkspaceMode = useCADStore((s) => s.setWorkspaceMode);
   const showExportDialog = useCADStore((s) => s.showExportDialog);
-  const activePrinterTab = usePrinterStore((s) => s.activeTab as TabKey);
-  const setActivePrinterTab = usePrinterStore((s) => s.setActiveTab);
   const activeDialog = useCADStore((s) => s.activeDialog);
-  const [path, setPath] = useState(() => window.location.pathname);
-  const skipNextUrlSyncRef = useRef(false);
-  const route = routeFromPath(path);
-  const isHomeRoute = route.isHome;
+  const isHomeRoute = useWorkspaceRouting();
 
-  useEffect(() => {
-    const handlePopState = () => setPath(window.location.pathname);
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  useEffect(() => {
-    const nextRoute = routeFromPath(path);
-    if (nextRoute.isHome) return;
-    const currentWorkspaceMode = useCADStore.getState().workspaceMode;
-    const currentPrinterTab = usePrinterStore.getState().activeTab as TabKey;
-
-    if (nextRoute.workspaceMode && nextRoute.workspaceMode !== currentWorkspaceMode) {
-      skipNextUrlSyncRef.current = true;
-      setWorkspaceMode(nextRoute.workspaceMode);
-    }
-    if (nextRoute.printerTab && nextRoute.printerTab !== currentPrinterTab) {
-      skipNextUrlSyncRef.current = true;
-      setActivePrinterTab(nextRoute.printerTab);
-    }
-  }, [path, setActivePrinterTab, setWorkspaceMode]);
-
-  useEffect(() => {
-    if (isHomeRoute) return;
-    if (skipNextUrlSyncRef.current) {
-      skipNextUrlSyncRef.current = false;
-      return;
-    }
-
-    const nextPath = pathForWorkspace(workspaceMode, activePrinterTab);
-    if (window.location.pathname === nextPath) return;
-    window.history.replaceState({}, '', nextPath);
-  }, [activePrinterTab, isHomeRoute, workspaceMode]);
+  useOccPreload();
+  useDeviceMode();
 
   useEffect(() => {
     if (isHomeRoute || !import.meta.env.DEV) return undefined;
     McpBridgeService.start();
     return () => McpBridgeService.stop();
   }, [isHomeRoute]);
-
-  useEffect(() => {
-    const applyDeviceMode = () => {
-      const { mode, touch } = detectDeviceMode();
-      document.documentElement.dataset.deviceMode = mode;
-      document.documentElement.toggleAttribute('data-touch', touch);
-    };
-    applyDeviceMode();
-    window.addEventListener('resize', applyDeviceMode);
-    window.addEventListener('orientationchange', applyDeviceMode);
-    return () => {
-      window.removeEventListener('resize', applyDeviceMode);
-      window.removeEventListener('orientationchange', applyDeviceMode);
-    };
-  }, []);
 
   if (isHomeRoute) {
     return (
@@ -177,6 +64,7 @@ export default function App() {
       <DuetNotifications />
       <GCodeToast />
       <AiAssistantPanel />
+      <OccLoadingModal />
     </div>
   );
 }

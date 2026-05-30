@@ -15,6 +15,7 @@ export interface Body {
   triangleCount?: number;
   isClosed?: boolean;
   repairState?: 'valid' | 'needs-repair' | 'repaired';
+  deflectionOverride?: number;  // mm — overrides global tessellation linearDeflection
 }
 
 export interface Component {

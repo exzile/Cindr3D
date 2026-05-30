@@ -36,6 +36,13 @@ async function* readSSE(response: Response): AsyncGenerator<{ event?: string; da
       }
     }
   }
+  // Flush any partial line remaining after stream end (no trailing newline).
+  if (buf.startsWith('event:')) {
+    currentEvent = buf.slice(6).trim();
+  } else if (buf.startsWith('data:')) {
+    const data = buf.slice(5).trim();
+    if (data && data !== '[DONE]') yield { event: currentEvent, data };
+  }
 }
 
 export async function* streamAnthropic(
@@ -74,9 +81,9 @@ export async function* streamAnthropic(
     } else if (event === 'content_block_delta') {
       const delta = obj.delta as Record<string, unknown>;
       const idx = obj.index as number;
-      if (delta.type === 'text_delta') yield { type: 'text', delta: delta.text as string };
-      else if (delta.type === 'input_json_delta' && toolBlocks[idx]) {
-        toolBlocks[idx].jsonAccum += delta.partial_json as string;
+      if (delta.type === 'text_delta' && typeof delta.text === 'string') yield { type: 'text', delta: delta.text };
+      else if (delta.type === 'input_json_delta' && toolBlocks[idx] && typeof delta.partial_json === 'string') {
+        toolBlocks[idx].jsonAccum += delta.partial_json;
       }
     } else if (event === 'content_block_stop') {
       const idx = obj.index as number;

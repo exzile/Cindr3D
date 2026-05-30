@@ -16,6 +16,11 @@ const COLOR_DEFAULT      = new THREE.Color('#94a3b8'); // slate (fallback)
 const COLOR_CONFLICT     = new THREE.Color('#ef4444'); // red — over-constrained
 
 // Reuse materials keyed by hex color — avoids new allocations per render
+const COLOR_OFFSET       = new THREE.Color(0x66ddff);
+const COLOR_COINCIDENT_SURFACE = new THREE.Color(0x44ff88);
+const COLOR_PERP_SURFACE = new THREE.Color(0xff8800);
+const COLOR_LINE_SURFACE = new THREE.Color(0xcc66ff);
+
 const materialCache = new Map<string, THREE.LineBasicMaterial>();
 function getLineMat(color: THREE.Color): THREE.LineBasicMaterial {
   const key = color.getHexString();
@@ -23,6 +28,13 @@ function getLineMat(color: THREE.Color): THREE.LineBasicMaterial {
     materialCache.set(key, new THREE.LineBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.9 }));
   }
   return materialCache.get(key)!;
+}
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    for (const material of materialCache.values()) material.dispose();
+    materialCache.clear();
+  });
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -360,7 +372,7 @@ export default function SketchConstraintOverlay() {
           // SK-A9: Offset constraint — parallel-lines symbol at each entity + a tick between them
           for (const entity of entities) {
             const mid = entityMidpoint(entity, sketch);
-            if (mid) objs.push(makeParallelLines(mid, t1, t2, SIZE, c(new THREE.Color(0x66ddff))));
+            if (mid) objs.push(makeParallelLines(mid, t1, t2, SIZE, c(COLOR_OFFSET)));
           }
           break;
         }
@@ -370,7 +382,7 @@ export default function SketchConstraintOverlay() {
           if (!entity) break;
           const mid = entityMidpoint(entity, sketch);
           if (!mid) break;
-          const color = c(new THREE.Color(0x44ff88));
+          const color = c(COLOR_COINCIDENT_SURFACE);
           objs.push(makeCoincidentRing(mid, t1, t2, SIZE * 0.35, color));
           objs.push(makeHArrow(mid, t1, t2, SIZE * 0.6, color));
           break;
@@ -381,7 +393,7 @@ export default function SketchConstraintOverlay() {
           if (!entity) break;
           const mid = entityMidpoint(entity, sketch);
           if (!mid) break;
-          objs.push(makePerpSymbol(mid, t1, t2, SIZE, c(new THREE.Color(0xff8800))));
+          objs.push(makePerpSymbol(mid, t1, t2, SIZE, c(COLOR_PERP_SURFACE)));
           break;
         }
         case 'line-on-surface': {
@@ -390,7 +402,7 @@ export default function SketchConstraintOverlay() {
           if (!entity) break;
           const mid = entityMidpoint(entity, sketch);
           if (!mid) break;
-          objs.push(makeParallelLines(mid, t1, t2, SIZE, c(new THREE.Color(0xcc66ff))));
+          objs.push(makeParallelLines(mid, t1, t2, SIZE, c(COLOR_LINE_SURFACE)));
           break;
         }
         case 'distance-surface': {
@@ -399,7 +411,7 @@ export default function SketchConstraintOverlay() {
           if (!entity) break;
           const mid = entityMidpoint(entity, sketch);
           if (!mid) break;
-          objs.push(makeHArrow(mid, t1, t2, SIZE, c(new THREE.Color(0x66ddff))));
+          objs.push(makeHArrow(mid, t1, t2, SIZE, c(COLOR_OFFSET)));
           break;
         }
         default: {

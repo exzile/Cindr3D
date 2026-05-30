@@ -39,3 +39,9 @@ export interface ContactSetEntry {
   component2Id: string;
   enabled: boolean;
 }
+
+export interface SelectionSet {
+  id: string;
+  name: string;
+  bodyIds: string[];
+}

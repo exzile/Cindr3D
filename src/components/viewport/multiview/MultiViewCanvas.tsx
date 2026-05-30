@@ -15,6 +15,12 @@ import CanvasReferences from '../scene/CanvasReferences';
 import FastenerBodies from '../scene/FastenerBodies';
 import WorldAxes from '../scene/WorldAxes';
 import { GroundPlaneGrid } from '../scene/SketchPlaneGrid';
+import { CrashBoundary } from '../EnvErrorBoundary';
+import FilletEdgeHighlight from '../scene/FilletEdgeHighlight';
+import FilletGizmo from '../scene/FilletGizmo';
+import ChamferEdgeHighlight from '../scene/ChamferEdgeHighlight';
+import ChamferGizmo from '../scene/ChamferGizmo';
+import { useCADStore } from '../../../store/cadStore';
 import type { Layout, QuadrantDef, QuadrantKey } from '../../../types/multi-view-canvas.types';
 
 const QUADRANTS: Record<QuadrantKey, QuadrantDef> = {
@@ -32,6 +38,8 @@ const QUADRANTS: Record<QuadrantKey, QuadrantDef> = {
  * collisions (a mesh can only have one parent — the last View's mount wins).
  */
 function SharedScene() {
+  const activeDialog = useCADStore((s) => s.activeDialog);
+
   return (
     <>
       <ambientLight intensity={0.6} />
@@ -44,6 +52,12 @@ function SharedScene() {
       <FastenerBodies />
       <WorldAxes />
       <GroundPlaneGrid />
+      <CrashBoundary label="EdgeOp" resetKey={activeDialog}>
+        <FilletEdgeHighlight />
+        <FilletGizmo />
+        <ChamferEdgeHighlight />
+        <ChamferGizmo />
+      </CrashBoundary>
     </>
   );
 }
@@ -216,7 +230,7 @@ export default function MultiViewCanvas({ layout }: { layout: Layout }) {
         eventSource={containerRef}
         eventPrefix="client"
         frameloop="demand"
-        style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}
+        style={{ position: 'absolute', inset: 0 }}
         gl={{ antialias: true, alpha: false }}
       >
         {/*

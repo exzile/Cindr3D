@@ -125,8 +125,9 @@ export function useDesignFileIO(deps: DesignFileIODeps) {
         setCurrentDesignFile(file.name.replace(/\.dznd$/i, '').replace(/\.json$/i, '') || null);
       }
     };
+    reader.onerror = () => setStatusMessage('Failed to read design file');
     reader.readAsText(file);
-  }, [loadFromFile, setCurrentDesignFile]);
+  }, [loadFromFile, setCurrentDesignFile, setStatusMessage]);
 
   // Auto-save interval — writes to the stored file handle when available (true overwrite),
   // falls back to a browser download only if no handle exists.

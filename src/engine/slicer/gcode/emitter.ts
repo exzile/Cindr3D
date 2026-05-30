@@ -182,10 +182,10 @@ export class GCodeEmitter {
       this.gcode.push('G10 ; Firmware retract');
     } else {
       const retractF = ((this.material.retractionRetractSpeed ?? this.material.retractionSpeed) * 60).toFixed(0);
+      this.currentE -= this.material.retractionDistance;
       if (this.relativeExtrusion) {
         this.gcode.push(`G1 E${(-this.material.retractionDistance).toFixed(5)} F${retractF}`);
       } else {
-        this.currentE -= this.material.retractionDistance;
         this.gcode.push(`G1 E${this.currentE.toFixed(5)} F${retractF}`);
       }
     }
@@ -216,10 +216,10 @@ export class GCodeEmitter {
         + this.extraPrime
         + (this.wipeDist > 0 ? this.wipeExtraPrime : 0);
       const primeF = ((this.material.retractionPrimeSpeed ?? this.material.retractionSpeed) * 60).toFixed(0);
+      this.currentE += primeDelta;
       if (this.relativeExtrusion) {
         this.gcode.push(`G1 E${primeDelta.toFixed(5)} F${primeF}`);
       } else {
-        this.currentE += primeDelta;
         this.gcode.push(`G1 E${this.currentE.toFixed(5)} F${primeF}`);
       }
     }

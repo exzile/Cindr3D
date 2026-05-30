@@ -23,6 +23,32 @@
   backdrop-filter: blur(12px);
 }
 
+.design-configurations-panel {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 14%, transparent),
+    0 12px 36px rgba(0, 0, 0, 0.22),
+    0 2px 10px rgba(0, 0, 0, 0.12);
+}
+
+.design-configurations-panel .tp-header {
+  border-bottom-color: color-mix(in srgb, var(--accent) 24%, var(--border-light));
+}
+
+[data-theme="dark"] .design-configurations-panel {
+  background: color-mix(in srgb, var(--bg-primary) 88%, #ffffff 6%);
+  border-color: color-mix(in srgb, var(--accent) 52%, rgba(255, 255, 255, 0.2));
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 0 24px rgba(112, 144, 255, 0.18),
+    0 18px 48px rgba(0, 0, 0, 0.58);
+}
+
+[data-theme="dark"] .design-configurations-panel .tp-header {
+  background: color-mix(in srgb, var(--bg-toolbar) 84%, #ffffff 7%);
+  border-bottom-color: color-mix(in srgb, var(--accent) 42%, rgba(255, 255, 255, 0.16));
+}
+
 /* ── Header ── */
 .tp-header {
   display: flex;

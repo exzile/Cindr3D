@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import * as THREE from 'three';
 import {
   Move, FolderOpen, Box, Layers, Settings, Link2, CircleDot,
   Download, Copy, Scissors, Trash2, MoreHorizontal, Eye,
@@ -21,6 +22,7 @@ interface MenuItem {
   shortcut?: string;
   icon?: React.ReactNode;
   danger?: boolean;
+  disabled?: boolean;
   separator?: boolean;
   type?: 'opacity' | 'selectable';
   onClick: () => void;
@@ -64,18 +66,48 @@ export function BodyContextMenu({
 }) {
   const [opacityOpen, setOpacityOpen] = useState(false);
 
-  const removeBody         = useComponentStore((s) => s.removeBody);
-  const toggleVisibility   = useComponentStore((s) => s.toggleBodyVisibility);
-  const isolateBody        = useComponentStore((s) => s.isolateBody);
-  const showAllBodies      = useComponentStore((s) => s.showAllBodies);
-  const setBodyOpacity     = useComponentStore((s) => s.setBodyOpacity);
+  const removeBody           = useComponentStore((s) => s.removeBody);
+  const toggleVisibility     = useComponentStore((s) => s.toggleBodyVisibility);
+  const isolateBody          = useComponentStore((s) => s.isolateBody);
+  const showAllBodies        = useComponentStore((s) => s.showAllBodies);
+  const setBodyOpacity       = useComponentStore((s) => s.setBodyOpacity);
   const toggleBodySelectable = useComponentStore((s) => s.toggleBodySelectable);
-  const body               = useComponentStore((s) => s.bodies[menu.bodyId]);
+  const copyBody             = useComponentStore((s) => s.copyBody);
+  const createComponentFromBody = useComponentStore((s) => s.createComponentFromBody);
+  const clipboardBodyId      = useComponentStore((s) => s.clipboardBodyId);
+  const setClipboardBody     = useComponentStore((s) => s.setClipboardBody);
+  const pasteBody            = useComponentStore((s) => s.pasteBody);
+  const setSelectedBodyId    = useComponentStore((s) => s.setSelectedBodyId);
+  const body                 = useComponentStore((s) => s.bodies[menu.bodyId]);
 
-  const setStatusMessage   = useCADStore((s) => s.setStatusMessage);
-  const setActiveDialog    = useCADStore((s) => s.setActiveDialog);
-  const triggerBodyExport  = useCADStore((s) => s.triggerBodyExport);
-  const setWorkspaceMode   = useCADStore((s) => s.setWorkspaceMode);
+  const setStatusMessage       = useCADStore((s) => s.setStatusMessage);
+  const removeFeature          = useCADStore((s) => s.removeFeature);
+  const setActiveDialog        = useCADStore((s) => s.setActiveDialog);
+
+  // Collect all features to remove when deleting this body:
+  // body.featureIds (direct features) + all transitive descendants via parentFeatureId.
+  const collectBodyFeatureChain = (): string[] => {
+    const all = useCADStore.getState().features;
+    const toRemove = new Set<string>(body?.featureIds ?? []);
+    // Walk forward through parentFeatureId links (fillet/chamfer → source)
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const f of all) {
+        const parentId = f.parentFeatureId ?? (f.params.parentFeatureId as string | undefined);
+        if (!toRemove.has(f.id) && parentId && toRemove.has(parentId)) {
+          toRemove.add(f.id);
+          changed = true;
+        }
+      }
+    }
+    // Return in reverse timeline order so leaf features are removed first
+    return all.filter((f) => toRemove.has(f.id)).map((f) => f.id).reverse();
+  };
+  const setDialogPayload       = useCADStore((s) => s.setDialogPayload);
+  const triggerBodyExport      = useCADStore((s) => s.triggerBodyExport);
+  const setWorkspaceMode       = useCADStore((s) => s.setWorkspaceMode);
+  const setCameraTargetOrbit   = useCADStore((s) => s.setCameraTargetOrbit);
   const addToPlate         = useSlicerStore((s) => s.addToPlate);
 
   const isSelectable = body?.selectable !== false;
@@ -83,6 +115,21 @@ export function BodyContextMenu({
 
   const cs = (label: string) => () => {
     setStatusMessage(`${label} — coming soon`);
+    onClose();
+  };
+
+  const handleFindInWindow = () => {
+    setSelectedBodyId(menu.bodyId);
+    const mesh = body?.mesh;
+    if (mesh) {
+      const bbox = new THREE.Box3().setFromObject(mesh);
+      const center = new THREE.Vector3();
+      bbox.getCenter(center);
+      setCameraTargetOrbit(center);
+      setStatusMessage(`Found: ${bodyName}`);
+    } else {
+      setStatusMessage(`Selected: ${bodyName}`);
+    }
     onClose();
   };
 
@@ -113,38 +160,58 @@ export function BodyContextMenu({
         onClose();
       },
     },
-    { separator: true, label: 'Move/Copy', shortcut: 'M', icon: <Move size={13} />, onClick: cs('Move/Copy') },
+    { separator: true, label: 'Move/Copy', shortcut: 'M', icon: <Move size={13} />, onClick: () => { setActiveDialog('move-body'); onClose(); } },
     { label: 'Move to Group', icon: <FolderOpen size={13} />, onClick: cs('Move to Group') },
-    { separator: true, label: 'Create Components from Bodies', icon: <Box size={13} />, onClick: cs('Create Components from Bodies') },
-    { label: 'Create Selection Set', icon: <Layers size={13} />, onClick: cs('Create Selection Set') },
+    { separator: true, label: 'Create Components from Bodies', icon: <Box size={13} />, onClick: () => {
+        const newCompId = createComponentFromBody(menu.bodyId);
+        if (newCompId) setStatusMessage(`Created component from ${bodyName}`);
+        onClose();
+      } },
+    { label: 'Create Selection Set', icon: <Layers size={13} />, onClick: () => { setActiveDialog('selection-sets'); onClose(); } },
     { separator: true, label: 'Configure', icon: <Settings size={13} />, onClick: cs('Configure') },
-    { label: 'Enable Contact Sets', icon: <Link2 size={13} />, onClick: cs('Enable Contact Sets') },
+    { label: 'Enable Contact Sets', icon: <Link2 size={13} />, onClick: () => { setActiveDialog('contact-sets'); onClose(); } },
     { separator: true, label: 'Physical Material', icon: <CircleDot size={13} />, onClick: () => { onOpenMaterial(); onClose(); } },
     { label: 'Appearance', shortcut: 'A', icon: <CircleDot size={13} />, onClick: () => { setActiveDialog('appearance'); onClose(); } },
     { label: 'Texture Map Controls', icon: <Settings size={13} />, onClick: cs('Texture Map Controls') },
-    { label: 'Properties', icon: <MoreHorizontal size={13} />, onClick: cs('Properties') },
+    { label: 'Properties', icon: <MoreHorizontal size={13} />, onClick: () => { setDialogPayload(menu.bodyId); setActiveDialog('body-properties'); onClose(); } },
     { separator: true, label: 'Save As STL', icon: <Download size={13} />, onClick: () => { triggerBodyExport(menu.bodyId, 'stl'); onClose(); } },
     { label: 'Save As GLB', icon: <Download size={13} />, onClick: () => { triggerBodyExport(menu.bodyId, 'glb'); onClose(); } },
-    { label: 'Copy', shortcut: 'Ctrl+C', icon: <Copy size={13} />, onClick: cs('Copy') },
-    { label: 'Cut', shortcut: 'Ctrl+X', icon: <Scissors size={13} />, onClick: cs('Cut') },
+    { label: 'Copy', shortcut: 'Ctrl+C', icon: <Copy size={13} />, onClick: () => {
+        const newId = copyBody(menu.bodyId);
+        if (newId) setStatusMessage(`Copied ${bodyName}`);
+        onClose();
+      } },
+    { label: 'Cut', shortcut: 'Ctrl+X', icon: <Scissors size={13} />, onClick: () => {
+        setClipboardBody(menu.bodyId);
+        removeBody(menu.bodyId);
+        setStatusMessage(`Cut ${bodyName} — use Paste to place it`);
+        onClose();
+      } },
+    { label: 'Paste', shortcut: 'Ctrl+V', icon: <Copy size={13} />, onClick: () => {
+        const newId = pasteBody();
+        if (newId) setStatusMessage('Pasted body');
+        onClose();
+      }, disabled: !clipboardBodyId },
     {
       label: 'Delete',
       shortcut: 'Del',
       icon: <Trash2 size={13} />,
       danger: true,
       onClick: () => {
-        removeBody(menu.bodyId);
+        // Remove the full feature chain (extrude + downstream fillets/chamfers)
+        // then ensure the component-store body is gone too.
+        for (const featureId of collectBodyFeatureChain()) removeFeature(featureId);
+        removeBody(menu.bodyId); // no-op if removeFeature already cleaned it up
         setStatusMessage(`Deleted ${bodyName}`);
         onClose();
       },
     },
-    { label: 'Remove', icon: <Trash2 size={13} />, onClick: cs('Remove') },
     {
       label: 'Rename',
       icon: <MoreHorizontal size={13} />,
       onClick: () => { onClose(); onStartRename(); },
     },
-    { separator: true, label: 'Display Detail Control', icon: <Settings size={13} />, onClick: cs('Display Detail Control') },
+    { separator: true, label: 'Display Detail Control', icon: <Settings size={13} />, onClick: () => { setDialogPayload(menu.bodyId); setActiveDialog('display-detail'); onClose(); } },
     { label: 'Show/Hide', shortcut: 'V', icon: <Eye size={13} />, onClick: () => { toggleVisibility(menu.bodyId); onClose(); } },
     { label: 'Isolate', icon: <ScanEye size={13} />, onClick: () => { isolateBody(menu.bodyId); setStatusMessage(`Isolated: ${bodyName}`); onClose(); } },
     { label: 'Show All Bodies', icon: <Eye size={13} />, onClick: () => { showAllBodies(); setStatusMessage('All bodies visible'); onClose(); } },
@@ -166,7 +233,7 @@ export function BodyContextMenu({
       icon: <CircleDot size={13} />,
       onClick: () => setOpacityOpen((prev) => !prev),
     },
-    { separator: true, label: 'Find in Window', icon: <Search size={13} />, onClick: cs('Find in Window') },
+    { separator: true, label: 'Find in Window', icon: <Search size={13} />, onClick: handleFindInWindow },
   ];
 
   return (
@@ -187,8 +254,10 @@ export function BodyContextMenu({
                 item.danger ? 'danger' : '',
                 isActive ? 'active' : '',
                 isToggledOn ? 'toggled-on' : '',
+                item.disabled ? 'disabled' : '',
               ].filter(Boolean).join(' ')}
-              onClick={item.onClick}
+              onClick={item.disabled ? undefined : item.onClick}
+              disabled={item.disabled}
             >
               <span className="sketch-ctx-icon">{item.icon}</span>
               <span className="sketch-ctx-label">{item.label}</span>

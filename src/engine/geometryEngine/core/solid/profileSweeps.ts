@@ -4,7 +4,6 @@ import { SURFACE_MATERIAL } from '../../../../components/viewport/scene/bodyMate
 import { EXTRUDE_MATERIAL } from '../../materials';
 import { getSketchAxes as getSketchAxesUtil } from '../../planeUtils';
 import { entitiesToShape, sketchToShape } from '../sketch/sketchProfiles';
-import { extractEdgeTopology } from './edgeTopology';
 
 export function loftSketches(profileSketches: Sketch[], surface = false): THREE.Mesh | null {
   if (profileSketches.length < 2) return null;
@@ -48,49 +47,55 @@ export function loftSketches(profileSketches: Sketch[], surface = false): THREE.
   }
 
   if (rings.length < 2) return null;
-  const n = profileSegments;
+
+  // Track the actual point count pushed for each ring — shapes with fewer
+  // entities return fewer points from getPoints(), so we can't assume every
+  // ring has exactly `profileSegments` vertices.
   const positions: number[] = [];
   const indices: number[] = [];
+  const ringBase: number[] = [];   // vertex index where each ring starts
+  const ringLen: number[] = [];    // actual vertex count for each ring
 
   for (const ring of rings) {
-    for (const point of ring.slice(0, n)) positions.push(point.x, point.y, point.z);
+    ringBase.push(positions.length / 3);
+    ringLen.push(ring.length);
+    for (const point of ring) positions.push(point.x, point.y, point.z);
   }
 
   for (let ri = 0; ri < rings.length - 1; ri++) {
-    const baseA = ri * n;
-    const baseB = (ri + 1) * n;
-    for (let j = 0; j < n; j++) {
-      const next = (j + 1) % n;
-      const a = baseA + j;
-      const b = baseA + next;
-      const c = baseB + j;
-      const d = baseB + next;
-      indices.push(a, c, b, b, c, d);
+    const baseA = ringBase[ri];
+    const baseB = ringBase[ri + 1];
+    const na = ringLen[ri];
+    const nb = ringLen[ri + 1];
+    const nq = Math.min(na, nb);
+    for (let j = 0; j < nq; j++) {
+      const nextA = (j + 1) % na;
+      const nextB = (j + 1) % nb;
+      indices.push(baseA + j, baseB + j, baseA + nextA, baseA + nextA, baseB + j, baseB + nextB);
     }
   }
 
   if (!surface) {
-    const r0 = rings[0].slice(0, n);
-    const c0 = r0.reduce((acc, point) => acc.add(point), new THREE.Vector3()).multiplyScalar(1 / n);
+    const r0 = rings[0];
+    const n0 = ringLen[0];
+    const c0 = r0.reduce((acc, pt) => acc.add(pt), new THREE.Vector3()).multiplyScalar(1 / n0);
     const centroid0 = positions.length / 3;
     positions.push(c0.x, c0.y, c0.z);
-    for (let j = 0; j < n; j++) indices.push(centroid0, j, (j + 1) % n);
+    for (let j = 0; j < n0; j++) indices.push(centroid0, j, (j + 1) % n0);
 
-    const r1 = rings[rings.length - 1].slice(0, n);
-    const c1 = r1.reduce((acc, point) => acc.add(point), new THREE.Vector3()).multiplyScalar(1 / n);
-    const base = (rings.length - 1) * n;
+    const r1 = rings[rings.length - 1];
+    const n1 = ringLen[rings.length - 1];
+    const c1 = r1.reduce((acc, pt) => acc.add(pt), new THREE.Vector3()).multiplyScalar(1 / n1);
+    const base1 = ringBase[rings.length - 1];
     const centroid1 = positions.length / 3;
     positions.push(c1.x, c1.y, c1.z);
-    for (let j = 0; j < n; j++) indices.push(centroid1, base + (j + 1) % n, base + j);
+    for (let j = 0; j < n1; j++) indices.push(centroid1, base1 + (j + 1) % n1, base1 + j);
   }
 
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
-  if (!surface) {
-    try { geometry.userData.topology = extractEdgeTopology(geometry); } catch { /* non-fatal */ }
-  }
   const mesh = new THREE.Mesh(geometry, surface ? SURFACE_MATERIAL : EXTRUDE_MATERIAL);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -233,9 +238,6 @@ function sweepWithCurve(
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
-  if (!surface) {
-    try { geometry.userData.topology = extractEdgeTopology(geometry); } catch { /* non-fatal */ }
-  }
   const mesh = new THREE.Mesh(geometry, surface ? SURFACE_MATERIAL : EXTRUDE_MATERIAL);
   mesh.castShadow = true;
   mesh.receiveShadow = true;

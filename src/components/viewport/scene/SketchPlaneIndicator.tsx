@@ -1,6 +1,15 @@
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 
+const SKETCH_PLANE_GEO = new THREE.PlaneGeometry(200, 200);
+const SKETCH_PLANE_MAT = new THREE.MeshBasicMaterial({
+  color: 0x4488ff,
+  transparent: true,
+  opacity: 0.05,
+  side: THREE.DoubleSide,
+  depthWrite: false,
+});
+
 export default function SketchPlaneIndicator() {
   const activeSketch = useCADStore((s) => s.activeSketch);
 
@@ -12,16 +21,7 @@ export default function SketchPlaneIndicator() {
       activeSketch.planeNormal.clone().normalize(),
     );
     return (
-      <mesh position={activeSketch.planeOrigin} quaternion={quat}>
-        <planeGeometry args={[200, 200]} />
-        <meshBasicMaterial
-          color={0x4488ff}
-          transparent
-          opacity={0.05}
-          side={THREE.DoubleSide}
-          depthWrite={false}
-        />
-      </mesh>
+      <mesh position={activeSketch.planeOrigin} quaternion={quat} geometry={SKETCH_PLANE_GEO} material={SKETCH_PLANE_MAT} />
     );
   }
 
@@ -38,15 +38,6 @@ export default function SketchPlaneIndicator() {
   })();
 
   return (
-    <mesh rotation={planeRotation} position={[0, 0, 0]}>
-      <planeGeometry args={[200, 200]} />
-      <meshBasicMaterial
-        color={0x4488ff}
-        transparent
-        opacity={0.05}
-        side={THREE.DoubleSide}
-        depthWrite={false}
-      />
-    </mesh>
+    <mesh rotation={planeRotation} position={[0, 0, 0]} geometry={SKETCH_PLANE_GEO} material={SKETCH_PLANE_MAT} />
   );
 }

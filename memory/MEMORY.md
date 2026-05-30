@@ -2,36 +2,38 @@
 
 ## Read first
 
-- [intent.md](intent.md) — what we're building (Fusion 360 + Cura 5 + Duet3D parity), launch plan, what the user expects from Claude
-- [feedback_memory_first.md](feedback_memory_first.md) — read memory before launching Explore agents (saves massive tokens)
-- [code_graph.md](code_graph.md) — workspace anchors + "where to add X" lookup table
-- [project_designcad.md](project_designcad.md) — architectural invariants (shim+subdir pattern, store slices, material singletons, plane-aware math, persistence caches)
+- GitNexus-first navigation rule: when locating code, finding files, tracing unfamiliar flows, or deciding what to inspect/edit, run a GitNexus query first (`gitnexus_query` / `npx gitnexus query "...concept..." --repo Cindr3D`). Use `rg`/Glob only after GitNexus to verify or narrow the surfaced paths.
+- [intent.md](intent.md) - what we're building (Fusion 360 + Cura 5 + Duet3D parity), launch plan, what the user expects from Claude
+- [feedback_memory_first.md](feedback_memory_first.md) - read memory before launching Explore agents (saves massive tokens)
+- [code_graph.md](code_graph.md) - workspace anchors + "where to add X" lookup table
+- [project_designcad.md](project_designcad.md) - architectural invariants (shim+subdir pattern, store slices, material singletons, plane-aware math, persistence caches)
 
 ## Subsystems
 
-- [slicer_engine.md](slicer_engine.md) — slicer pipeline contracts, two-emission-site rule, calcExtrusion-as-method, layer-height contract, scarf seam duality
-- [arachne_subsystem.md](arachne_subsystem.md) — variable-width walls (pure-JS + WASM post-9.2/9.4), flap-topology limit, libArachne integration, diagnostic patterns, what doesn't work
-- [extrude_pipeline.md](extrude_pipeline.md) — profile flat list + atomic regions, smallest-wins picker, csgIntersect overlap rule, disconnected-body splitting
-- [csg_edge_cut.md](csg_edge_cut.md) — chamfer/fillet shared driver; FIXED: weld-between-cuts (corner spike, KEEP); OPEN: three-bvh-csg quad-fan + parseEdgeIds group-drop ("2nd edge doesn't chamfer"; naive "return all edges" fix regressed — reverted); ruled-out approaches + test harness
-- [sketch_interaction_pipeline.md](sketch_interaction_pipeline.md) — chain-of-responsibility commit dispatch, fingerprint-LRU preview cache, SketchCommitCtx shape
-- [duet_service_architecture.md](duet_service_architecture.md) — DuetService façade + per-concern sibling modules, where to add new API calls
+- [slicer_engine.md](slicer_engine.md) - slicer pipeline contracts, two-emission-site rule, calcExtrusion-as-method, layer-height contract, scarf seam duality
+- [arachne_subsystem.md](arachne_subsystem.md) - variable-width walls (pure-JS + WASM post-9.2/9.4), flap-topology limit, libArachne integration, diagnostic patterns, what doesn't work
+- [extrude_pipeline.md](extrude_pipeline.md) - profile flat list + atomic regions, smallest-wins picker, csgIntersect overlap rule, disconnected-body splitting
+- [csg_edge_cut.md](csg_edge_cut.md) - archive of removed mesh-CSG fillet/chamfer pipeline; OCC-only edge-modification notes and deleted file list
+- [occ_parallel_handoff.md](occ_parallel_handoff.md) - OCC migration complete status; boolean commit path summary; remaining cleanup gates
+- [sketch_interaction_pipeline.md](sketch_interaction_pipeline.md) - chain-of-responsibility commit dispatch, fingerprint-LRU preview cache, SketchCommitCtx shape
+- [duet_service_architecture.md](duet_service_architecture.md) - DuetService facade + per-concern sibling modules, where to add new API calls
 
 ## Bug catalogs (read before non-trivial UI/engine changes)
 
-- [r3f_critical_patterns.md](r3f_critical_patterns.md) — recurring R3F bugs: per-frame allocs, plane-aware math, disposal, stale closures, JSX bufferAttribute leaks, material mutation rules
-- [gotchas.md](gotchas.md) — Vite/rolldown `import type`, drei Grid on non-horizontal planes, R3F 9.6.0 minimum, hook-rules crash, getPlaneAxes SoT
-- [wasm_patterns.md](wasm_patterns.md) — emsdk loading gotchas (HEAP32, node wasmBinary, vite-ignore), 8-byte align, single-instance ABI, warm-up pattern
+- [r3f_critical_patterns.md](r3f_critical_patterns.md) - recurring R3F bugs: per-frame allocs, plane-aware math, disposal, stale closures, JSX bufferAttribute leaks, material mutation rules
+- [gotchas.md](gotchas.md) - Vite/rolldown `import type`, drei Grid on non-horizontal planes, R3F 9.6.0 minimum, hook-rules crash, getPlaneAxes SoT
+- [wasm_patterns.md](wasm_patterns.md) - emsdk loading gotchas (HEAP32, node wasmBinary, vite-ignore), 8-byte align, single-instance ABI, warm-up pattern; **OCCT VIEW-delete rules** (FindKey_1/Face_1/faceMaker.Face()/Wire() are VIEWs — never `.delete()` or double-push to ownedResources)
 
 ## Slicer parity
 
-- [slicer_gaps.md](slicer_gaps.md) — settings whose UI exists but engine ignores or stubs (canonical list in TaskLists.txt)
-- [cura_categories.md](cura_categories.md) — Cura 5.12 17-category parity scoreboard with setting counts
+- [slicer_gaps.md](slicer_gaps.md) - settings whose UI exists but engine ignores or stubs (canonical list in TaskLists.txt)
+- [cura_categories.md](cura_categories.md) - Cura 5.12 17-category parity scoreboard with setting counts
 
 ## Feedback rules (apply by default)
 
-- [feedback_code_quality.md](feedback_code_quality.md) — split by responsibility, not line count; shim+subdir pattern; shared-abstraction registry
-- [feedback_agents.md](feedback_agents.md) — ONE agent at a time; current hot files; TSC-OK gate
-- [feedback_dialog_style.md](feedback_dialog_style.md) — Extrude panel canonical; tool-panel + tp-* classes from common/ToolPanel.css
+- [feedback_code_quality.md](feedback_code_quality.md) - split by responsibility, not line count; shim+subdir pattern; shared-abstraction registry
+- [feedback_agents.md](feedback_agents.md) - ONE agent at a time; current hot files; TSC-OK gate
+- [feedback_dialog_style.md](feedback_dialog_style.md) - Extrude panel canonical; tool-panel + tp-* classes from common/ToolPanel.css
 
 ## References
 

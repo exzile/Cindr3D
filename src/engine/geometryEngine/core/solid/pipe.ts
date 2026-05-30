@@ -1,120 +1,169 @@
 import * as THREE from 'three';
-import { csgSubtractWithTopology } from './csg';
+import { getOcc } from '../../../occ/loader';
+import { createOccPlaneFrame } from '../../../occ/plane';
+import { occSweepFromPathWireWithInstance } from '../../../occ/ops/sweep';
+import { performOccBooleanWithInstance } from '../../../occ/ops/booleanCore';
+import { tessellateWithInstance, tessellationToGeometry } from '../../../occ/tessellate';
+import type { SketchProfile } from '../../../occ/ops/sketchToWire';
 
 /**
- * Builds a solid pipe by sweeping a circular profile of `radius` along a path
- * polyline (a `CatmullRomCurve3` through the supplied points). The tube is
- * capped at both ends so the result is a closed solid (CSG-ready). When fewer
- * than two distinct points are supplied the caller is expected to pass a
- * straight fallback segment.
- *
- * The returned geometry is a plain `THREE.BufferGeometry` in world space — the
- * commit action wraps it in a mesh and stores it on the feature, which
- * `ExtrudedBodies` renders via its stored-mesh path.
+ * Build an open (non-closing) TopoDS_Wire polyline from 3-D world-space points.
+ * Mirrors the logic in pointLoopToWire (sketchToWire.ts) but omits the
+ * wrap-around closing edge so the wire represents an open path.
  */
-function buildSolidTube(points: THREE.Vector3[], radius: number): THREE.BufferGeometry {
-  // Dedupe coincident path points (mirrors sweepSketchInternal) so the
-  // CatmullRom curve doesn't blow up on repeated vertices.
-  const deduped: THREE.Vector3[] = [points[0].clone()];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildOpenPolylineWire(oc: any, points: THREE.Vector3[]): any | null {
+  if (points.length < 2) return null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const wireMaker: any = new oc.BRepBuilderAPI_MakeWire_1();
+  let edgeCount = 0;
+
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i];
+    const b = points[i + 1];
+    if (a.distanceToSquared(b) < 1e-12) continue;
+
+    const pa = new oc.gp_Pnt_3(a.x, a.y, a.z);
+    const pb = new oc.gp_Pnt_3(b.x, b.y, b.z);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const edgeMaker = new (oc as any).BRepBuilderAPI_MakeEdge_3(pa, pb);
+    pa.delete();
+    pb.delete();
+
+    if (!edgeMaker.IsDone()) { edgeMaker.delete(); continue; }
+    wireMaker.Add_1(edgeMaker.Edge());
+    edgeMaker.delete();
+    edgeCount += 1;
+  }
+
+  if (edgeCount < 1 || !wireMaker.IsDone()) {
+    wireMaker.delete();
+    return null;
+  }
+
+  const wire = wireMaker.Wire();
+  wireMaker.delete();
+  return wire;
+}
+
+/** Approximate a circle of `radius` as an N-sided polygon (2-D UV coords, CCW). */
+function circleProfile(radius: number, segments: number): SketchProfile {
+  const outer: THREE.Vector2[] = [];
+  for (let i = 0; i < segments; i++) {
+    const theta = (i / segments) * Math.PI * 2;
+    outer.push(new THREE.Vector2(Math.cos(theta) * radius, Math.sin(theta) * radius));
+  }
+  return { outer, holes: [] };
+}
+
+/** Remove consecutive path points closer than 1 µm. */
+function dedupePath(points: THREE.Vector3[]): THREE.Vector3[] {
+  const out: THREE.Vector3[] = [points[0].clone()];
   for (let i = 1; i < points.length; i++) {
-    if (points[i].distanceTo(deduped[deduped.length - 1]) > 1e-3) deduped.push(points[i].clone());
+    if (points[i].distanceTo(out[out.length - 1]) > 1e-3) out.push(points[i].clone());
   }
-  if (deduped.length < 2) {
-    // Degenerate path — extend straight up so we still produce a real solid.
-    deduped.push(deduped[0].clone().add(new THREE.Vector3(0, 10, 0)));
-  }
+  return out;
+}
 
-  const curve = new THREE.CatmullRomCurve3(deduped, false, 'centripetal');
-  const tubularSegments = Math.max(48, deduped.length * 12);
-  const radialSegments = 32;
-  const tube = new THREE.TubeGeometry(curve, tubularSegments, radius, radialSegments, false);
-
-  // TubeGeometry is an open shell; weld the wall, then add triangle-fan caps
-  // at the first and last rings so the body is a watertight solid.
-  const wall = tube.toNonIndexed();
-  tube.dispose();
-  const pos = wall.getAttribute('position') as THREE.BufferAttribute;
-  const positions: number[] = Array.from(pos.array as Float32Array);
-
-  const startCenter = curve.getPointAt(0);
-  const endCenter = curve.getPointAt(1);
-  const startRing: THREE.Vector3[] = [];
-  const endRing: THREE.Vector3[] = [];
-  // Sample the cap ring positions from the curve's end frames so the caps
-  // line up exactly with TubeGeometry's swept wall (same parametrisation).
-  const frames = curve.computeFrenetFrames(tubularSegments, false);
-  for (let j = 0; j <= radialSegments; j++) {
-    const v = (j / radialSegments) * Math.PI * 2;
-    const sin = Math.sin(v);
-    const cos = -Math.cos(v);
-    const n0 = frames.normals[0];
-    const b0 = frames.binormals[0];
-    startRing.push(new THREE.Vector3(
-      startCenter.x + radius * (cos * n0.x + sin * b0.x),
-      startCenter.y + radius * (cos * n0.y + sin * b0.y),
-      startCenter.z + radius * (cos * n0.z + sin * b0.z),
-    ));
-    const nE = frames.normals[frames.normals.length - 1];
-    const bE = frames.binormals[frames.binormals.length - 1];
-    endRing.push(new THREE.Vector3(
-      endCenter.x + radius * (cos * nE.x + sin * bE.x),
-      endCenter.y + radius * (cos * nE.y + sin * bE.y),
-      endCenter.z + radius * (cos * nE.z + sin * bE.z),
-    ));
-  }
-  // Start cap (fan toward start centre, wound inward).
-  for (let j = 0; j < radialSegments; j++) {
-    positions.push(startCenter.x, startCenter.y, startCenter.z);
-    positions.push(startRing[j + 1].x, startRing[j + 1].y, startRing[j + 1].z);
-    positions.push(startRing[j].x, startRing[j].y, startRing[j].z);
-  }
-  // End cap (opposite winding).
-  for (let j = 0; j < radialSegments; j++) {
-    positions.push(endCenter.x, endCenter.y, endCenter.z);
-    positions.push(endRing[j].x, endRing[j].y, endRing[j].z);
-    positions.push(endRing[j + 1].x, endRing[j + 1].y, endRing[j + 1].z);
-  }
-  wall.dispose();
-
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geom.computeVertexNormals();
-  return geom;
+/** Tessellate a BRepBody to BufferGeometry and dispose it. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function tessToGeo(oc: any, body: any): THREE.BufferGeometry {
+  const tess = tessellateWithInstance(oc, body);
+  const geo = tessellationToGeometry(tess);
+  body.dispose();
+  geo.computeVertexNormals();
+  return geo;
 }
 
 /**
- * Pipe solid: sweeps an outer circular profile along `points`. When `hollow`
- * is set an inner tube of radius `outerRadius - wallThickness` is subtracted
- * (CSG) so the result is a true hollow pipe with a bore. Falls back to a
- * straight vertical pipe when the path has too few points.
+ * Builds a solid (or hollow) pipe by sweeping a circular cross-section along a
+ * CatmullRom-smoothed polyline path via BRepOffsetAPI_MakePipe.
+ *
+ * Path: the world-space `points` array is deduplicated, then a CatmullRomCurve3
+ * is sampled at the same resolution the old TubeGeometry used
+ * (max(48, nPts×12) segments) so curved paths remain smooth.
+ *
+ * Hollow bore: a slightly-extended inner tube (0.5 mm past each end face) is
+ * OCC-subtracted from the outer solid so both caps open cleanly — same geometry
+ * as the old csgSubtractWithTopology approach without any three-bvh-csg dependency.
+ *
+ * The returned BufferGeometry is in world space; the commit action wraps it in a
+ * mesh and stores it on the feature so ExtrudedBodies renders it via stored-mesh path.
  */
-export function pipeGeometry(
+export async function pipeGeometry(
   points: THREE.Vector3[],
   outerDiameter: number,
   hollow: boolean,
   wallThickness: number,
-): THREE.BufferGeometry {
+): Promise<THREE.BufferGeometry> {
+  const { oc } = await getOcc();
+
   const outerRadius = Math.max(0.05, outerDiameter / 2);
-  const path = points.length >= 2
+  const rawPath = points.length >= 2
     ? points
     : [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 50, 0)];
 
-  const outer = buildSolidTube(path, outerRadius);
-  if (!hollow) return outer;
+  const deduped = dedupePath(rawPath);
+  if (deduped.length < 2) {
+    deduped.push(deduped[0].clone().add(new THREE.Vector3(0, 10, 0)));
+  }
 
+  // Sample CatmullRom at the same resolution the old TubeGeometry used.
+  const curve = new THREE.CatmullRomCurve3(deduped, false, 'centripetal');
+  const tubularSegments = Math.max(48, deduped.length * 12);
+  const sampled = curve.getPoints(tubularSegments); // tubularSegments+1 points
+
+  const startTangent = sampled[1].clone().sub(sampled[0]).normalize();
+  const endTangent   = sampled[sampled.length - 1].clone()
+    .sub(sampled[sampled.length - 2]).normalize();
+
+  // ── Outer pipe ─────────────────────────────────────────────────────────────
+  const outerPathWire = buildOpenPolylineWire(oc, sampled);
+  if (!outerPathWire) throw new Error('[pipeGeometry] failed to build OCC path wire');
+
+  // Profile frame: origin at path start, normal = start tangent (sweep direction).
+  // createOccPlaneFrame auto-picks a perpendicular uDir when no uHint is given.
+  const outerFrame = createOccPlaneFrame(sampled[0], startTangent);
+  const outerProfile = circleProfile(outerRadius, 32);
+
+  const outerBody = occSweepFromPathWireWithInstance(oc, outerProfile, outerFrame, outerPathWire);
+  outerPathWire.delete();
+
+  if (!hollow) {
+    return tessToGeo(oc, outerBody);
+  }
+
+  // ── Hollow bore ────────────────────────────────────────────────────────────
   const innerRadius = outerRadius - Math.max(0.01, wallThickness);
-  if (innerRadius <= 1e-3) return outer; // wall too thick to bore — keep solid
+  if (innerRadius <= 1e-3) {
+    // Wall too thick to bore — return solid outer.
+    return tessToGeo(oc, outerBody);
+  }
 
-  // Slightly overshoot the bore beyond the ends so CSG cleanly opens both
-  // faces instead of leaving razor-thin coplanar slivers.
-  const dir = path[1].clone().sub(path[0]).normalize();
-  const extended = path.map((p) => p.clone());
-  extended[0].addScaledVector(dir, -0.5);
-  extended[extended.length - 1].addScaledVector(dir, 0.5);
-  const inner = buildSolidTube(extended, innerRadius);
+  // Extend the inner bore 0.5 mm past each end face so the OCC subtract opens
+  // both caps cleanly (avoids coplanar-face artifacts).
+  const innerSampled = sampled.map((p) => p.clone());
+  innerSampled[0].addScaledVector(startTangent, -0.5);
+  innerSampled[innerSampled.length - 1].addScaledVector(endTangent, 0.5);
 
-  const { geometry: bored } = csgSubtractWithTopology(outer, inner);
-  outer.dispose();
-  inner.dispose();
-  return bored;
+  const innerPathWire = buildOpenPolylineWire(oc, innerSampled);
+  if (!innerPathWire) {
+    // Degenerate inner path — return solid outer as fallback.
+    return tessToGeo(oc, outerBody);
+  }
+
+  const innerStartTangent = innerSampled[1].clone().sub(innerSampled[0]).normalize();
+  const innerFrame = createOccPlaneFrame(innerSampled[0], innerStartTangent);
+  const innerProfile = circleProfile(innerRadius, 32);
+
+  const innerBody = occSweepFromPathWireWithInstance(oc, innerProfile, innerFrame, innerPathWire);
+  innerPathWire.delete();
+
+  const boredBody = performOccBooleanWithInstance(oc, 'subtract', outerBody, innerBody);
+  innerBody.dispose();
+  outerBody.dispose();
+
+  if (!boredBody) throw new Error('[pipeGeometry] OCC bore subtract failed');
+
+  return tessToGeo(oc, boredBody);
 }

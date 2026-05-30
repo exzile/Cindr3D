@@ -86,7 +86,7 @@ export function HoleDialog({ onClose }: { onClose: () => void }) {
 
   const addFeature = useCADStore((s) => s.addFeature);
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
-  const setStatusMessage = useCADStore((s) => s.setStatusMessage);
+  const commitHole = useCADStore((s) => s.commitHole);
 
   const through = termination === 'through-all' || termination === 'to-object' || termination === 'to-face';
   const showCB = holeType === 'counterbore';
@@ -118,7 +118,7 @@ export function HoleDialog({ onClose }: { onClose: () => void }) {
     };
     if (editing) {
       updateFeatureParams(editing.id, params);
-      setStatusMessage(`Updated ${holeType} hole: ${draftDiameter}mm ${tapType}`);
+      commitHole(editing.id, params);
     } else {
       const feature: Feature = {
         id: crypto.randomUUID(),
@@ -130,7 +130,7 @@ export function HoleDialog({ onClose }: { onClose: () => void }) {
         timestamp: Date.now(),
       };
       addFeature(feature);
-      setStatusMessage(`Created ${holeType} hole: ${draftDiameter}mm ${tapType}`);
+      commitHole(feature.id, params);
     }
     onClose();
   };

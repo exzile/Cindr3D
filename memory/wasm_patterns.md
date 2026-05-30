@@ -48,6 +48,74 @@ Concrete entry points wired (2026-04-26):
 
 **Don't drop the fallback dependency yet.** Even with warm-ups, there's a brief window between worker boot and first slice where `*Sync` returns null. Keep `polygon-clipping` in `package.json` until production telemetry confirms the WASM path always wins, OR refactor to a ready-handshake (worker posts `{type: 'ready'}` after `await loadClipper2Module()`, main thread blocks slice request on it).
 
+## OCCT-specific: VIEW vs owned allocation — never delete a VIEW
+
+Emscripten's `wrapPointer(ptr, Type)` creates a JS *view* of an existing C++ object at that address. Calling `.delete()` on it runs `~Type()` AND `free(ptr)`. If `ptr` is *inside* another allocation (e.g., a member variable or a map's contiguous slot), `free()` on that interior address corrupts the heap allocator — subsequent `malloc` calls may return `ptr=0`, and every Emscripten method on the resulting zero-ptr object throws **"TopoDS_Shape instance already deleted"**.
+
+| OCCT call | Return semantics | Safe to `.delete()`? |
+|-----------|-----------------|----------------------|
+| `map.FindKey(i)` / `map.FindKey_1(i)` | VIEW of map's internal contiguous slot | ❌ No — `map.delete()` owns it |
+| `TopoDS::Face_1(s)` / `Edge_1` / `Vertex_1` | VIEW — C++ cast, same ptr | ❌ No |
+| `faceMaker.Face()` | VIEW of faceMaker's internal `TopoDS_Face` member | ❌ No — `faceMaker.delete()` owns it |
+| `polygonMaker.Wire()` | VIEW of polygonMaker's internal wire | ❌ No |
+| `explorer.Current()` | New heap-allocated copy | ✅ Yes |
+| `handle.get()` (OCCT `Handle<T>`) | VIEW of the refcounted C++ object | ❌ No — `handle.delete()` owns it via refcount |
+| `occWrap(obj, type)` / `new OccHandle(...)` | Owned handle | ✅ Yes — `dispose()` calls `obj.delete()` |
+
+**ownedResources double-destroy — the pattern to avoid:**
+```ts
+// BAD: face = faceMaker.Face() VIEW; faceMaker already in profileResources
+ownedResources.push(startFace, ...profileResources); // double-destroy at disposal
+
+// GOOD: faceMaker owns face's memory; one delete is enough
+ownedResources.push(...profileResources);
+
+// BAD: outerWire = polygonMaker.Wire() VIEW; polygonMaker already in profileResources
+profileResources.push(wires.outerWire, ...wires.holeWires);
+
+// GOOD: takeOccOwnedResources(face) already transferred polygonMaker; don't re-add wires
+const profileResources = face ? takeOccOwnedResources(face) : [];
+```
+
+**FindKey method name varies by opencascade.js build:** the `TopTools_IndexedMapOfShape` instance exposes `FindKey` (no suffix) in the npm modular build but `FindKey_1` in older monolithic builds. Always check both:
+```ts
+const findKey = typeof map.FindKey === 'function' ? map.FindKey.bind(map) : map.FindKey_1?.bind(map);
+if (!findKey) { map.delete(); /* fall back to explorer */ }
+```
+If neither exists, the guard should fall through to the `TopExp_Explorer` path rather than crashing.
+
+**explorer.Current() + TopoDS.Face_1 double-delete:** `explorer.Current()` returns an owned copy (ptr P). `TopoDS.Face_1(shape)` returns a VIEW with the same ptr. Wrapping the VIEW in `occWrap` (which calls `.delete()` on dispose) AND calling `shape.delete()` in the explorer `finally` → two `.delete()` calls on ptr P → WASM heap corruption. Fix: pass `isOwnedCopy` flag to the callback; use a no-op-dispose `OccHandle` for map VIEWs and a real `occWrap` for explorer copies; remove `shape.delete()` from the explorer `finally`.
+
+**OCCT face holes: REVERSED topological orientation required (2026-05-26)**
+
+`BRepBuilderAPI_MakeFace::Add(wire)` adds `wire` with its current topological orientation. `BRepBuilderAPI_MakePolygon` always produces `FORWARD` wires. OCCT classifies wires in a face as:
+- `FORWARD` → outer boundary
+- `REVERSED` → inner boundary (hole)
+
+So `faceMaker.Add(holeWire)` with a raw FORWARD wire makes it ANOTHER outer boundary — NOT a hole. Fix: call `holeWire.Reversed()` to get a heap-allocated REVERSED `TopoDS_Shape`, then cast it to `TopoDS_Wire` via `oc.TopoDS.Wire_1()` (VIEW — same ptr) before passing to `Add()`, then delete the owned shape:
+```ts
+const reversedShape = (holeWire as any).Reversed();    // owned TopoDS_Shape, REVERSED
+try {
+  const reversedWire = oc.TopoDS.Wire_1(reversedShape); // VIEW — same ptr, do NOT delete
+  faceMaker.Add(reversedWire);
+} finally {
+  reversedShape.delete?.();
+}
+```
+**Why the cast:** `TopoDS_Shape.Reversed()` always returns the base `TopoDS_Shape` type. `faceMaker.Add(W: TopoDS_Wire)` does an Emscripten `instanceof TopoDS_Wire` check and throws `BindingError: Cannot pass "[object Object]" as a TopoDS_Wire` if given a plain `TopoDS_Shape`. `TopoDS.Wire_1()` returns a VIEW-cast that passes the check.
+
+For correct inner-wall normals in the prism, hole wires should be CCW geometrically (same direction as outer), NOT reversed in UV. The `REVERSED` topological orientation flips effective traversal to CW, which is what `BRepPrimAPI_MakePrism` needs for proper inward-facing hole walls.
+
+**Known places already fixed (2026-05-26):**
+- `brepBody.ts` `collectTopologyHandles`: fixed `FindKey_1` → `FindKey`/`FindKey_1` dual check; fixed explorer double-delete; added `isOwnedCopy` flag; map VIEWs use no-op dispose OccHandle
+- `extrude.ts` `occExtrudeShapeWithInstance`: removed `profileResources.push(wires.outerWire, ...wires.holeWires)`
+- `extrude.ts` `occExtrudeFaceShapeWithInstance`: removed `startFace` from both `ownedResources.push(...)` calls; added try/catch around `resultShape.delete()` in both `dispose()` functions
+- `tessellate.ts` `appendFaceTriangles`: removed `poly.delete()` — `poly = triangulation.get()` is a VIEW of an OCCT Handle-managed `Poly_Triangulation`; deleting it bypasses refcount → WASM heap corruption ("memory access out of bounds")
+- `tessellate.ts` face loop: removed `face.delete()` — `face = TopoDS.Face_1(current)` is a VIEW of `current` (same ptr); deleting both caused double-free → WASM heap corruption → OOM on subsequent operations
+- `edgeModActions.ts` `propagateTangentEdges`: removed `.delete()` on `occDeref()` VIEW result
+- `sketchToWire.ts` `wireToFace`: added `.Reversed()` for hole wires + changed `orientLoop2D` to keep CCW (not reverse) for holes — holes must be CCW geometry + REVERSED topology for correct OCCT hole behavior
+- `sketchEntityToWire.ts` `wiresToFace`: same `.Reversed()` fix for hole wires
+
 ## What's checked in
 
 `wasm/dist/*.js` and `*.wasm` are tracked in git (per ARACHNE-9.4B). Toolchain (`wasm/.toolchain/emsdk`, `boost_1_84_0`, `clipper2`, `CuraEngine`) is gitignored — Dockerfile is canonical, build.ps1 is the no-Docker dev fallback.

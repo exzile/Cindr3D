@@ -166,10 +166,10 @@ export class MoonrakerService {
   // ── Exclude Object ────────────────────────────────────────────────────────
 
   async getExcludeObjectStatus(): Promise<MoonrakerExcludeObjectStatus> {
-    const res = await this.get<{ exclude_object: MoonrakerExcludeObjectStatus }>(
+    const res = await this.get<{ status?: { exclude_object?: MoonrakerExcludeObjectStatus } }>(
       '/printer/objects/query?exclude_object',
     );
-    return res.exclude_object;
+    return res.status?.exclude_object ?? { current_object: null, excluded_objects: [], objects: [] };
   }
 
   async excludeObject(name: string): Promise<void> {
@@ -210,8 +210,8 @@ export class MoonrakerService {
   // ── Bed Mesh ──────────────────────────────────────────────────────────────
 
   async getBedMesh(): Promise<MoonrakerBedMesh> {
-    const res = await this.get<{ bed_mesh: MoonrakerBedMesh }>('/printer/objects/query?bed_mesh');
-    return res.bed_mesh;
+    const res = await this.get<{ status?: { bed_mesh?: MoonrakerBedMesh } }>('/printer/objects/query?bed_mesh');
+    return res.status?.bed_mesh ?? { active_profile: '', profiles: {} };
   }
 
   async calibrateBedMesh(): Promise<void> {
@@ -276,10 +276,10 @@ export class MoonrakerService {
 
   async getActiveSpoolId(): Promise<number | null> {
     try {
-      const res = await this.get<{ spoolman: { spool_id: number | null } }>(
+      const res = await this.get<{ status?: { spoolman?: { spool_id: number | null } } }>(
         '/printer/objects/query?spoolman',
       );
-      return res.spoolman?.spool_id ?? null;
+      return res.status?.spoolman?.spool_id ?? null;
     } catch {
       return null;
     }
@@ -307,10 +307,10 @@ export class MoonrakerService {
 
   async getTimelapseState(): Promise<MoonrakerTimelapseState | null> {
     try {
-      const res = await this.get<{ timelapse: MoonrakerTimelapseState }>(
+      const res = await this.get<{ status?: { timelapse?: MoonrakerTimelapseState } }>(
         '/printer/objects/query?timelapse',
       );
-      return res.timelapse ?? null;
+      return res.status?.timelapse ?? null;
     } catch {
       return null;
     }
@@ -355,19 +355,21 @@ export class MoonrakerService {
   async getPrintStatus(): Promise<MoonrakerPrintStatus | null> {
     try {
       const res = await this.get<{
-        print_stats?: {
-          state?: string;
-          filename?: string;
-          print_duration?: number;
-          filament_used?: number;
-          message?: string;
-          info?: { current_layer?: number; total_layer?: number };
+        status?: {
+          print_stats?: {
+            state?: string;
+            filename?: string;
+            print_duration?: number;
+            filament_used?: number;
+            message?: string;
+            info?: { current_layer?: number; total_layer?: number };
+          };
+          display_status?: { progress?: number; message?: string };
         };
-        display_status?: { progress?: number; message?: string };
       }>('/printer/objects/query?print_stats&display_status');
 
-      const ps = res.print_stats ?? {};
-      const ds = res.display_status ?? {};
+      const ps = res.status?.print_stats ?? {};
+      const ds = res.status?.display_status ?? {};
       if (!ps.state) return null;
 
       return {

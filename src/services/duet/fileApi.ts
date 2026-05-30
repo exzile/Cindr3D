@@ -1,6 +1,13 @@
 import type { DuetConfig, DuetFileInfo, DuetGCodeFileInfo } from '../../types/duet';
 import { uploadViaXhr } from './upload';
 
+// DSF REST paths use virtual filesystem paths like "0:/gcodes/file.gcode".
+// encodeURIComponent encodes '/' and ':' which DSF interprets as path separators.
+// Encode each segment individually and rejoin to preserve the path structure.
+function encodeDsfPath(path: string): string {
+  return path.split('/').map(encodeURIComponent).join('/');
+}
+
 type RequestFn = <T = unknown>(url: string, init?: RequestInit) => Promise<T>;
 
 type FileApiContext = {
@@ -14,7 +21,7 @@ export async function listFiles(
   directory: string,
 ): Promise<DuetFileInfo[]> {
   if (config.mode === 'sbc') {
-    const url = `${baseUrl}/machine/directory/${encodeURIComponent(directory)}`;
+    const url = `${baseUrl}/machine/directory/${encodeDsfPath(directory)}`;
     return request<DuetFileInfo[]>(url);
   }
 
@@ -60,7 +67,7 @@ export async function getFileInfo(
   filename: string,
 ): Promise<DuetGCodeFileInfo> {
   if (config.mode === 'sbc') {
-    const url = `${baseUrl}/machine/fileinfo/${encodeURIComponent(filename)}`;
+    const url = `${baseUrl}/machine/fileinfo/${encodeDsfPath(filename)}`;
     return request<DuetGCodeFileInfo>(url);
   }
 
@@ -79,7 +86,7 @@ export async function uploadFile(
   onProgress?: (percent: number) => void,
 ): Promise<void> {
   if (config.mode === 'sbc') {
-    const url = `${baseUrl}/machine/file/${encodeURIComponent(path)}`;
+    const url = `${baseUrl}/machine/file/${encodeDsfPath(path)}`;
     return uploadViaXhr('PUT', url, content, onProgress);
   }
 
@@ -91,7 +98,7 @@ export async function uploadFile(
     } catch {
       return; // non-JSON response — treat as success (some RRF builds omit body on success)
     }
-    if (res.err !== 0) {
+    if (res.err !== undefined && res.err !== 0) {
       throw new Error(`Upload error (err=${res.err})`);
     }
   });
@@ -102,7 +109,7 @@ export async function downloadFile(
   path: string,
 ): Promise<Blob> {
   const url = config.mode === 'sbc'
-    ? `${baseUrl}/machine/file/${encodeURIComponent(path)}`
+    ? `${baseUrl}/machine/file/${encodeDsfPath(path)}`
     : `${baseUrl}/rr_download?name=${encodeURIComponent(path)}`;
 
   const res = await fetch(url);
@@ -117,7 +124,7 @@ export async function deleteFile(
   path: string,
 ): Promise<void> {
   if (config.mode === 'sbc') {
-    const url = `${baseUrl}/machine/file/${encodeURIComponent(path)}`;
+    const url = `${baseUrl}/machine/file/${encodeDsfPath(path)}`;
     await request(url, { method: 'DELETE' });
     return;
   }
@@ -150,7 +157,7 @@ export async function createDirectory(
   path: string,
 ): Promise<void> {
   if (config.mode === 'sbc') {
-    const url = `${baseUrl}/machine/directory/${encodeURIComponent(path)}`;
+    const url = `${baseUrl}/machine/directory/${encodeDsfPath(path)}`;
     await request(url, { method: 'PUT' });
     return;
   }

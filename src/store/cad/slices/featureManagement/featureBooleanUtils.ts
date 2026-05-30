@@ -1,19 +1,28 @@
 import * as THREE from 'three';
 import type { Feature } from '../../../../types/cad';
-import { GeometryEngine } from '../../../../engine/GeometryEngine';
-import { csgAsync } from '../../../../workers/csgWorkerPool';
+import type { BRepBody } from '../../../../engine/occ/brepBody';
+import { getOccSync } from '../../../../engine/occ/loader';
+import { performOccBooleanWithInstance, type OccBooleanOperation } from '../../../../engine/occ/ops/booleanCore';
+import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
+import { disposeMeshDeferred } from '../../../../engine/occ/picking';
+import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
 
 export type CombineOperation = 'join' | 'cut' | 'intersect';
 
-export function runBoolean(targetMesh: THREE.Mesh, toolMesh: THREE.Mesh, operation: CombineOperation): THREE.BufferGeometry {
-  if (operation === 'join') return GeometryEngine.csgUnion(targetMesh.geometry, toolMesh.geometry);
-  if (operation === 'cut') return GeometryEngine.csgSubtract(targetMesh.geometry, toolMesh.geometry);
-  return GeometryEngine.csgIntersect(targetMesh.geometry, toolMesh.geometry);
+function brepBodyFromMesh(mesh: THREE.Mesh): BRepBody | null {
+  const bodyId = mesh.userData['brepBodyId'] as string | undefined;
+  return bodyId ? globalBRepBodyRegistry.get(bodyId) ?? null : null;
 }
 
-export async function runBooleanAsync(targetMesh: THREE.Mesh, toolMesh: THREE.Mesh, operation: CombineOperation): Promise<THREE.BufferGeometry | null> {
-  const opKey = operation === 'join' ? 'union' : operation === 'cut' ? 'subtract' : 'intersect';
-  return csgAsync(targetMesh.geometry as THREE.BufferGeometry, toolMesh.geometry as THREE.BufferGeometry, opKey);
+export function runBoolean(targetBody: BRepBody, toolBody: BRepBody, operation: CombineOperation): BRepBody {
+  const occ = getOccSync();
+  if (!occ) throw new Error(`runBoolean: OCC is not loaded (operation: ${operation})`);
+
+  const boolOp: OccBooleanOperation =
+    operation === 'join' ? 'union' : operation === 'cut' ? 'subtract' : 'intersect';
+  const resultBody = performOccBooleanWithInstance(occ.oc, boolOp, targetBody, toolBody);
+  if (!resultBody) throw new Error(`runBoolean: OCC boolean returned no body (operation: ${operation})`);
+  return resultBody;
 }
 
 export const MAX_RECOMPUTE_ITERATIONS = 32;
@@ -31,22 +40,52 @@ export function recomputeBooleanDependents(features: Feature[], changedFeatureId
       if (feature.type !== 'combine' || feature.params.recomputeOnParentChange !== true) return feature;
       const parentIds = Array.isArray(feature.params.booleanParentIds) ? feature.params.booleanParentIds.map(String) : [];
       if (!parentIds.some((id) => changed.has(id))) return feature;
+
       const target = byId.get(String(feature.params.targetId ?? parentIds[0] ?? ''));
-      const tool = byId.get(String(feature.params.toolId ?? parentIds[1] ?? ''));
+      const toolIds = Array.isArray(feature.params.toolIds)
+        ? feature.params.toolIds.map(String)
+        : [String(feature.params.toolId ?? parentIds[1] ?? '')].filter(Boolean);
+      const tools = toolIds.map((id) => byId.get(id)).filter((f): f is Feature => !!f);
       const operation = (feature.params.operation as CombineOperation) ?? 'join';
-      if (!target?.mesh || !tool?.mesh || !(target.mesh instanceof THREE.Mesh) || !(tool.mesh instanceof THREE.Mesh)) return feature;
+      const occ = getOccSync();
+
+      if (!occ || !target?.mesh || !(target.mesh instanceof THREE.Mesh)) return feature;
+      if (tools.length === 0 || tools.some((tool) => !(tool.mesh instanceof THREE.Mesh))) return feature;
+
+      const targetBody = brepBodyFromMesh(target.mesh);
+      const toolBodies = tools
+        .map((tool) => brepBodyFromMesh(tool.mesh as THREE.Mesh))
+        .filter((body): body is BRepBody => !!body);
+      if (!targetBody || toolBodies.length !== tools.length) return feature;
+
+      let currentBody: BRepBody = targetBody;
+      let ownsCurrentBody = false;
+
       try {
-        const mesh = new THREE.Mesh(runBoolean(target.mesh, tool.mesh, operation), target.mesh.material);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
+        for (const toolBody of toolBodies) {
+          const resultBody = runBoolean(currentBody, toolBody, operation);
+          if (ownsCurrentBody) currentBody.dispose();
+          currentBody = resultBody;
+          ownsCurrentBody = true;
+        }
+
+        let mesh: THREE.Mesh;
+        try {
+          mesh = createRegisteredOccMesh(occ.oc, currentBody, target.mesh.material, feature.id);
+          ownsCurrentBody = false;
+        } catch (error) {
+          ownsCurrentBody = false;
+          throw error;
+        }
+
         changed.add(feature.id);
         didUpdate = true;
         if (feature.mesh instanceof THREE.Mesh) {
-          const oldGeom = feature.mesh.geometry;
-          setTimeout(() => oldGeom.dispose(), 0);
+          disposeMeshDeferred(feature.mesh);
         }
         return { ...feature, mesh };
       } catch {
+        if (ownsCurrentBody) currentBody.dispose();
         return feature;
       }
     });

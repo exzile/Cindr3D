@@ -72,6 +72,7 @@ export function planeCutMesh(
     }
   }
 
+  geom.dispose();
   const newGeom = new THREE.BufferGeometry();
   newGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(keptVerts), 3));
   newGeom.computeVertexNormals();
@@ -149,6 +150,7 @@ export function makeClosedMesh(mesh: THREE.Mesh): THREE.Mesh {
     }
   }
 
+  geom.dispose();
   const combined = new Float32Array(existingVerts.length + capVerts.length);
   combined.set(existingVerts);
   combined.set(capVerts, existingVerts.length);
@@ -228,6 +230,7 @@ export function meshSectionSketch(mesh: THREE.Mesh, plane: THREE.Plane): THREE.V
     }
     if (crossings.length >= 2) segments.push([crossings[0], crossings[1]]);
   }
+  geom.dispose();
   return segments.map(([a, b]) => [a, b]);
 }
 
@@ -259,8 +262,11 @@ export function removeFaceAndHeal(
     keptVerts.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
   }
 
+  geom.dispose();
   const tempGeom = new THREE.BufferGeometry();
   tempGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(keptVerts), 3));
   const tempMesh = new THREE.Mesh(tempGeom, mesh.material);
-  return makeClosedMesh(tempMesh);
+  const closed = makeClosedMesh(tempMesh);
+  tempGeom.dispose();
+  return closed;
 }

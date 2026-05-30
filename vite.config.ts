@@ -2482,6 +2482,7 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['manifold-3d'],
   },
+  assetsInclude: ['**/*.wasm'],
   resolve: {
     alias: {
       module: fileURLToPath(new URL('./src/shims/nodeModule.ts', import.meta.url)),

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import type { Feature, Sketch, SketchDimension, SketchEntity } from '../types/cad';
+import type { ConstructionGeometry, Feature, Sketch, SketchDimension, SketchEntity } from '../types/cad';
 
 const mkSketch = (entities: SketchEntity[] = [], dimensions: SketchDimension[] = []): Sketch => ({
   id: 'active-case-sketch',
@@ -35,6 +35,7 @@ describe('history and document undo/redo', () => {
       selectedBodyId: null,
       components: { [rootComponentId]: { ...rootComponent, bodyIds: [], childIds: [], sketchIds: [] } },
       bodies: {},
+      constructions: {},
     });
     useCADStore.setState({
       features: [],
@@ -128,5 +129,122 @@ describe('history and document undo/redo', () => {
     expect(useCADStore.getState().features).toHaveLength(1);
     expect(Object.keys(useComponentStore.getState().bodies)).toEqual([bodyId]);
     expect(useComponentStore.getState().bodies[bodyId]?.featureIds).toEqual([feature.id]);
+  });
+
+  it('reloads component construction vectors as Vector3 instances', async () => {
+    const [{ useCADStore }, { useComponentStore }] = await Promise.all([
+      import('../store/cadStore'),
+      import('../store/componentStore'),
+    ]);
+    const rootComponentId = useComponentStore.getState().rootComponentId;
+    const construction: ConstructionGeometry = {
+      id: 'construction-plane-1',
+      name: 'Offset Plane',
+      type: 'plane',
+      componentId: rootComponentId,
+      visible: true,
+      planeNormal: new THREE.Vector3(0, 0, 1),
+      planeOrigin: new THREE.Vector3(10, 20, 30),
+      planeSize: 75,
+      definition: { method: 'offset-plane', referencePlane: 'XY', distance: 30 },
+    };
+    useComponentStore.setState({
+      constructions: { [construction.id]: construction },
+    });
+
+    const json = useCADStore.getState().getDesignJSON();
+    useComponentStore.setState({ constructions: {} });
+    useCADStore.getState().loadFromFile(json);
+
+    const restored = useComponentStore.getState().constructions[construction.id];
+    expect(restored?.planeNormal).toBeInstanceOf(THREE.Vector3);
+    expect(restored?.planeOrigin).toBeInstanceOf(THREE.Vector3);
+    expect(restored?.planeNormal?.toArray()).toEqual([0, 0, 1]);
+    expect(restored?.planeOrigin?.toArray()).toEqual([10, 20, 30]);
+    expect(restored?.definition).toEqual(construction.definition);
+  });
+
+  it('clears component animation tracks on cad New Document', async () => {
+    const [{ useCADStore }, { useComponentStore }] = await Promise.all([
+      import('../store/cadStore'),
+      import('../store/componentStore'),
+    ]);
+    useComponentStore.setState({
+      animationTracks: [{ jointId: 'j-anim', startValue: 0, endValue: 90, easing: 'linear' }],
+    });
+
+    useCADStore.getState().newDocument();
+
+    expect(useComponentStore.getState().animationTracks).toEqual([]);
+  });
+
+  it('component New Document resets the full document field set', async () => {
+    const { useComponentStore } = await import('../store/componentStore');
+    useComponentStore.setState({
+      animationTracks: [{ jointId: 'j-anim', startValue: 0, endValue: 90, easing: 'linear' }],
+      rigidGroups: [{ id: 'rg1' } as never],
+      motionLinks: [{ id: 'ml1' } as never],
+      occurrences: { o1: {} as never },
+      definitions: { d1: {} as never },
+      explodedOffsets: { e1: {} as never },
+    });
+
+    useComponentStore.getState().newDocument();
+
+    const state = useComponentStore.getState();
+    expect(state.animationTracks).toEqual([]);
+    expect(state.rigidGroups).toEqual([]);
+    expect(state.motionLinks).toEqual([]);
+    expect(state.occurrences).toEqual({});
+    expect(state.definitions).toEqual({});
+    expect(state.explodedOffsets).toEqual({});
+  });
+
+  it('restores design and component metadata through undo', async () => {
+    const [{ useCADStore }, { useComponentStore }] = await Promise.all([
+      import('../store/cadStore'),
+      import('../store/componentStore'),
+    ]);
+    const rootComponentId = useComponentStore.getState().rootComponentId;
+    const construction: ConstructionGeometry = {
+      id: 'undo-construction-plane',
+      name: 'Undo Plane',
+      type: 'plane',
+      componentId: rootComponentId,
+      visible: true,
+      planeNormal: new THREE.Vector3(0, 1, 0),
+      planeOrigin: new THREE.Vector3(4, 5, 6),
+      definition: { method: 'offset-plane', referencePlane: 'XZ', distance: 5 },
+    };
+
+    useCADStore.setState({
+      constructionPlanes: [{ id: 'plane-a', name: 'Plane A', origin: [0, 0, 0], normal: [0, 0, 1], size: 25 }],
+      constructionAxes: [{ id: 'axis-a', name: 'Axis A', origin: [0, 0, 0], direction: [1, 0, 0], length: 25 }],
+      constructionPoints: [{ id: 'point-a', name: 'Point A', position: [1, 2, 3] }],
+      contactSets: [{ id: 'contact-a', name: 'Contact A', component1Id: 'c1', component2Id: 'c2', enabled: true }],
+      selectionSets: [{ id: 'selection-a', name: 'Selection A', bodyIds: ['body-a'] }],
+    });
+    useComponentStore.setState({ constructions: { [construction.id]: construction } });
+    useCADStore.getState().pushUndo();
+
+    useCADStore.setState({
+      constructionPlanes: [],
+      constructionAxes: [],
+      constructionPoints: [],
+      contactSets: [],
+      selectionSets: [],
+    });
+    useComponentStore.setState({ constructions: {} });
+
+    useCADStore.getState().undo();
+
+    expect(useCADStore.getState().constructionPlanes).toHaveLength(1);
+    expect(useCADStore.getState().constructionAxes).toHaveLength(1);
+    expect(useCADStore.getState().constructionPoints).toHaveLength(1);
+    expect(useCADStore.getState().contactSets).toHaveLength(1);
+    expect(useCADStore.getState().selectionSets).toHaveLength(1);
+    const restoredConstruction = useComponentStore.getState().constructions[construction.id];
+    expect(restoredConstruction?.planeNormal).toBeInstanceOf(THREE.Vector3);
+    expect(restoredConstruction?.planeOrigin?.toArray()).toEqual([4, 5, 6]);
   });
 });

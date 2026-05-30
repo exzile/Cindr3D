@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronRight, Copy, List, RefreshCw, X } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { cindr3dMcpClient, type Cindr3dMcpAuditEntry, type Cindr3dMcpStatus } from '../../../services/mcp/client';
 import { errorMessage } from '../../../utils/errorHandling';
 
@@ -8,6 +8,8 @@ import { errorMessage } from '../../../utils/errorHandling';
  * external Claude Code clients, and a recent-tool-calls audit log.
  */
 export function McpTab() {
+  const copiedTimerRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
   const [status, setStatus] = useState<Cindr3dMcpStatus | null>(null);
   const [copied, setCopied] = useState(false);
   const [auditOpen, setAuditOpen] = useState(false);
@@ -15,19 +17,40 @@ export function McpTab() {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    cindr3dMcpClient.heartbeat().then(setStatus).catch((e) => setErr(errorMessage(e, 'Unknown error')));
+    mountedRef.current = true;
+    cindr3dMcpClient.heartbeat()
+      .then((nextStatus) => { if (mountedRef.current) setStatus(nextStatus); })
+      .catch((e) => { if (mountedRef.current) setErr(errorMessage(e, 'Unknown error')); });
+    return () => {
+      mountedRef.current = false;
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current);
+        copiedTimerRef.current = null;
+      }
+    };
   }, []);
 
   const copy = useCallback(async () => {
     if (!status) return;
     await navigator.clipboard.writeText(status.pairingLine);
+    if (!mountedRef.current) return;
     setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+    if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = window.setTimeout(() => {
+      copiedTimerRef.current = null;
+      setCopied(false);
+    }, 1500);
   }, [status]);
 
   const rotate = useCallback(async () => {
-    try { setStatus(await cindr3dMcpClient.rotateToken()); setErr(null); }
-    catch (e) { setErr(errorMessage(e, 'Unknown error')); }
+    try {
+      const nextStatus = await cindr3dMcpClient.rotateToken();
+      if (!mountedRef.current) return;
+      setStatus(nextStatus);
+      setErr(null);
+    } catch (e) {
+      if (mountedRef.current) setErr(errorMessage(e, 'Unknown error'));
+    }
   }, []);
 
   const toggleAudit = useCallback(async () => {
@@ -36,13 +59,19 @@ export function McpTab() {
     if (!next) return;
     try {
       const { entries } = await cindr3dMcpClient.audit();
+      if (!mountedRef.current) return;
       setAuditEntries(entries);
       setErr(null);
-    } catch (e) { setErr(errorMessage(e, 'Unknown error')); }
+    } catch (e) {
+      if (mountedRef.current) setErr(errorMessage(e, 'Unknown error'));
+    }
   }, [auditOpen]);
 
   const clearAudit = useCallback(async () => {
-    try { await cindr3dMcpClient.clearAudit(); setAuditEntries([]); } catch { /* ignore */ }
+    try {
+      await cindr3dMcpClient.clearAudit();
+      if (mountedRef.current) setAuditEntries([]);
+    } catch { /* ignore */ }
   }, []);
 
   return (

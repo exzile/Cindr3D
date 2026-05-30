@@ -1,7 +1,8 @@
 import * as THREE from 'three';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { csgUnion, csgSubtract } from './csg';
-import { extractEdgeTopology } from './edgeTopology';
+import { getOcc } from '../../../occ/loader';
+import { occBoxWithInstance } from '../../../occ/ops/box';
+import { performOccBooleanWithInstance } from '../../../occ/ops/booleanCore';
+import { tessellateWithInstance, tessellationToGeometry } from '../../../occ/tessellate';
 
 /**
  * Builds a representative **Lip and Groove** mating-edge pair from the
@@ -22,24 +23,25 @@ import { extractEdgeTopology } from './edgeTopology';
  *     with its mating face on the X–Y plane (Z = 0). The two walls are split
  *     across X with a small gap so lip and groove read as separate halves.
  *   - The lip is a `lipWidth` (Z) × `lipHeight` (Y) rectangular bead extruded
- *     along the full run, unioned onto the left wall's top edge.
+ *     along the full run, fused onto the left wall's top edge.
  *   - The groove is the mating channel — `grooveWidth` × `grooveDepth` plus the
  *     `clearance` added all round so the printed lip drops in with a fit gap —
- *     CSG-subtracted from the right wall's top edge.
+ *     OCC-subtracted from the right wall's top edge.
  *
- * Returns a plain `THREE.BufferGeometry` in local space; the commit action
- * wraps it in a mesh and stores it on the feature so `ExtrudedBodies` renders
- * it via the stored-mesh path. Every intermediate primitive is disposed (no
- * shared singletons are touched).
+ * OCC implementation: all primitives are BRepPrimAPI_MakeBox; fuse/subtract via
+ * BRepAlgoAPI_Fuse / BRepAlgoAPI_Cut. Produces an exact BRep solid tessellated
+ * to a THREE.BufferGeometry — no CSG / Manifold dependency.
  */
-export function lipGrooveGeometry(
+export async function lipGrooveGeometry(
   lipWidth: number,
   lipHeight: number,
   grooveWidth: number,
   grooveDepth: number,
   clearance: number,
   includeGroove: boolean,
-): THREE.BufferGeometry {
+): Promise<THREE.BufferGeometry> {
+  const { oc } = await getOcc();
+
   const lipW = Math.max(0.1, lipWidth);
   const lipH = Math.max(0.1, lipHeight);
   const clr = Math.max(0, clearance);
@@ -56,53 +58,61 @@ export function lipGrooveGeometry(
   const gap = 0.5; // visual split between the two halves along X
   const segLen = (runLength - gap) / 2;
 
-  const created: THREE.BufferGeometry[] = [];
+  // ── Left wall: MakeBox_2(segLen, wallHt, wallThk) ─────────────────────────
+  // Translate so its centre sits at (-runLength/2 + segLen/2, wallHt/2, 0).
+  // OCC origin = min-corner = centre - dim/2 = (-runLength/2, 0, -wallThk/2).
+  const leftWallTf = new THREE.Matrix4().makeTranslation(-runLength / 2, 0, -wallThk / 2);
+  const leftWallBody = occBoxWithInstance(oc, segLen, wallHt, wallThk, { transform: leftWallTf });
 
-  // ── Left wall + raised lip ───────────────────────────────────────────────
-  const leftWall = new THREE.BoxGeometry(segLen, wallHt, wallThk);
-  leftWall.translate(-runLength / 2 + segLen / 2, wallHt / 2, 0);
-  created.push(leftWall);
+  // ── Lip bead: MakeBox_2(segLen, lipH, lipW) ───────────────────────────────
+  // Centre at (-runLength/2 + segLen/2, wallHt + lipH/2, 0).
+  // OCC origin = (-runLength/2, wallHt, -lipW/2).
+  const lipTf = new THREE.Matrix4().makeTranslation(-runLength / 2, wallHt, -lipW / 2);
+  const lipBody = occBoxWithInstance(oc, segLen, lipH, lipW, { transform: lipTf });
 
-  // Lip bead sits on the wall's top face (Y = wallHt), centred on the mating
-  // face (Z = 0), running the full segment length.
-  const lip = new THREE.BoxGeometry(segLen, lipH, lipW);
-  lip.translate(-runLength / 2 + segLen / 2, wallHt + lipH / 2, 0);
-  created.push(lip);
+  // ── Fuse left wall + lip ─────────────────────────────────────────────────
+  const lipHalf = performOccBooleanWithInstance(oc, 'union', leftWallBody, lipBody);
+  leftWallBody.dispose();
+  lipBody.dispose();
+  if (!lipHalf) throw new Error('[lipGrooveGeometry] OCC fuse left wall + lip failed');
 
-  const lipHalf = csgUnion(leftWall, lip);
+  // ── Right wall: MakeBox_2(segLen, wallHt, wallThk) ───────────────────────
+  // Centre at (runLength/2 - segLen/2, wallHt/2, 0).
+  // OCC origin = (runLength/2 - segLen, 0, -wallThk/2).
+  const rightWallTf = new THREE.Matrix4().makeTranslation(runLength / 2 - segLen, 0, -wallThk / 2);
+  const rightWallBody = occBoxWithInstance(oc, segLen, wallHt, wallThk, { transform: rightWallTf });
 
-  // ── Right wall − groove channel ──────────────────────────────────────────
-  const rightWall = new THREE.BoxGeometry(segLen, wallHt, wallThk);
-  rightWall.translate(runLength / 2 - segLen / 2, wallHt / 2, 0);
-  created.push(rightWall);
+  // Start with the plain right wall; optionally subtract the groove channel.
+  let rightSide = rightWallBody;
 
-  let solid: THREE.BufferGeometry;
   if (includeGroove) {
-    // Channel cut down from the top face; overshoot in +Y so CSG opens the
-    // top face cleanly instead of leaving a coplanar sliver.
-    const cutter = new THREE.BoxGeometry(segLen + 1, grvD + 1, grvW);
-    cutter.translate(
-      runLength / 2 - segLen / 2,
-      wallHt - grvD / 2 + 1, // top of the cutter pokes above the wall by ~1mm
-      0,
+    // Cutter: MakeBox_2(segLen+1, grvD+1, grvW).
+    // THREE.js centre: (runLength/2 - segLen/2, wallHt - grvD/2 + 1, 0)
+    // OCC min-corner:  (runLength/2 - segLen - 0.5, wallHt - grvD + 0.5, -grvW/2)
+    // Top of cutter protrudes ~1.5 mm above wallHt so the groove face opens cleanly.
+    const cutterTf = new THREE.Matrix4().makeTranslation(
+      runLength / 2 - segLen - 0.5,
+      wallHt - grvD + 0.5,
+      -grvW / 2,
     );
-    created.push(cutter);
-    const grooveHalf = csgSubtract(rightWall, cutter);
-    solid = csgUnion(lipHalf, grooveHalf);
-    lipHalf.dispose();
-    grooveHalf.dispose();
-  } else {
-    solid = csgUnion(lipHalf, rightWall);
-    lipHalf.dispose();
+    const cutterBody = occBoxWithInstance(oc, segLen + 1, grvD + 1, grvW, { transform: cutterTf });
+    const grooved = performOccBooleanWithInstance(oc, 'subtract', rightWallBody, cutterBody);
+    cutterBody.dispose();
+    rightWallBody.dispose();
+    if (!grooved) throw new Error('[lipGrooveGeometry] OCC subtract groove failed');
+    rightSide = grooved;
   }
 
-  for (const g of created) g.dispose();
+  // ── Fuse lip half + right side ────────────────────────────────────────────
+  const solid = performOccBooleanWithInstance(oc, 'union', lipHalf, rightSide);
+  lipHalf.dispose();
+  rightSide.dispose();
+  if (!solid) throw new Error('[lipGrooveGeometry] OCC fuse halves failed');
 
-  solid.computeVertexNormals();
-  try {
-    const forTopo = mergeVertices(solid, 1e-6);
-    solid.userData.topology = extractEdgeTopology(forTopo);
-    forTopo.dispose();
-  } catch { /* non-fatal */ }
-  return solid;
+  const tess = tessellateWithInstance(oc, solid);
+  const geo = tessellationToGeometry(tess);
+  solid.dispose();
+
+  geo.computeVertexNormals();
+  return geo;
 }

@@ -12,7 +12,7 @@
  * dedicated Exclude Object tab when you want the version-aware UI with the
  * red-banner warning and disabled buttons for confirmed-too-old firmware.
  */
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAsyncAction } from '../../../hooks/useAsyncAction';
 import { Layers, RefreshCw, XCircle, WifiOff, ExternalLink } from 'lucide-react';
 import { usePrinterStore } from '../../../store/printerStore';
@@ -195,10 +195,10 @@ function KlipperCancelList() {
   const setActiveTab = usePrinterStore((s) => s.setActiveTab);
   const connected = usePrinterStore((s) => s.connected);
 
-  const svcRef = useRef<MoonrakerService | null>(null);
-  if (!svcRef.current && connected) {
-    svcRef.current = new MoonrakerService(config.hostname ?? '');
-  }
+  const service = useMemo(
+    () => (connected ? new MoonrakerService(config.hostname ?? '') : null),
+    [connected, config.hostname],
+  );
 
   const [objects, setObjects] = useState<KlipperObject[]>([]);
   const [loading, setLoading] = useState(false);
@@ -209,20 +209,20 @@ function KlipperCancelList() {
   const runRefresh = useAsyncAction(setLoading, setError, 'Failed');
 
   const refresh = useCallback(async () => {
-    if (!svcRef.current) return;
+    if (!service) return;
     await runRefresh(async () => {
-      const status = await svcRef.current!.getExcludeObjectStatus();
+      const status = await service.getExcludeObjectStatus();
       const excluded = new Set(status.excluded_objects ?? []);
       setObjects((status.objects ?? []).map((o) => ({ name: o.name, excluded: excluded.has(o.name) })));
     });
-  }, [runRefresh]);
+  }, [runRefresh, service]);
 
   useEffect(() => { if (connected) void refresh(); }, [connected, refresh]);
 
   const handleConfirm = async (name: string) => {
-    if (!svcRef.current) return;
+    if (!service) return;
     await run(async () => {
-      await svcRef.current!.excludeObject(name);
+      await service.excludeObject(name);
       setObjects((prev) => prev.map((o) => o.name === name ? { ...o, excluded: true } : o));
     });
     setConfirmName(null);

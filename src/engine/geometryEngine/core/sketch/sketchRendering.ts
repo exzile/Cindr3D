@@ -99,6 +99,7 @@ function createCircle(
   material: THREE.LineBasicMaterial,
   axes: { t1: THREE.Vector3; t2: THREE.Vector3 },
 ): THREE.Line {
+  if (entity.points.length < 1) return setSketchRenderOrder(new THREE.Line(new THREE.BufferGeometry(), material));
   const centerPoint = entity.points[0];
   const radius = entity.radius || 1;
   const segments = 64;
@@ -147,10 +148,12 @@ function createArc(
   material: THREE.LineBasicMaterial,
   axes: { t1: THREE.Vector3; t2: THREE.Vector3 },
 ): THREE.Line {
+  if (entity.points.length < 1) return setSketchRenderOrder(new THREE.Line(new THREE.BufferGeometry(), material));
   const centerPoint = entity.points[0];
   const radius = entity.radius || 1;
-  const startAngle = entity.startAngle || 0;
-  const endAngle = entity.endAngle || Math.PI;
+  const startAngle = entity.startAngle ?? 0;
+  let endAngle = entity.endAngle ?? Math.PI;
+  if (endAngle <= startAngle) endAngle += Math.PI * 2;
   const segments = 32;
   const center = new THREE.Vector3(centerPoint.x, centerPoint.y, centerPoint.z);
   const { t1, t2 } = axes;
@@ -213,7 +216,8 @@ function createEllipticalArc(
   const cosR = Math.cos(rot);
   const sinR = Math.sin(rot);
   const sa = entity.startAngle ?? 0;
-  const ea = entity.endAngle ?? Math.PI;
+  let ea = entity.endAngle ?? Math.PI;
+  if (ea <= sa) ea += Math.PI * 2;
   const segments = 64;
   const points: THREE.Vector3[] = [];
   const center3 = entity.points.length > 0

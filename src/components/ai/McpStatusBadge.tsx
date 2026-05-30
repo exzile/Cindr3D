@@ -1,6 +1,6 @@
 import { Copy, List, RefreshCw, X } from 'lucide-react';
 import { errorMessage } from '../../utils/errorHandling';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   cindr3dMcpClient,
   type Cindr3dMcpAuditEntry,
@@ -12,6 +12,8 @@ import './McpStatusBadge.css';
 const HEARTBEAT_MS = 5_000;
 
 export default function McpStatusBadge() {
+  const copiedTimerRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
   const [status, setStatus] = useState<Cindr3dMcpStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -19,6 +21,7 @@ export default function McpStatusBadge() {
   const [auditOpen, setAuditOpen] = useState(false);
 
   useEffect(() => {
+    mountedRef.current = true;
     let cancelled = false;
     const sync = async () => {
       try {
@@ -36,8 +39,13 @@ export default function McpStatusBadge() {
     window.addEventListener('beforeunload', stopCindr3dMcpOnUnload);
     window.addEventListener('pagehide', stopCindr3dMcpOnUnload);
     return () => {
+      mountedRef.current = false;
       cancelled = true;
       clearInterval(id);
+      if (copiedTimerRef.current !== null) {
+        window.clearTimeout(copiedTimerRef.current);
+        copiedTimerRef.current = null;
+      }
       window.removeEventListener('beforeunload', stopCindr3dMcpOnUnload);
       window.removeEventListener('pagehide', stopCindr3dMcpOnUnload);
     };
@@ -46,16 +54,23 @@ export default function McpStatusBadge() {
   const copyPairingLine = useCallback(async () => {
     if (!status) return;
     await navigator.clipboard.writeText(status.pairingLine);
+    if (!mountedRef.current) return;
     setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
+    if (copiedTimerRef.current !== null) window.clearTimeout(copiedTimerRef.current);
+    copiedTimerRef.current = window.setTimeout(() => {
+      copiedTimerRef.current = null;
+      setCopied(false);
+    }, 1500);
   }, [status]);
 
   const rotateToken = useCallback(async () => {
     try {
-      setStatus(await cindr3dMcpClient.rotateToken());
+      const nextStatus = await cindr3dMcpClient.rotateToken();
+      if (!mountedRef.current) return;
+      setStatus(nextStatus);
       setError(null);
     } catch (err) {
-      setError(errorMessage(err, 'Unknown error'));
+      if (mountedRef.current) setError(errorMessage(err, 'Unknown error'));
     }
   }, []);
 
@@ -65,20 +80,22 @@ export default function McpStatusBadge() {
     if (!nextOpen) return;
     try {
       const audit = await cindr3dMcpClient.audit();
+      if (!mountedRef.current) return;
       setAuditEntries(audit.entries);
       setError(null);
     } catch (err) {
-      setError(errorMessage(err, 'Unknown error'));
+      if (mountedRef.current) setError(errorMessage(err, 'Unknown error'));
     }
   }, [auditOpen]);
 
   const clearAudit = useCallback(async () => {
     try {
       await cindr3dMcpClient.clearAudit();
+      if (!mountedRef.current) return;
       setAuditEntries([]);
       setError(null);
     } catch (err) {
-      setError(errorMessage(err, 'Unknown error'));
+      if (mountedRef.current) setError(errorMessage(err, 'Unknown error'));
     }
   }, []);
 

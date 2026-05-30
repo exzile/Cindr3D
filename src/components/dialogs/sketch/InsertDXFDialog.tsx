@@ -113,6 +113,7 @@ export function InsertDXFDialog({ onClose }: { onClose: () => void }) {
     setFileName(file.name);
 
     const reader = new FileReader();
+    reader.onerror = () => setStatusMessage('Failed to read DXF file');
     reader.onload = (evt) => {
       const text = evt.target?.result as string;
       if (!text) return;

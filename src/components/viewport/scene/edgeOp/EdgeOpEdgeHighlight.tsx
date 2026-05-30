@@ -1,204 +1,148 @@
-/**
- * EdgeOpEdgeHighlight — generic edge picking + highlight overlay for
- * edge-modification tools (fillet, chamfer, …).
- *
- * Fillet and chamfer had near-identical bespoke copies of this; the only
- * differences are which dialog enables it, which store list it pushes to,
- * and the selected-edge colour. This is the single shared implementation —
- * thin per-tool wrappers (FilletEdgeHighlight / ChamferEdgeHighlight) just
- * pass config.
- *
- * Edge ID format: `${featureId}|${meshUuid}:${ax,ay,az}:${bx,by,bz}` — the
- * featureId prefix lets the commit find primitive features whose mesh is not
- * stored in feature.mesh. (Chamfer previously used the legacy prefix-less
- * format and so could not resolve primitives — fixed by sharing this.)
- *
- * Selection feedback: hovered and selected edge lines PULSE (opacity) and the
- * cursor switches to crosshair while hovering a pickable edge — see
- * `pickPulse.ts` (shared with the face pickers).
- */
-
-import { useRef, useCallback, useEffect, useMemo } from 'react';
-import * as THREE from 'three';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { useFrame, useThree, invalidate as invalidateFrame } from '@react-three/fiber';
-import { useEdgePicker, type EdgePickResult } from '../../../../hooks/useEdgePicker';
-import { useFacePicker } from '../../../../hooks/useFacePicker';
-import type { FacePickResult } from '../../../../types/face-picker.types';
-import { extractEdgeTopology } from '../../../../engine/geometryEngine/core/solid/edgeTopology';
-import { buildPolylineGeometry } from '../pickerGeometry';
-import { applyLinePulse } from '../pickPulse';
-
-/** Version tag matching nearestEdge.ts — bump both when lazy-fallback logic changes. */
-const LAZY_TOPO_VERSION = 10;
+import { useRef, useCallback, useEffect, useMemo } from "react";
+import * as THREE from "three";
+import { useFrame, useThree } from "@react-three/fiber";
+import { buildPolylineGeometry } from "../pickerGeometry";
+import { applyLinePulse } from "../pickPulse";
+import { useOccEdgePicker, type OccEdgePickResult } from "../OccEdgePicker";
+import { globalBRepBodyRegistry } from "../../../../engine/occ/globalRegistry";
+import {
+  buildBatchedEdgeLineGeometry,
+  buildMergedMeshCreaseGuideGeometry,
+  buildMeshTopologyGuideGeometry,
+  buildTessellationGuideGeometry,
+  disposeGuideGeometryResult,
+  expandChainEdges,
+  getSelectableEdgesForBody,
+  mergedGuideGeometryResults,
+  polylineIsCurved,
+  resolveMeshOccTessellation,
+} from "./edgeOpEdgeGeometry";
+import {
+  findClosestLiveOccEdge,
+  findClosestOccEdge,
+  getOccEdgePolyline,
+  occEdgeId,
+} from "./edgeOpEdgeSelection";
+import { useCADStore } from "../../../../store/cadStore";
+import { ensureOccBodyForFeature } from "../../../../store/cad/slices/extrudeRevolve/extrudeCommitOccTarget";
+// getOccSync is imported for the cold-start slow-retry logic in the build-loop
+// effect (see below). collectTangentChainEdges is NOT used here — the hover/click
+// chain expansion uses pure-geometry polylineTangentChain instead (no OCC WASM
+// dependency, works with topology guides that lack OCC edge IDs).
+// Eager OCC preload is handled by App.tsx (shows OccLoadingModal with progress).
+import { getOccSync } from "../../../../engine/occ/loader";
 
 interface EdgeOpEdgeHighlightProps {
-  /** activeDialog matches this tool's dialog. */
   enabled: boolean;
-  /** Current selected edge IDs from the store. */
   edgeIds: string[];
-  /** Store action: add an edge ID. */
   addEdge: (id: string) => void;
-  /** Store action: remove an edge ID (click toggles). */
   removeEdge: (id: string) => void;
-  /** Selected-edge line colour (hover is always blue). */
   selectedColor: number;
-  /** Whether this operation supports curved/circular edge chains. */
   allowCurvedEdges?: boolean;
-  /**
-   * 'edge' (default): user picks individual edges.
-   * 'face': user clicks a face — all boundary edges of that face are added at once.
-   * Used for Rule Fillet (Task 13) and Full-Round Fillet auto-pick (Task 12).
-   */
-  pickMode?: 'edge' | 'face';
-  /**
-   * Called in face mode after the boundary edges are added, with the
-   * auto-computed inradius of the face boundary.
-   * Used by the full-round fillet to set the radius automatically.
-   */
-  onFacePicked?: (inradius: number) => void;
-}
-
-/** Ordered points representing the picked edge: the full chained model edge
- *  when available, else the single hit segment. */
-function edgePoints(result: EdgePickResult): THREE.Vector3[] {
-  return result.chain && result.chain.length >= 2
-    ? result.chain
-    : [result.edgeVertexA, result.edgeVertexB];
-}
-
-/** Normalize to 4 dp so pick-precision drift doesn't create stale IDs (Task 15). */
-const normCoord = (n: number) => +n.toFixed(4);
-
-function edgeId(result: EdgePickResult): string {
-  const fid = (result.mesh.userData.featureId as string | undefined) ?? '';
-  const prefix = fid ? `${fid}|` : '';
-  const pts = edgePoints(result).map((p) => p.toArray().map(normCoord).join(',')).join(':');
-  return `${prefix}${result.mesh.uuid}:${pts}`;
 }
 
 /**
- * Build edge IDs from a face boundary polygon (Task 13 / Rule fillet).
- * Each consecutive pair of boundary points becomes one edge ID, using the
- * world-space coordinate format that parseEdgeIds expects.
+ * Detect tangent-continuous edges from guide-line polylines — pure geometry, no OCC.
+ * Two edges share a vertex when an endpoint of one is within `eps` of an endpoint of
+ * the other. They are tangent when the dot product of their tangent directions at the
+ * shared vertex exceeds `cosTol`.
+ *
+ * Returns a Set containing the seed edge ID and all transitively tangent-connected IDs.
  */
-function faceEdgeIds(result: FacePickResult): string[] {
-  const fid = (result.mesh.userData.featureId as string | undefined) ?? '';
-  const prefix = fid ? `${fid}|` : '';
-  const uuid = result.mesh.uuid;
-  const b = result.boundary;
-  const ids: string[] = [];
-  for (let i = 0; i + 1 < b.length; i++) {
-    const a = b[i].toArray().map((n) => +n.toFixed(4)).join(',');
-    const bk = b[i + 1].toArray().map((n) => +n.toFixed(4)).join(',');
-    ids.push(`${prefix}${uuid}:${a}:${bk}`);
+type EdgeChainPolyline = { x: number; y: number; z: number }[] | Float32Array;
+
+function polylineTangentChain(
+  edgePolylines: Map<number, EdgeChainPolyline>,
+  seedEdgeId: number,
+  eps = 1e-4,
+  cosTol = 0.995,
+): Set<number> {
+  const result = new Set<number>();
+  if (!edgePolylines.has(seedEdgeId)) return result;
+  result.add(seedEdgeId);
+
+  // Plain-object 3D helpers (no THREE.Vector3 dependency — tessellation
+  // polylines may store plain {x,y,z} objects without .clone/.sub/.dot).
+  type P3 = { x: number; y: number; z: number };
+  const sub = (a: P3, b: P3): P3 => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+  const len = (v: P3) => Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+  const norm = (v: P3): P3 => { const l = len(v) || 1; return { x: v.x / l, y: v.y / l, z: v.z / l }; };
+  const dot = (a: P3, b: P3) => a.x * b.x + a.y * b.y + a.z * b.z;
+  const dist2 = (a: P3, b: P3) => { const d = sub(a, b); return dot(d, d); };
+  const pointCount = (pts: EdgeChainPolyline) => Array.isArray(pts) ? pts.length : pts.length / 3;
+  const pointAt = (pts: EdgeChainPolyline, index: number): P3 => {
+    if (Array.isArray(pts)) return pts[index];
+    const offset = index * 3;
+    return { x: pts[offset], y: pts[offset + 1], z: pts[offset + 2] };
+  };
+
+  // Pre-compute endpoints & tangent directions for every edge.
+  interface EdgeEndpoints { start: P3; end: P3; dirStart: P3; dirEnd: P3; }
+  const edgeData = new Map<number, EdgeEndpoints>();
+  for (const [id, pts] of edgePolylines) {
+    const count = pointCount(pts);
+    if (count < 2) continue;
+    const a = pointAt(pts, 0);
+    const b = pointAt(pts, count - 1);
+    const dStart = norm(sub(pointAt(pts, 1), a));
+    const dEnd = norm(sub(b, pointAt(pts, count - 2)));
+    edgeData.set(id, { start: a, end: b, dirStart: dStart, dirEnd: dEnd });
   }
-  return ids;
-}
 
-/**
- * Compute the inradius of a boundary polygon = min distance from centroid to
- * any boundary edge. Used for full-round fillet auto-radius (Task 12).
- */
-function faceInradius(boundary: THREE.Vector3[], centroid: THREE.Vector3): number {
-  let minDist = Infinity;
-  const _seg = new THREE.Vector3();
-  const _cp = new THREE.Vector3();
-  for (let i = 0; i + 1 < boundary.length; i++) {
-    const a = boundary[i];
-    const b = boundary[i + 1];
-    _seg.subVectors(b, a);
-    const lenSq = _seg.lengthSq();
-    if (lenSq < 1e-12) continue;
-    const t = THREE.MathUtils.clamp(_cp.subVectors(centroid, a).dot(_seg) / lenSq, 0, 1);
-    const dist = centroid.distanceTo(a.clone().addScaledVector(_seg, t));
-    if (dist < minDist) minDist = dist;
-  }
-  return minDist === Infinity ? 0 : minDist;
-}
-
-function isCurvedEdge(edge: { polyline?: THREE.Vector3[] } | EdgePickResult): boolean {
-  const pts = 'mesh' in edge ? edgePoints(edge) : edge.polyline;
-  return (pts?.length ?? 0) > 2;
-}
-
-function guideEdgesForOverlay(
-  displayEdges: Array<{ polyline: THREE.Vector3[] }> | undefined,
-  ghostEdges: Array<{ polyline: THREE.Vector3[] }> | undefined,
-  topoEdges: Array<{ polyline: THREE.Vector3[] }>,
-  allowCurvedEdges: boolean,
-): Array<{ polyline: THREE.Vector3[] }> {
-  const edges = displayEdges?.length ? displayEdges : ghostEdges?.length ? ghostEdges : topoEdges;
-  return allowCurvedEdges ? edges : edges.filter((edge) => !isCurvedEdge(edge));
-}
-
-function pointSegmentDistanceSq(p: THREE.Vector3, a: THREE.Vector3, b: THREE.Vector3): number {
-  const ab = b.clone().sub(a);
-  const lenSq = ab.lengthSq();
-  if (lenSq < 1e-12) return p.distanceToSquared(a);
-  const t = THREE.MathUtils.clamp(p.clone().sub(a).dot(ab) / lenSq, 0, 1);
-  return p.distanceToSquared(a.clone().addScaledVector(ab, t));
-}
-
-function pointPolylineDistanceSq(p: THREE.Vector3, polyline: THREE.Vector3[]): number {
-  let best = Infinity;
-  for (let i = 0; i + 1 < polyline.length; i++) {
-    best = Math.min(best, pointSegmentDistanceSq(p, polyline[i], polyline[i + 1]));
-  }
-  return best;
-}
-
-function filterStaleDisplayEdges(
-  displayEdges: Array<{ polyline: THREE.Vector3[] }> | undefined,
-  ghostEdges: Array<{ polyline: THREE.Vector3[] }> | undefined,
-  bounds: THREE.Box3 | null,
-): Array<{ polyline: THREE.Vector3[] }> | undefined {
-  if (!displayEdges?.length) return displayEdges;
-  const diag = Math.max(bounds?.min.distanceTo(bounds.max) ?? 1, 1);
-  const nearSq = Math.max((diag * 1.5e-2) ** 2, 1e-6);
-  const curveEdges = displayEdges.filter((edge) => (edge.polyline?.length ?? 0) > 2);
-  return displayEdges.filter((edge) => {
-    const pl = edge.polyline;
-    if (!pl || pl.length < 2) return false;
-    if (ghostEdges?.length) {
-      let nearGhost = 0;
-      for (const p of pl) {
-        if (ghostEdges.some((ghost) => pointPolylineDistanceSq(p, ghost.polyline) <= nearSq)) nearGhost++;
-      }
-      if (nearGhost / pl.length >= 0.5) return false;
-    }
-    if (pl.length === 2 && curveEdges.length > 0) {
-      const aNearCurve = curveEdges.some((curve) => pointPolylineDistanceSq(pl[0], curve.polyline) <= nearSq);
-      const bNearCurve = curveEdges.some((curve) => pointPolylineDistanceSq(pl[1], curve.polyline) <= nearSq);
-      if (aNearCurve || bNearCurve) {
-        const mid = pl[0].clone().add(pl[1]).multiplyScalar(0.5);
-        const midNearCurve = curveEdges.some((curve) => pointPolylineDistanceSq(mid, curve.polyline) <= nearSq * 4);
-        if (!midNearCurve) return false;
+  // Spatial index: bucket endpoints by rounded position key.
+  const bucketSize = eps * 10;
+  const bucketKey = (v: P3) =>
+    `${Math.round(v.x / bucketSize)},${Math.round(v.y / bucketSize)},${Math.round(v.z / bucketSize)}`;
+  const endpointBuckets = new Map<string, Array<{ id: number; isStart: boolean }>>();
+  for (const [id, data] of edgeData) {
+    for (const isStart of [true, false]) {
+      const pt = isStart ? data.start : data.end;
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dz = -1; dz <= 1; dz++) {
+            const nKey = `${Math.round(pt.x / bucketSize) + dx},${Math.round(pt.y / bucketSize) + dy},${Math.round(pt.z / bucketSize) + dz}`;
+            let bucket = endpointBuckets.get(nKey);
+            if (!bucket) { bucket = []; endpointBuckets.set(nKey, bucket); }
+            bucket.push({ id, isStart });
+          }
+        }
       }
     }
-    return true;
-  });
+  }
+
+  // BFS from seed.
+  const queue = [seedEdgeId];
+  const eps2 = eps * eps;
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    const curData = edgeData.get(cur);
+    if (!curData) continue;
+    for (const isStartOfCur of [true, false] as const) {
+      const curPt = isStartOfCur ? curData.start : curData.end;
+      const curDir = isStartOfCur ? curData.dirStart : curData.dirEnd;
+      const key = bucketKey(curPt);
+      const candidates = endpointBuckets.get(key);
+      if (!candidates) continue;
+      for (const cand of candidates) {
+        if (cand.id === cur || result.has(cand.id)) continue;
+        const candData = edgeData.get(cand.id);
+        if (!candData) continue;
+        const candPt = cand.isStart ? candData.start : candData.end;
+        if (dist2(curPt, candPt) > eps2) continue;
+        const candDir = cand.isStart ? candData.dirStart : candData.dirEnd;
+        if (Math.abs(dot(curDir, candDir)) > cosTol) {
+          result.add(cand.id);
+          queue.push(cand.id);
+        }
+      }
+    }
+  }
+  return result;
 }
 
-function guideSegmentIsVisible(
-  a: THREE.Vector3,
-  b: THREE.Vector3,
-  camera: THREE.Camera,
-  raycaster: THREE.Raycaster,
-  pickables: THREE.Mesh[],
-): boolean {
-  const mid = a.clone().add(b).multiplyScalar(0.5);
-  const ndc = mid.clone().project(camera);
-  if (ndc.z > 1) return false;
-  raycaster.setFromCamera(new THREE.Vector2(ndc.x, ndc.y), camera);
-  const distToEdge = raycaster.ray.origin.distanceTo(mid);
-  if (distToEdge < 1e-6) return true;
-  raycaster.far = distToEdge * 1.5;
-  const hits = raycaster.intersectObjects(pickables, false);
-  if (hits.length === 0) return true;
-  const eps = Math.max(distToEdge * 0.005, 1e-3);
-  return hits[0].distance >= distToEdge - eps;
-}
+const EDGE_GUIDE_RENDER_ORDER = 1398;
+const EDGE_HOVER_RENDER_ORDER = 1402;
+const EDGE_SELECTED_RENDER_ORDER = 1403;
 
 export default function EdgeOpEdgeHighlight({
   enabled,
@@ -207,237 +151,546 @@ export default function EdgeOpEdgeHighlight({
   removeEdge,
   selectedColor,
   allowCurvedEdges = false,
-  pickMode = 'edge',
-  onFacePicked,
 }: EdgeOpEdgeHighlightProps) {
-  // Per-instance materials (NOT module singletons) so we can pulse opacity
-  // without mutating shared state. Disposed on unmount.
   const hoverMat = useMemo(
-    () => new THREE.LineBasicMaterial({ color: 0x2196f3, linewidth: 2, transparent: true, depthTest: false, depthWrite: false }),
+    () =>
+      new THREE.LineBasicMaterial({
+        color: 0x2196f3,
+        linewidth: 2,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+      }),
     [],
   );
   const selectedMat = useMemo(
-    () => new THREE.LineBasicMaterial({ color: selectedColor, linewidth: 3, transparent: true, depthTest: false, depthWrite: false }),
+    () =>
+      new THREE.LineBasicMaterial({
+        color: selectedColor,
+        linewidth: 3,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+      }),
     [selectedColor],
   );
-  // Orange overlay drawn under hover/selected to show all pickable guide edges.
-  // while the edge-op dialog is open. Lets the user see what's selectable
-  // before they hover. Pulses subtly so it reads as interactive without
-  // competing with hover/selection.
   const allEdgesMat = useMemo(
-    () => new THREE.LineBasicMaterial({ color: 0xff7a00, transparent: true, depthTest: true, depthWrite: false }),
+    () =>
+      new THREE.LineBasicMaterial({
+        color: 0xff6a00,
+        transparent: true,
+        opacity: 1,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      }),
     [],
   );
-  useEffect(() => () => { hoverMat.dispose(); }, [hoverMat]);
-  useEffect(() => () => { selectedMat.dispose(); }, [selectedMat]);
-  useEffect(() => () => { allEdgesMat.dispose(); }, [allEdgesMat]);
+  const pickEdgesMat = useMemo(
+    () =>
+      new THREE.LineBasicMaterial({
+        color: 0xff6a00,
+        transparent: true,
+        opacity: 0,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      }),
+    [],
+  );
 
-  const allEdgesRef = useRef<THREE.LineSegments | null>(null);
+  useEffect(() => () => hoverMat.dispose(), [hoverMat]);
+  useEffect(() => () => selectedMat.dispose(), [selectedMat]);
+  useEffect(() => () => allEdgesMat.dispose(), [allEdgesMat]);
+  useEffect(() => () => pickEdgesMat.dispose(), [pickEdgesMat]);
 
+  const allEdgeLinesRef = useRef<THREE.LineSegments[]>([]);
   const hoverLineRef = useRef<THREE.Line | null>(null);
-  const hoverResultRef = useRef<EdgePickResult | null>(null);
-  // Identity of the hover edge whose geometry is currently built. The pulse
-  // keeps the demand loop running (invalidate()), so without this the hover
-  // line's BufferGeometry was disposed + rebuilt EVERY frame while the cursor
-  // sat on one edge. `hoverResultRef` only changes on pointermove; the stable
-  // edge id changes only when a DIFFERENT model edge is hovered — so we rebuild
-  // exactly when the rendered polyline would actually differ.
-  const renderedHoverRef = useRef<EdgePickResult | null>(null);
+  const occHoverRef = useRef<OccEdgePickResult | null>(null);
   const renderedHoverIdRef = useRef<string | null>(null);
-
   const selectedLinesRef = useRef<Map<string, THREE.Line>>(new Map());
-  // id → the full ordered polyline of the selected model edge (≥2 points).
   const selectedEdgesDataRef = useRef<Map<string, THREE.Vector3[]>>(new Map());
-
-  // Imperative cursor: a reactive `hovering` state would re-render on every
-  // pointermove (the dep-storm the R3F patterns warn about), so the cursor is
-  // driven in useFrame from the hover ref instead. cursorOnRef avoids
-  // redundant DOM writes every frame.
-  const { scene: _scene, gl, camera } = useThree();
+  /** Edge IDs whose display polyline was expanded to a tangent chain (segment-pair format for LineSegments). */
+  const selectedChainIdsRef = useRef<Set<string>>(new Set());
   const cursorOnRef = useRef(false);
+  const { scene: _scene, gl, invalidate: invalidateCanvas } = useThree();
+  const features = useCADStore((state) => state.features);
+  const sketches = useCADStore((state) => state.sketches);
 
-  // Unmount cleanup — useFrame's `!enabled` branch only fires while still
-  // mounted; if the parent unmounts while enabled (HMR / route swap) the
-  // hover line + every selected highlight would be stranded with un-disposed
-  // BufferGeometries.
+  // Ref exposed to the rehydration effect so it can force a guide-line rebuild
+  // after OCC bodies are re-registered (needed after full page refresh).
+  const triggerRebuildRef = useRef<(() => void) | null>(null);
+
+  const edgeSourceMeta = useMemo(() => {
+    const signatureParts: string[] = [];
+    const visibleBodyIds: string[] = [];
+
+    for (const feature of features) {
+      if (!feature.visible || feature.suppressed) continue;
+
+      signatureParts.push(
+        `${feature.id}:${feature.timestamp}:${feature.mesh instanceof THREE.Mesh ? feature.mesh.uuid : ''}`,
+      );
+      if (feature.type !== "sketch") visibleBodyIds.push(feature.id);
+    }
+
+    visibleBodyIds.sort();
+    return {
+      edgeSourceSignature: signatureParts.join("|"),
+      visibleBodyFeatureIdsKey: visibleBodyIds.join(","),
+    };
+  }, [features]);
+
+  // Keep the Set stable unless the actual visible body IDs change.
+  const { edgeSourceSignature, visibleBodyFeatureIdsKey } = edgeSourceMeta;
+  const visibleBodyFeatureIds = useMemo(
+    () => new Set(visibleBodyFeatureIdsKey ? visibleBodyFeatureIdsKey.split(",") : []),
+    [visibleBodyFeatureIdsKey],
+  );
+
+  const edgeIdSet = useMemo(() => new Set(edgeIds), [edgeIds]);
+
   useEffect(() => {
     const sceneRef = _scene;
+    const canvas = gl.domElement;
     const selectedLines = selectedLinesRef.current;
     const selectedEdges = selectedEdgesDataRef.current;
-    const canvas = gl.domElement;
+    const selectedChainIds = selectedChainIdsRef.current;
     return () => {
       if (hoverLineRef.current) {
         sceneRef.remove(hoverLineRef.current);
         hoverLineRef.current.geometry.dispose();
         hoverLineRef.current = null;
       }
+      for (const line of allEdgeLinesRef.current) {
+        sceneRef.remove(line);
+        line.geometry.dispose();
+      }
+      allEdgeLinesRef.current = [];
       selectedLines.forEach((line) => {
         sceneRef.remove(line);
         line.geometry.dispose();
       });
       selectedLines.clear();
       selectedEdges.clear();
+      selectedChainIds.clear();
       if (cursorOnRef.current) {
-        /* eslint-disable-next-line react-hooks/immutability */
-        canvas.style.cursor = '';
+        canvas.style.cursor = "";
         cursorOnRef.current = false;
       }
     };
   }, [_scene, gl]);
 
-  const handleHover = useCallback((result: EdgePickResult | null) => {
-    if (result && !allowCurvedEdges && isCurvedEdge(result)) {
-      hoverResultRef.current = null;
-      invalidateFrame();
-      return;
-    }
-    hoverResultRef.current = result;
-    // Wake the demand loop so useFrame applies the hover change. Without
-    // this, useFrame would need to invalidate every frame (~60 Hz) just to
-    // stay alive in case the cursor moved — wasted renders while the user
-    // is sitting still with the picker active. Invalidating only on
-    // hover-change means an idle picker truly idles.
-    invalidateFrame();
-  }, [allowCurvedEdges]);
-
-  // Set form of edgeIds — used both in handleClick (toggle existing edge =
-  // O(1) lookup) and inside useFrame for the selected-line cleanup pass.
-  // Rebuilt only when the prop changes, not on every frame: while the picker
-  // is animating its pulse, useFrame can run at 60Hz; building this Set per
-  // frame for a ~100-segment circle-rim selection is ~6000 ops/sec saved.
-  const edgeIdSet = useMemo(() => new Set(edgeIds), [edgeIds]);
-
-  const handleClick = useCallback((result: EdgePickResult) => {
-    if (!allowCurvedEdges && isCurvedEdge(result)) return;
-    const id = edgeId(result);
-    // Toggle: clicking an already-selected edge deselects it.
-    if (edgeIdSet.has(id)) {
-      removeEdge(id);
-      return;
-    }
-    addEdge(id);
-    selectedEdgesDataRef.current.set(id, edgePoints(result).map((p) => p.clone()));
-  }, [addEdge, removeEdge, edgeIdSet, allowCurvedEdges]);
-
-  useEdgePicker({
-    enabled: enabled && pickMode === 'edge',
-    onHover: handleHover,
-    onClick: handleClick,
-    filter: (m) => typeof m.userData.featureId === 'string',
-  });
-
-  // Face pick mode (Task 13 / Rule fillet, Task 12 / Full-round):
-  // clicking a face adds all its boundary edges in one shot.
-  const handleFaceClick = useCallback((result: FacePickResult) => {
-    const ids = faceEdgeIds(result);
-    for (const id of ids) {
-      if (!edgeIdSet.has(id)) {
-        addEdge(id);
+  const handleOccHover = useCallback((result: OccEdgePickResult | null) => {
+    if (result && !result.bodyId) {
+      // Guide line has no direct OCC body link. Still allow hover if there are
+      // polyline data — the user can see the edge, so let them interact with it.
+      // Resolution to an OCC body happens at click time; if that fails the click
+      // handler silently no-ops (no body = can't fillet/chamfer, but hover
+      // feedback + cursor change is still correct UX).
+      const stored = result.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined;
+      const pts = stored?.get(result.edgeId);
+      if (!pts) {
+        occHoverRef.current = null;
+        invalidateCanvas();
+        return;
+      }
+      // If curved edges are disallowed, reject curved polylines even without bodyId
+      if (!allowCurvedEdges && polylineIsCurved(pts)) {
+        occHoverRef.current = null;
+        invalidateCanvas();
+        return;
       }
     }
-    if (onFacePicked) {
-      onFacePicked(faceInradius(result.boundary, result.centroid));
-    }
-    invalidateFrame();
-  }, [addEdge, edgeIdSet, onFacePicked]);
-
-  useFacePicker({
-    enabled: enabled && pickMode === 'face',
-    onClick: handleFaceClick,
-    filter: (m) => typeof m.userData.featureId === 'string',
-  });
-
-  // Build the all-edges overlay when the dialog opens. Walks every pickable
-  // mesh in the scene, collects every segment of every display topology edge,
-  // and packs them into one LineSegments — far cheaper than one Line per edge
-  // for circle-rim bodies that have ~100 edges per body. Edge-cut results may
-  // carry a clean `displayTopology` because their extracted post-CSG topology
-  // can include noisy fan edges. Ghost topology remains searchable by the
-  // picker; for older committed meshes that predate displayTopology, it is a
-  // better visual fallback than the noisy post-cut extraction.
-  useEffect(() => {
-    if (!enabled) return;
-    const sceneSnap = _scene;
-    const positions: number[] = [];
-    const _t1 = new THREE.Vector3();
-    const _t2 = new THREE.Vector3();
-    const pickables: THREE.Mesh[] = [];
-    sceneSnap.traverse((obj) => {
-      const m = obj as THREE.Mesh;
-      if (!m.isMesh || typeof m.userData?.featureId !== 'string') return;
-      pickables.push(m);
-    });
-    const guideRaycaster = new THREE.Raycaster();
-    for (const m of pickables) {
-      m.updateWorldMatrix(true, false);
-      const mw = m.matrixWorld;
-      const geom = m.geometry;
-      geom.computeBoundingBox();
-      const geomBounds = geom.boundingBox;
-      // Lazy topology extraction for old committed meshes that pre-date the
-      // pre-toCreasedNormals extraction path (same fallback as nearestEdge.ts).
-      // Without this, the overlay is silent on any fillet/chamfer committed
-      // before topology stamping was added — the user sees no orange lines.
-      const existingTopo = geom.userData.topology as { edges?: unknown[] } | undefined;
-      const topoV = geom.userData._topoV as number | undefined;
-      const hasEdgeCutMetadata = !!geom.userData.displayTopology || !!geom.userData.ghostTopology;
-      const staleTopology = topoV !== undefined
-        ? topoV < LAZY_TOPO_VERSION
-        : hasEdgeCutMetadata;
-      if (!existingTopo?.edges?.length || staleTopology) {
-        try {
-          const diag = geomBounds ? geomBounds.min.distanceTo(geomBounds.max) : 1;
-          const tol = Math.max(diag * 1e-4, 1e-5);
-          const indexed = mergeVertices(geom, tol);
-          const extracted = extractEdgeTopology(indexed);
-          indexed.dispose();
-          geom.userData.topology = extracted;
-          geom.userData._topoV = LAZY_TOPO_VERSION;
-        } catch { /* leave topology as-is — picker will retry on hover */ }
-      }
-      const displayTopo = geom.userData.displayTopology as { edges?: Array<{ polyline: THREE.Vector3[] }> } | undefined;
-      const ghost = geom.userData.ghostTopology as { edges?: Array<{ polyline: THREE.Vector3[] }> } | undefined;
-      const topo = geom.userData.topology as { edges?: Array<{ polyline: THREE.Vector3[] }> } | undefined;
-      const topoEdges = topo?.edges ?? [];
-      const displayEdges = staleTopology
-        ? filterStaleDisplayEdges(displayTopo?.edges, ghost?.edges, geomBounds)
-        : displayTopo?.edges;
-      const edges = guideEdgesForOverlay(displayEdges, ghost?.edges, topoEdges, allowCurvedEdges);
-      for (const e of edges) {
-        const pl = e.polyline;
-        if (!pl || pl.length < 2) continue;
-        for (let i = 0; i + 1 < pl.length; i++) {
-          _t1.copy(pl[i]).applyMatrix4(mw);
-          _t2.copy(pl[i + 1]).applyMatrix4(mw);
-          if (!guideSegmentIsVisible(_t1, _t2, camera, guideRaycaster, pickables)) continue;
-          positions.push(_t1.x, _t1.y, _t1.z, _t2.x, _t2.y, _t2.z);
+    if (result && !allowCurvedEdges) {
+      // occDirect pick line or old pick line → use OCC tessellation polyline for curved check.
+      // Merged guide line → use stored edgePolylines.
+      const isOccDirectHover = result.mesh.userData['occDirect'] === true;
+      const isTopologyHit = !isOccDirectHover && result.mesh.userData['edgePolylines'] !== undefined;
+      if (isTopologyHit) {
+        const stored = result.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined;
+        const pts = stored?.get(result.edgeId);
+        if (pts && polylineIsCurved(pts)) {
+          occHoverRef.current = null;
+          invalidateCanvas();
+          return;
+        }
+      } else {
+        const body = globalBRepBodyRegistry.get(result.bodyId);
+        const occPolyline = body?._tessellation?.edgePolylines.get(result.edgeId);
+        if (occPolyline && polylineIsCurved(occPolyline)) {
+          occHoverRef.current = null;
+          invalidateCanvas();
+          return;
         }
       }
     }
-    if (positions.length === 0) return;
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(positions), 3));
-    const segs = new THREE.LineSegments(geom, allEdgesMat);
-    segs.renderOrder = 1400; // above sketch display, under hover/selected.
-    sceneSnap.add(segs);
-    allEdgesRef.current = segs;
-    invalidateFrame();
-    return () => {
-      sceneSnap.remove(segs);
-      segs.geometry.dispose();
-      allEdgesRef.current = null;
+    occHoverRef.current = result;
+    invalidateCanvas();
+  }, [allowCurvedEdges, invalidateCanvas]);
+
+  const handleOccClick = useCallback((result: OccEdgePickResult) => {
+    // Three hit types:
+    // 1. occDirect pick line — invisible line with exact OCC edge IDs + body-local geometry
+    // 2. Old-style pick line — no edgePolylines, OCC edge IDs, tessellation lookup
+    // 3. Merged guide line — has edgePolylines, needs spatial remapping via findClosestOccEdge
+    const isOccDirect = result.mesh.userData['occDirect'] === true;
+    const isTopologyHit = !isOccDirect && result.mesh.userData['edgePolylines'] !== undefined;
+    let polyline: THREE.Vector3[] | null = null;
+    let displayPolyline: THREE.Vector3[] | null = null;
+    let resolvedBodyId = result.bodyId;
+    let resolvedEdgeId = result.edgeId;
+    let sourceBody = globalBRepBodyRegistry.get(result.bodyId);
+    let visualSourceFeatureId: string | undefined;
+
+    if (isOccDirect || !isTopologyHit) {
+      // OCC pick line hit: edge ID is already a correct OCC edge ID.
+      // Look up the polyline from the body's tessellation and transform
+      // to world space using the pick line's matrixWorld (= source mesh matrix).
+      polyline = getOccEdgePolyline(result);
+      displayPolyline = polyline;
+    }
+
+    if (!polyline) {
+      // topology/merged guideLine hit (or OCC lookup failed): get stored world-space polyline.
+      const stored = result.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined;
+      polyline = stored?.get(result.edgeId) ?? null;
+      displayPolyline = polyline;
+
+      // For OCC bodies, resolve the topology index → nearest OCC tessellation edge ID
+      // so that fillet/chamfer commit always receives a valid numeric OCC edge number.
+      if (polyline) {
+        const meshMatrix = (result.mesh.userData['meshMatrix'] as THREE.Matrix4 | undefined) ?? new THREE.Matrix4();
+        const featureId = result.mesh.userData['sourceFeatureId'] as string | undefined;
+        const occ = sourceBody?._tessellation
+          ? findClosestOccEdge(sourceBody._tessellation, polyline, meshMatrix, allowCurvedEdges)
+          : findClosestLiveOccEdge(polyline, allowCurvedEdges, resolvedBodyId, featureId, meshMatrix);
+        if (occ) {
+          polyline = occ.polylineWorld;
+          resolvedEdgeId = occ.edgeId;
+          if ('bodyId' in occ) {
+            if (!resolvedBodyId && featureId) visualSourceFeatureId = featureId;
+            resolvedBodyId = occ.bodyId;
+            sourceBody = globalBRepBodyRegistry.get(resolvedBodyId);
+          }
+        }
+      }
+    }
+
+    if (!polyline || !sourceBody || !resolvedBodyId) return;
+    if (!allowCurvedEdges && polylineIsCurved(polyline)) return;
+
+    // Expand to full tangent chain for visual display so that clicking one polygon
+    // segment of a curved edge selects the entire arc visually.
+    // Uses the guide line's edgePolylines (pure geometry, no OCC WASM needed).
+    let finalDisplay = displayPolyline ?? polyline;
+    // Resolve edgePolylines (+ authoritative chainId map) — may come from the hit
+    // mesh directly, or from the sibling visible guide line when the hit landed on
+    // an occDirect pick line (which carries no edgePolylines/chainIdByEdgeId).
+    let guidePolylines = result.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined;
+    let chainMap = result.mesh.userData['chainIdByEdgeId'] as Map<number, number> | undefined;
+    if (!guidePolylines) {
+      for (const line of allEdgeLinesRef.current) {
+        if (line.userData['occDirect']) continue;
+        const lineBodyId = line.userData['brepBodyId'] as string | undefined;
+        if (lineBodyId === resolvedBodyId && line.userData['edgePolylines']) {
+          guidePolylines = line.userData['edgePolylines'] as Map<number, THREE.Vector3[]>;
+          chainMap = line.userData['chainIdByEdgeId'] as Map<number, number> | undefined;
+          break;
+        }
+      }
+    }
+
+    const buildChainDisplay = (chainSet: Set<number>): THREE.Vector3[] | null => {
+      if (!guidePolylines || chainSet.size <= 1) return null;
+      const chainPts: THREE.Vector3[] = [];
+      for (const eid of chainSet) {
+        const pts = guidePolylines.get(eid);
+        if (!pts || pts.length < 2) continue;
+        // Segment pairs for LineSegments.
+        for (let i = 0; i + 1 < pts.length; i++) chainPts.push(pts[i], pts[i + 1]);
+      }
+      return chainPts.length >= 2 ? chainPts : null;
     };
-  // edgeIds is included so a re-render after commit (which can swap geometry)
-  // refreshes the overlay against the new mesh references.
-  }, [enabled, _scene, camera, allEdgesMat, edgeIds, allowCurvedEdges]);
+
+    let isChainExpanded = false;
+    if (chainMap && guidePolylines) {
+      // Authoritative chainId expansion. With analytical arcs each arc is ONE OCC edge,
+      // so the clicked edgeId is already canonical: no Math.min normalization needed.
+      const chainSet = expandChainEdges(chainMap, guidePolylines, result.edgeId);
+      const chainPts = buildChainDisplay(chainSet);
+      if (chainPts) {
+        isChainExpanded = true;
+        finalDisplay = chainPts;
+      }
+    } else if (guidePolylines && guidePolylines.size > 1) {
+      // Non-OCC mesh fallback: geometric tangent BFS +
+      // Math.min canonical normalization to stabilise repeat clicks on polygon arcs.
+      const chainSet = polylineTangentChain(guidePolylines, result.edgeId);
+      if (chainSet.size <= 1 && resolvedEdgeId !== result.edgeId) {
+        const altChain = polylineTangentChain(guidePolylines, resolvedEdgeId);
+        if (altChain.size > chainSet.size) {
+          for (const eid of altChain) chainSet.add(eid);
+        }
+      }
+
+      if (chainSet.size > 1) {
+        const tessPolylines = sourceBody._tessellation?.edgePolylines;
+        if (tessPolylines && tessPolylines.size > 0) {
+          const occChain = polylineTangentChain(tessPolylines, resolvedEdgeId);
+          if (occChain.size > 1) {
+            resolvedEdgeId = Math.min(...occChain);
+          }
+        }
+        const chainPts = buildChainDisplay(chainSet);
+        if (chainPts) {
+          isChainExpanded = true;
+          finalDisplay = chainPts;
+        }
+      }
+    }
+
+    // Compute the selection ID AFTER chain normalization so that clicking any
+    // segment of the same tangent chain produces the same canonical ID.
+    const id = visualSourceFeatureId
+      ? `occ:${resolvedBodyId}:${resolvedEdgeId}:feature:${visualSourceFeatureId}`
+      : `occ:${resolvedBodyId}:${resolvedEdgeId}`;
+
+    if (edgeIdSet.has(id)) {
+      removeEdge(id);
+      selectedChainIdsRef.current.delete(id);
+      return;
+    }
+    if (isChainExpanded) {
+      selectedChainIdsRef.current.add(id);
+    }
+    selectedEdgesDataRef.current.set(id, finalDisplay);
+    addEdge(id);
+  }, [addEdge, removeEdge, edgeIdSet, allowCurvedEdges]);
+
+  useOccEdgePicker({
+    enabled,
+    onHover: handleOccHover,
+    onClick: handleOccClick,
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    let initialBuildHandle: number | null = null;
+    let retryHandle: number | null = null;
+    let attempts = 0;
+    // Fast phase: 24 × 125 ms = 3 s (bodies already live from current session).
+    // Slow phase: 2 s intervals while OCC WASM is still loading after a page
+    // refresh. Stopped once OCC is ready (the rehydration effect's
+    // triggerRebuildRef callback is the primary mechanism; this is a safety net).
+    const maxFastAttempts = 24;
+    for (const line of allEdgeLinesRef.current) {
+      _scene.remove(line);
+      line.geometry.dispose();
+    }
+    allEdgeLinesRef.current = [];
+    if (!enabled) return undefined;
+
+    const buildLines = () => {
+      for (const line of allEdgeLinesRef.current) {
+        _scene.remove(line);
+        line.geometry.dispose();
+      }
+      const lines: THREE.LineSegments[] = [];
+      _scene.traverse((obj) => {
+        if (!(obj instanceof THREE.Mesh) && !(obj as THREE.Mesh).isMesh) return;
+        const mesh = obj as THREE.Mesh;
+        if (!mesh.visible) return;
+        const featureId = mesh.userData.featureId as string | undefined;
+        const bodyId = mesh.userData.brepBodyId as string | undefined;
+        if (featureId && !visibleBodyFeatureIds.has(featureId)) return;
+        if (!featureId && !bodyId) return;
+        const resolved = resolveMeshOccTessellation(mesh);
+        if (bodyId && !resolved) return;
+        // OCC-12.B1 — authoritative selectable-edge metadata for this OCC body
+        // (filletable filter + chainId). null when the flag is off / OCC body gone.
+        const meta = resolved ? getSelectableEdgesForBody(resolved.bodyId) : null;
+        const batched = resolved
+          ? buildBatchedEdgeLineGeometry(resolved.tess, allowCurvedEdges, meta)
+          : null;
+
+        // Visible orange guide. When we have an OCC tessellation with edge
+        // polylines, USE ONLY that — it carries OCC's authoritative boundary
+        // edges (the actual CAD edges of each face). Mixing in the mesh-derived
+        // topology/crease guides causes tessellation triangle edges on curved
+        // surfaces to be drawn as creases (adjacent-triangle normal angle
+        // exceeds the 20° crease threshold), producing iso-lines that wrap
+        // the entire cylinder.
+        //
+        // IMPORTANT: hasOccTess is based purely on whether we have an OCC body,
+        // NOT on whether batched has straight edges. With analytical circle edges
+        // (MakeEdge_8), circle edge polylines are curved and filtered from batched
+        // when allowCurvedEdges=false — but that must not cause fallback to the
+        // THREE.js crease guide, which draws all triangle mesh edges on the
+        // curved surface.
+        //
+        // The topology + crease guides remain as the fallback for legacy
+        // meshes WITHOUT a featureId (standalone THREE.js geometry). Feature
+        // meshes (featureId set) are CAD bodies — they must ONLY show OCC-
+        // authoritative edges. If OCC isn't available for a feature mesh, show
+        // nothing rather than falling back to THREE.js crease geometry, which
+        // draws all triangle edges on curved surfaces as horizontal iso-lines.
+        const hasOccTess = !!resolved;
+        const allowCreaseFallback = !featureId;
+        const tessellationGuideResult = resolved
+          ? buildTessellationGuideGeometry(resolved.tess, mesh.matrixWorld, allowCurvedEdges, meta)
+          : null;
+        const topologyGuideResult = (hasOccTess || !allowCreaseFallback)
+          ? null
+          : buildMeshTopologyGuideGeometry(mesh, allowCurvedEdges);
+        const renderedGuideResult = (hasOccTess || !allowCreaseFallback)
+          ? null
+          : buildMergedMeshCreaseGuideGeometry(mesh, allowCurvedEdges);
+        const visibleGuideResult = hasOccTess
+          ? tessellationGuideResult
+          : allowCurvedEdges
+            ? mergedGuideGeometryResults(topologyGuideResult, tessellationGuideResult, renderedGuideResult)
+            : topologyGuideResult ?? renderedGuideResult ?? tessellationGuideResult;
+        if (visibleGuideResult !== topologyGuideResult) disposeGuideGeometryResult(topologyGuideResult);
+        if (visibleGuideResult !== tessellationGuideResult) disposeGuideGeometryResult(tessellationGuideResult);
+        if (visibleGuideResult !== renderedGuideResult) disposeGuideGeometryResult(renderedGuideResult);
+        if (!batched && !visibleGuideResult) return;
+        if (visibleGuideResult) {
+          const guideLine = new THREE.LineSegments(visibleGuideResult.geometry, allEdgesMat);
+          guideLine.userData.edgeIdsBySegment = visibleGuideResult.edgeIdsBySegment;
+          guideLine.userData.edgePolylines = visibleGuideResult.edgePolylines;
+          guideLine.userData.chainIdByEdgeId = visibleGuideResult.chainIdByEdgeId;
+          guideLine.userData.brepBodyId = resolved?.bodyId ?? "";
+          guideLine.userData.sourceFeatureId = featureId ?? "";
+          guideLine.userData.meshMatrix = mesh.matrixWorld.clone();
+          if (resolved?.bodyId) {
+            guideLine.userData.brepBodyId = resolved.bodyId;
+          }
+          guideLine.frustumCulled = false;
+          guideLine.matrixAutoUpdate = true;
+          guideLine.renderOrder = EDGE_GUIDE_RENDER_ORDER;
+          _scene.add(guideLine);
+          lines.push(guideLine);
+        }
+        // Invisible OCC tessellation pick target — carries exact OCC edge IDs.
+        // ALWAYS added alongside the visible guide so that the picker can match
+        // against it directly. When hit, handleOccClick detects `occDirect` and
+        // uses the OCC edge ID without spatial remapping — this avoids the
+        // findClosestOccEdge mismatch that occurs when the merged visible guide
+        // reassigns sequential IDs that don't match OCC topology.
+        if (batched) {
+          const pickLine = new THREE.LineSegments(batched.geometry, pickEdgesMat);
+          pickLine.userData.edgeIdsBySegment = batched.edgeIdsBySegment;
+          pickLine.userData.brepBodyId = resolved!.bodyId;
+          pickLine.userData.occDirect = true;
+          pickLine.frustumCulled = false;
+          // Geometry is in body-local space; apply the mesh's world matrix so the
+          // picker's screen-space distance check places segments correctly.
+          pickLine.matrixAutoUpdate = false;
+          pickLine.matrix.copy(mesh.matrixWorld);
+          pickLine.matrixWorld.copy(mesh.matrixWorld);
+          pickLine.renderOrder = EDGE_GUIDE_RENDER_ORDER;
+          _scene.add(pickLine);
+          lines.push(pickLine);
+        }
+      });
+      allEdgeLinesRef.current = lines;
+      invalidateCanvas();
+      return lines.length;
+    };
+
+    const scheduleBuild = (delayMs: number) => {
+      retryHandle = window.setTimeout(() => {
+        retryHandle = null;
+        if (cancelled) return;
+        attempts += 1;
+        const lineCount = buildLines();
+        if (lineCount > 0) return;
+        if (attempts < maxFastAttempts) {
+          // Still in the fast-retry window — keep checking at 125 ms.
+          scheduleBuild(125);
+        } else if (!getOccSync()) {
+          // OCC WASM is still loading after a cold-start page refresh.
+          // Slow-poll at 2 s so orange lines appear as soon as the STEP
+          // restore completes, even if the fast window already elapsed.
+          scheduleBuild(2000);
+        } else {
+          // else: OCC is loaded but lines are still empty (non-OCC body or
+          // unrecoverable STEP data). The rehydration-effect triggerRebuildRef
+          // callback is the primary async mechanism and may still succeed.
+        }
+      }, delayMs);
+    };
+
+    initialBuildHandle = window.setTimeout(() => {
+      initialBuildHandle = null;
+      if (cancelled) return;
+      const lineCount = buildLines();
+      if (lineCount > 0) return;
+      scheduleBuild(125);
+    }, 250);
+
+    // Expose buildLines so the rehydration effect can force a rebuild after OCC
+    // bodies are re-registered (needed after full page refresh wipes the heap).
+    triggerRebuildRef.current = buildLines;
+
+    return () => {
+      cancelled = true;
+      triggerRebuildRef.current = null;
+      if (initialBuildHandle !== null) window.clearTimeout(initialBuildHandle);
+      if (retryHandle !== null) window.clearTimeout(retryHandle);
+      for (const line of allEdgeLinesRef.current) {
+        _scene.remove(line);
+        line.geometry.dispose();
+      }
+      allEdgeLinesRef.current = [];
+    };
+  }, [enabled, _scene, allEdgesMat, pickEdgesMat, allowCurvedEdges, edgeSourceSignature, visibleBodyFeatureIds, invalidateCanvas]);
+
+  // After page refresh the OCC WASM heap is wiped so the registry is empty even
+  // though feature meshes are still in the scene.  Rebuild missing BRep bodies for
+  // visible solid extrudes whenever edge-op mode is activated, then force a guide-
+  // line rebuild so the orange lines carry a valid brepBodyId for click resolution.
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+
+    // Replay ALL visible solid features (not just the latest) so that every
+    // extrude body is rebuilt with analytical arc edges when possible.
+    // ensureOccBodyForFeature tries replay first (which uses the latest
+    // analytical builders), falling back to STEP restore only when replay fails.
+    const candidates = features.filter(
+      (feature) =>
+        feature.visible &&
+        !feature.suppressed &&
+        feature.type !== "sketch" &&
+        feature.mesh instanceof THREE.Mesh,
+    );
+    Promise.all(
+      candidates.map((feature) =>
+        ensureOccBodyForFeature(feature, features, sketches).then((ok) => {
+          return ok;
+        }),
+      ),
+    ).then((results) => {
+      if (cancelled) return;
+      if (!results.some(Boolean)) return;
+      // Bodies are now registered — rebuild guide lines so they get brepBodyId set.
+      triggerRebuildRef.current?.();
+      invalidateCanvas();
+    });
+
+    return () => { cancelled = true; };
+  }, [enabled, features, sketches, invalidateCanvas]);
 
   useFrame(({ scene, invalidate }) => {
     if (!enabled) {
+      /* eslint-disable-next-line react-hooks/immutability */
+      allEdgesMat.opacity = 1;
       if (hoverLineRef.current) {
         scene.remove(hoverLineRef.current);
         hoverLineRef.current.geometry.dispose();
         hoverLineRef.current = null;
-        renderedHoverRef.current = null;
         renderedHoverIdRef.current = null;
       }
       if (selectedLinesRef.current.size > 0) {
@@ -450,50 +703,104 @@ export default function EdgeOpEdgeHighlight({
       }
       if (cursorOnRef.current) {
         /* eslint-disable-next-line react-hooks/immutability */
-        gl.domElement.style.cursor = '';
+        gl.domElement.style.cursor = "";
         cursorOnRef.current = false;
       }
       return;
     }
-    // Only keep the demand loop spinning while there's something visible to
-    // animate (the pulse). When no edge is hovered AND no edge is selected,
-    // the picker has nothing to render — let the canvas idle. Hover changes
-    // already wake the loop via invalidate in handleHover; edgeIds changes
-    // trigger a React re-render which runs useFrame at least once anyway.
-    const hasVisible =
-      hoverResultRef.current !== null || selectedLinesRef.current.size > 0 || edgeIds.length > 0 || allEdgesRef.current !== null;
-    if (hasVisible) invalidate();
 
-    const hr = hoverResultRef.current;
+    // Only drive continuous frames when something is actually animating (hover pulse
+    // or selected-edge pulse). The static guide lines don't need per-frame redraws.
+    if (occHoverRef.current || selectedLinesRef.current.size > 0) {
+      invalidate();
+    }
 
-    // Cursor: crosshair while hovering a pickable edge.
-    const wantCursor = !!hr;
+    const wantCursor = !!occHoverRef.current;
     if (wantCursor !== cursorOnRef.current) {
-      /* eslint-disable-next-line react-hooks/immutability */
-      gl.domElement.style.cursor = wantCursor ? 'crosshair' : '';
+      gl.domElement.style.cursor = wantCursor ? "crosshair" : "";
       cursorOnRef.current = wantCursor;
     }
 
-    // Hover line — draw the FULL chained model edge when available. Only
-    // (re)build the geometry when the hovered model edge actually changes;
-    // every frame in between is just the pulse mutating opacity.
-    if (hr) {
-      if (hr !== renderedHoverRef.current) {
-        renderedHoverRef.current = hr;
-        const id = edgeId(hr);
-        if (id !== renderedHoverIdRef.current || !hoverLineRef.current) {
-          renderedHoverIdRef.current = id;
-          const hPts = hr.chain && hr.chain.length >= 2
-            ? hr.chain
-            : [hr.edgeVertexA, hr.edgeVertexB];
-          if (!hoverLineRef.current) {
+    const occHover = occHoverRef.current;
+    if (occHover) {
+      const id = occEdgeId(occHover);
+      if (id !== renderedHoverIdRef.current || !hoverLineRef.current) {
+        renderedHoverIdRef.current = id;
+
+        // Remove any existing hover line so we can create the correct type
+        // (Line vs LineSegments may change depending on tangent-chain expansion).
+        if (hoverLineRef.current) {
+          scene.remove(hoverLineRef.current);
+          hoverLineRef.current.geometry.dispose();
+          hoverLineRef.current = null;
+        }
+
+        // Expand to the full tangent chain so that hovering over any single polygon
+        // segment of a curved edge (e.g. the arc of a half-circle extrude) highlights
+        // the entire edge instead of one tiny tessellation segment.
+        //
+        // Uses the guide line's own edgePolylines (pure geometry, no OCC WASM needed).
+        // This works for both tessellation guides (OCC edge IDs) and topology guides
+        // (sequential IDs) — it only relies on endpoint proximity + tangent direction.
+        let builtChain = false;
+        let guidePolylines = occHover.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined;
+        let chainMap = occHover.mesh.userData['chainIdByEdgeId'] as Map<number, number> | undefined;
+        // The invisible occDirect pick line doesn't carry edgePolylines — find
+        // the sibling visible guide line for the same body.
+        if (!guidePolylines && occHover.mesh.userData['occDirect'] && occHover.bodyId) {
+          for (const line of allEdgeLinesRef.current) {
+            if (line.userData['occDirect']) continue;
+            if (line.userData['brepBodyId'] === occHover.bodyId && line.userData['edgePolylines']) {
+              guidePolylines = line.userData['edgePolylines'] as Map<number, THREE.Vector3[]>;
+              chainMap = line.userData['chainIdByEdgeId'] as Map<number, number> | undefined;
+              break;
+            }
+          }
+        }
+        if (guidePolylines && guidePolylines.size > 1) {
+          // Authoritative chainId grouping for OCC bodies (chainMap present),
+          // polylineTangentChain geometric BFS for non-OCC mesh bodies.
+          const chainSet = chainMap
+            ? expandChainEdges(chainMap, guidePolylines, occHover.edgeId)
+            : polylineTangentChain(guidePolylines, occHover.edgeId);
+          if (chainSet.size > 1) {
+            // Build world-space segment pairs from all chain edges' polylines.
+            const positions: number[] = [];
+            for (const eid of chainSet) {
+              const pts = guidePolylines.get(eid);
+              if (!pts || pts.length < 2) continue;
+              for (let i = 0; i + 1 < pts.length; i++) {
+                positions.push(
+                  pts[i].x, pts[i].y, pts[i].z,
+                  pts[i + 1].x, pts[i + 1].y, pts[i + 1].z,
+                );
+              }
+            }
+            if (positions.length >= 6) {
+              // Runs once per hover-id change, not per frame.
+              const geom = new THREE.BufferGeometry();
+              geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+              const line = new THREE.LineSegments(geom, hoverMat);
+              line.renderOrder = EDGE_HOVER_RENDER_ORDER;
+              line.frustumCulled = false;
+              scene.add(line);
+              hoverLineRef.current = line;
+              builtChain = true;
+            }
+          }
+        }
+
+        if (!builtChain) {
+          // Fallback: single-edge world-space polyline (straight edges, or when OCC
+          // is not available, or when the edge has no tangent neighbours).
+          const hPts = getOccEdgePolyline(occHover)
+            ?? (occHover.mesh.userData['edgePolylines'] as Map<number, THREE.Vector3[]> | undefined)?.get(occHover.edgeId)
+            ?? null;
+          if (hPts) {
             const line = new THREE.Line(buildPolylineGeometry(hPts), hoverMat);
-            line.renderOrder = 1401;
+            line.renderOrder = EDGE_HOVER_RENDER_ORDER;
             scene.add(line);
             hoverLineRef.current = line;
-          } else {
-            hoverLineRef.current.geometry.dispose();
-            hoverLineRef.current.geometry = buildPolylineGeometry(hPts);
           }
         }
       }
@@ -501,51 +808,45 @@ export default function EdgeOpEdgeHighlight({
       scene.remove(hoverLineRef.current);
       hoverLineRef.current.geometry.dispose();
       hoverLineRef.current = null;
-      renderedHoverRef.current = null;
       renderedHoverIdRef.current = null;
     }
 
-    // Sync selected lines with edgeIds. Per-frame loop, so the membership
-    // test goes through the memoised `edgeIdSet` instead of an
-    // `Array.includes` scan — N×M -> N+M on selections with many rim
-    // segments, AND the Set itself is built only when edgeIds changes
-    // (not per frame).
     selectedLinesRef.current.forEach((line, id) => {
       if (!edgeIdSet.has(id)) {
         scene.remove(line);
         line.geometry.dispose();
         selectedLinesRef.current.delete(id);
         selectedEdgesDataRef.current.delete(id);
+        selectedChainIdsRef.current.delete(id);
       }
     });
     for (const id of edgeIds) {
       if (!selectedLinesRef.current.has(id)) {
         const edgeData = selectedEdgesDataRef.current.get(id);
         if (edgeData && edgeData.length >= 2) {
-          const line = new THREE.Line(buildPolylineGeometry(edgeData), selectedMat);
-          line.renderOrder = 1401;
+          // Chain-expanded edges use LineSegments (segment-pair format);
+          // single edges use Line (continuous polyline).
+          const isChain = selectedChainIdsRef.current.has(id);
+          const line = isChain
+            ? new THREE.LineSegments(buildPolylineGeometry(edgeData), selectedMat)
+            : new THREE.Line(buildPolylineGeometry(edgeData), selectedMat);
+          line.renderOrder = EDGE_SELECTED_RENDER_ORDER;
           scene.add(line);
           selectedLinesRef.current.set(id, line);
         }
       }
     }
 
-    // Pulse: hovered line bright, selected lines a subtler steady pulse.
-    // applyLinePulse mutates material.opacity, and every selected line shares
-    // ONE selectedMat (created once via useMemo), so calling it per-line
-    // mutated the same material N times per frame with the same result. We
-    // pulse the material reference once instead — every selected line picks
-    // up the new opacity. The hover line has its own material.
     const now = performance.now();
+    // Guide lines stay at static opacity — animating them every frame causes
+    // an invalidate() → useFrame → invalidate() loop that locks the renderer
+    // at 60fps even when nothing is changing.
     if (hoverLineRef.current) applyLinePulse(hoverLineRef.current, 1, now);
-    const repSelected = selectedLinesRef.current.values().next().value as THREE.Line | undefined;
-    if (repSelected) applyLinePulse(repSelected, 1.0, now);
-    // All-edges overlay: subtle 2 Hz opacity pulse so it reads as interactive
-    // without competing with the brighter hover/selected lines.
-    if (allEdgesRef.current) {
-      const t = (now % 1000) / 1000; // 0..1 over 1s
-      allEdgesMat.opacity = 0.75 + 0.15 * Math.sin(t * Math.PI * 2);
-    }
+    selectedLinesRef.current.forEach((line) => {
+      const material = line.material as THREE.Material;
+      material.opacity = 0.65 + 0.35 * (0.5 + 0.5 * Math.sin(now * 0.006));
+      material.transparent = true;
+    });
   });
 
   return null;

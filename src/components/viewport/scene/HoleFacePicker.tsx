@@ -1,27 +1,20 @@
 /**
- * HoleFacePicker — face picking + in-viewport preview for the Hole dialog.
- *
- * Active when activeDialog === 'hole'.
- *  - No face selected: hover highlight + click → setHoleFace(id, normal, centroid).
- *  - Face selected: orange selected-face polygon, red translucent cylindrical
- *    preview drilled along the inward face normal, and a floating drei <Html>
- *    diameter chip pinned to the face centroid (Fusion 360 style).
- *
- * Module-level material singletons + scratch vectors (no per-frame allocs).
- * All BufferGeometry instances are disposed before being replaced.
+ * HoleFacePicker - OCC face picking and in-viewport preview for the Hole dialog.
  */
 
-import { useRef, useCallback, useEffect, useMemo, useState } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
 import { useCADStore } from '../../../store/cadStore';
-import { useFacePicker, type FacePickResult } from '../../../hooks/useFacePicker';
 import { usePickerSceneCleanup } from '../../../hooks/usePickerSceneCleanup';
-import { buildFaceGeometry } from './pickerGeometry';
+import { useOccFacePicker, type OccFacePickResult } from './OccFacePicker';
+import { getMeshTessellation, buildFaceHighlightGeometry } from '../../../engine/occ/picking';
+import { isFacePlanar } from '../../../engine/occ/geomSurface';
+import { globalBRepBodyRegistry } from '../../../engine/occ/globalRegistry';
+import { getOccSync } from '../../../engine/occ/loader';
 import { usePickCursor, pulseFactor } from './pickPulse';
 
-// ── Module-level material singletons ─────────────────────────────────────────
 const HOVER_MAT = new THREE.MeshBasicMaterial({
   color: 0x2196f3,
   transparent: true,
@@ -46,14 +39,12 @@ const PREVIEW_MAT = new THREE.MeshBasicMaterial({
   depthWrite: false,
 });
 
-// Module-level scratch — never allocate per frame
 const _normal = new THREE.Vector3();
 const _centroid = new THREE.Vector3();
 const _drillDir = new THREE.Vector3();
 const _up = new THREE.Vector3(0, 1, 0);
 const _quat = new THREE.Quaternion();
 
-// ── Component ────────────────────────────────────────────────────────────────
 export default function HoleFacePicker() {
   const activeDialog = useCADStore((s) => s.activeDialog);
   const holeFaceId = useCADStore((s) => s.holeFaceId);
@@ -64,108 +55,153 @@ export default function HoleFacePicker() {
   const pickEnabled = activeDialog === 'hole' && holeFaceId === null;
   const overlayEnabled = activeDialog === 'hole';
 
-  // Per-instance clone of the shared HOVER_MAT so we can pulse opacity without
-  // mutating the module-level singleton (one clone per component lifetime).
-  const pulseHoverMat = useMemo(() => HOVER_MAT.clone(), []);
-  useEffect(() => () => { pulseHoverMat.dispose(); }, [pulseHoverMat]);
+  const pulseHoverMatRef = useRef<THREE.MeshBasicMaterial | null>(null);
+  useEffect(() => {
+    const material = HOVER_MAT.clone();
+    pulseHoverMatRef.current = material;
+    return () => {
+      material.dispose();
+      pulseHoverMatRef.current = null;
+    };
+  }, []);
 
-  // Crosshair cursor while a pickable face is hovered (only while picking).
   const [hovering, setHovering] = useState(false);
   usePickCursor(pickEnabled, hovering);
 
-  const hoverResultRef = useRef<FacePickResult | null>(null);
-  const selectedBoundaryRef = useRef<THREE.Vector3[] | null>(null);
-
+  const occHoverRef = useRef<OccFacePickResult | null>(null);
+  const occSelectedRef = useRef<OccFacePickResult | null>(null);
   const hoverMeshRef = useRef<THREE.Mesh | null>(null);
   const selectedMeshRef = useRef<THREE.Mesh | null>(null);
   const previewMeshRef = useRef<THREE.Mesh | null>(null);
-  // Cached cylinder dimensions — only rebuild when dia/depth actually change.
+  const hoverSigRef = useRef<string | null>(null);
+  const selectedSigRef = useRef<string | null>(null);
   const previewSigRef = useRef<{ dia: number; depth: number }>({ dia: -1, depth: -1 });
+  const planarFaceCacheRef = useRef<Map<string, boolean>>(new Map());
   usePickerSceneCleanup([hoverMeshRef, selectedMeshRef, previewMeshRef]);
 
-  const handleHover = useCallback((result: FacePickResult | null) => {
-    hoverResultRef.current = result;
-    setHovering(result !== null);
+  const isOccFacePlanar = useCallback((result: OccFacePickResult): boolean => {
+    const key = `${result.bodyId}:${result.faceId}`;
+    const cached = planarFaceCacheRef.current.get(key);
+    if (cached !== undefined) return cached;
+    const occ = getOccSync();
+    if (!occ) return false;
+    const body = globalBRepBodyRegistry.get(result.bodyId);
+    if (!body) return false;
+    const planar = isFacePlanar(occ.oc, body, result.faceId);
+    planarFaceCacheRef.current.set(key, planar);
+    return planar;
   }, []);
 
-  const handleClick = useCallback(
-    (result: FacePickResult) => {
-      const id = result.centroid.toArray().join(',');
-      selectedBoundaryRef.current = result.boundary.map((v) => v.clone());
-      setHoleFace(
-        id,
-        [result.normal.x, result.normal.y, result.normal.z],
-        [result.centroid.x, result.centroid.y, result.centroid.z],
-      );
-    },
-    [setHoleFace],
-  );
+  const handleOccHover = useCallback((result: OccFacePickResult | null) => {
+    if (!result || !isOccFacePlanar(result)) {
+      setHovering(false);
+      occHoverRef.current = null;
+      return;
+    }
+    setHovering(true);
+    occHoverRef.current = result;
+  }, [isOccFacePlanar]);
 
-  useFacePicker({ enabled: pickEnabled, onHover: handleHover, onClick: handleClick });
+  const handleOccClick = useCallback((result: OccFacePickResult) => {
+    if (!isOccFacePlanar(result)) return;
+    occSelectedRef.current = result;
+    const id = `occ:${result.bodyId}:${result.faceId}`;
+    setHoleFace(
+      id,
+      [result.normal.x, result.normal.y, result.normal.z],
+      [result.point.x, result.point.y, result.point.z],
+    );
+  }, [isOccFacePlanar, setHoleFace]);
+
+  useOccFacePicker({ enabled: pickEnabled, onHover: handleOccHover, onClick: handleOccClick });
 
   useFrame(({ scene, invalidate, clock }) => {
-    // Tear everything down when the dialog is not open.
     if (!overlayEnabled) {
+      planarFaceCacheRef.current.clear();
       if (hoverMeshRef.current) {
         scene.remove(hoverMeshRef.current);
         hoverMeshRef.current.geometry.dispose();
         hoverMeshRef.current = null;
       }
+      hoverSigRef.current = null;
       if (selectedMeshRef.current) {
         scene.remove(selectedMeshRef.current);
         selectedMeshRef.current.geometry.dispose();
         selectedMeshRef.current = null;
       }
+      selectedSigRef.current = null;
       if (previewMeshRef.current) {
         scene.remove(previewMeshRef.current);
         previewMeshRef.current.geometry.dispose();
         previewMeshRef.current = null;
       }
+      occHoverRef.current = null;
+      occSelectedRef.current = null;
       return;
     }
-    invalidate(); // keep rendering while picker is active
+    if (pickEnabled && occHoverRef.current) invalidate();
 
-    // ── Hover overlay (only while picking) ─────────────────────────────────
     if (pickEnabled) {
-      const hr = hoverResultRef.current;
-      if (hr) {
-        if (!hoverMeshRef.current) {
-          const mesh = new THREE.Mesh(buildFaceGeometry(hr.boundary), pulseHoverMat);
-          mesh.renderOrder = 99;
-          scene.add(mesh);
-          hoverMeshRef.current = mesh;
-        } else {
-          hoverMeshRef.current.geometry.dispose();
-          hoverMeshRef.current.geometry = buildFaceGeometry(hr.boundary);
+      const occHover = occHoverRef.current;
+      const tess = occHover ? getMeshTessellation(occHover.mesh) : null;
+      const pulseHoverMat = pulseHoverMatRef.current;
+      if (occHover && tess && pulseHoverMat) {
+        const sig = `${occHover.bodyId}:${occHover.faceId}`;
+        if (!hoverMeshRef.current || hoverSigRef.current !== sig) {
+          const hoverGeo = buildFaceHighlightGeometry(tess, occHover.faceId);
+          if (hoverMeshRef.current) {
+            hoverMeshRef.current.geometry.dispose();
+            hoverMeshRef.current.geometry = hoverGeo;
+          } else {
+            const mesh = new THREE.Mesh(hoverGeo, pulseHoverMat);
+            mesh.renderOrder = 99;
+            scene.add(mesh);
+            hoverMeshRef.current = mesh;
+          }
+          hoverSigRef.current = sig;
         }
-        // Subtle breathing pulse on the hover highlight (per-instance clone).
         pulseHoverMat.opacity = 0.3 + 0.35 * pulseFactor(clock.elapsedTime * 1000);
       } else if (hoverMeshRef.current) {
         scene.remove(hoverMeshRef.current);
         hoverMeshRef.current.geometry.dispose();
         hoverMeshRef.current = null;
+        hoverSigRef.current = null;
       }
     } else if (hoverMeshRef.current) {
       scene.remove(hoverMeshRef.current);
       hoverMeshRef.current.geometry.dispose();
       hoverMeshRef.current = null;
+      hoverSigRef.current = null;
     }
 
-    // ── Selected face overlay ──────────────────────────────────────────────
-    if (holeFaceId && selectedBoundaryRef.current && !selectedMeshRef.current) {
-      const mesh = new THREE.Mesh(buildFaceGeometry(selectedBoundaryRef.current), SELECTED_MAT);
-      mesh.renderOrder = 100;
-      scene.add(mesh);
-      selectedMeshRef.current = mesh;
+    const occSelected = occSelectedRef.current;
+    if (holeFaceId && occSelected) {
+      const tess = getMeshTessellation(occSelected.mesh);
+      if (tess) {
+        const sig = `${occSelected.bodyId}:${occSelected.faceId}`;
+        if (!selectedMeshRef.current || selectedSigRef.current !== sig) {
+          const selectedGeo = buildFaceHighlightGeometry(tess, occSelected.faceId);
+          if (selectedMeshRef.current) {
+            selectedMeshRef.current.geometry.dispose();
+            selectedMeshRef.current.geometry = selectedGeo;
+          } else {
+            const mesh = new THREE.Mesh(selectedGeo, SELECTED_MAT);
+            mesh.renderOrder = 100;
+            scene.add(mesh);
+            selectedMeshRef.current = mesh;
+          }
+          selectedSigRef.current = sig;
+        }
+      }
     }
     if (!holeFaceId && selectedMeshRef.current) {
       scene.remove(selectedMeshRef.current);
       selectedMeshRef.current.geometry.dispose();
       selectedMeshRef.current = null;
-      selectedBoundaryRef.current = null;
+      selectedSigRef.current = null;
+      occSelectedRef.current = null;
     }
 
-    // ── Cylindrical preview at the picked face ─────────────────────────────
     if (holeFaceId && holeFaceNormal && holeFaceCentroid) {
       const dia = useCADStore.getState().holeDraftDiameter;
       const depth = useCADStore.getState().holeDraftDepth;
@@ -175,13 +211,7 @@ export default function HoleFacePicker() {
       _drillDir.copy(_normal).multiplyScalar(-1);
       _quat.setFromUnitVectors(_up, _drillDir);
 
-      // Only rebuild the cylinder when dia/depth actually change. Previously
-      // the else branch ran every frame and re-allocated a 32-segment
-      // CylinderGeometry on every tick — a continuous GPU + GC churn for as
-      // long as the dialog stayed open with a face selected.
-      const sigDia = previewSigRef.current.dia;
-      const sigDepth = previewSigRef.current.depth;
-      const dirty = sigDia !== dia || sigDepth !== depth;
+      const dirty = previewSigRef.current.dia !== dia || previewSigRef.current.depth !== depth;
       if (!previewMeshRef.current) {
         const geom = new THREE.CylinderGeometry(dia / 2, dia / 2, depth, 32, 1, true);
         geom.translate(0, -depth / 2, 0);
@@ -210,7 +240,6 @@ export default function HoleFacePicker() {
     }
   });
 
-  // Floating diameter chip — rendered only after a face is picked.
   if (!overlayEnabled || !holeFaceId || !holeFaceCentroid) return null;
   return (
     <Html
@@ -224,7 +253,6 @@ export default function HoleFacePicker() {
   );
 }
 
-// ── Floating diameter chip (Fusion 360 style) ───────────────────────────────
 function HoleDimensionChip() {
   const dia = useCADStore((s) => s.holeDraftDiameter);
   const setDia = useCADStore((s) => s.setHoleDraftDiameter);

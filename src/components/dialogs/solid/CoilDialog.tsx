@@ -4,101 +4,25 @@
  * Supports three coil types (pitch+height, pitch+revolutions, height+revolutions)
  * and three cross-section shapes (circle, square, triangle).
  */
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { X, Check } from 'lucide-react';
 import * as THREE from 'three';
-import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { useCADStore } from '../../../store/cadStore';
 import type { Feature } from '../../../types/cad';
-import { extractEdgeTopology } from '../../../engine/geometryEngine/core/solid/edgeTopology';
+import { getOccSync } from '../../../engine/occ/loader';
+import { occCoilWithInstance } from '../../../engine/occ/ops/helix';
+import { createRegisteredOccMesh } from '../../../engine/occ/registeredMesh';
+import { BODY_MATERIAL } from '../../viewport/scene/bodyMaterial';
+import { errorMessage } from '../../../utils/errorHandling';
+import {
+  buildCoilGeometry,
+  COIL_MESH_MATERIAL,
+  type CoilDirection,
+  type CoilSection,
+} from './coilGeometry';
 import '../common/ToolPanel.css';
 
 type CoilType = 'pitch-height' | 'pitch-revolutions' | 'height-revolutions';
-type CoilSection = 'circle' | 'square' | 'triangle';
-type CoilDirection = 'cw' | 'ccw';
-
-/** Parametric helix curve (Y-up, right-handed by default). */
-class HelixCurve extends THREE.Curve<THREE.Vector3> {
-  private readonly radius: number;
-  private readonly height: number;
-  private readonly revolutions: number;
-  private readonly ccw: boolean;
-
-  constructor(radius: number, height: number, revolutions: number, ccw: boolean) {
-    super();
-    this.radius = radius;
-    this.height = height;
-    this.revolutions = revolutions;
-    this.ccw = ccw;
-  }
-
-  getPoint(t: number, target = new THREE.Vector3()): THREE.Vector3 {
-    const angle = t * this.revolutions * 2 * Math.PI * (this.ccw ? -1 : 1);
-    return target.set(
-      this.radius * Math.cos(angle),
-      t * this.height,
-      this.radius * Math.sin(angle),
-    );
-  }
-}
-
-/** Build a THREE.BufferGeometry for the coil. Returns null if params are degenerate. */
-function buildCoilGeometry(
-  coilDiameter: number,
-  _pitch: number,
-  height: number,
-  revolutions: number,
-  sectionDiameter: number,
-  section: CoilSection,
-  direction: CoilDirection,
-): THREE.BufferGeometry | null {
-  const radius = Math.max(0.01, coilDiameter / 2);
-  const sectionR = Math.max(0.001, sectionDiameter / 2);
-  if (height < 0.001 || revolutions < 0.01) return null;
-
-  const segments = Math.max(32, Math.round(revolutions * 48));
-  const curve = new HelixCurve(radius, height, revolutions, direction === 'ccw');
-
-  if (section === 'circle') {
-    return new THREE.TubeGeometry(curve, segments, sectionR, 10, false);
-  }
-
-  // For square / triangle: use ExtrudeGeometry with a 2D shape
-  // Build path from discrete curve points
-  const pts = curve.getPoints(segments);
-  const path = new THREE.CatmullRomCurve3(pts, false, 'chordal', 0.5);
-
-  const shape = new THREE.Shape();
-  if (section === 'square') {
-    const s = sectionR;
-    shape.moveTo(-s, -s);
-    shape.lineTo( s, -s);
-    shape.lineTo( s,  s);
-    shape.lineTo(-s,  s);
-    shape.closePath();
-  } else {
-    // Equilateral triangle inscribed in sectionR circle
-    for (let i = 0; i < 3; i++) {
-      const angle = (i / 3) * Math.PI * 2 - Math.PI / 2;
-      if (i === 0) shape.moveTo(sectionR * Math.cos(angle), sectionR * Math.sin(angle));
-      else shape.lineTo(sectionR * Math.cos(angle), sectionR * Math.sin(angle));
-    }
-    shape.closePath();
-  }
-
-  const extrudeSettings: THREE.ExtrudeGeometryOptions = {
-    steps: segments,
-    extrudePath: path,
-    bevelEnabled: false,
-  };
-
-  try {
-    return new THREE.ExtrudeGeometry(shape, extrudeSettings);
-  } catch {
-    // ExtrudeGeometry can fail on very tight curves — fall back to TubeGeometry
-    return new THREE.TubeGeometry(curve, segments, sectionR, 10, false);
-  }
-}
 
 export function CoilDialog({ onClose }: { onClose: () => void }) {
   const editingFeatureId = useCADStore((s) => s.editingFeatureId);
@@ -109,17 +33,6 @@ export function CoilDialog({ onClose }: { onClose: () => void }) {
   const addFeature = useCADStore((s) => s.addFeature);
   const updateCoilFeatureMesh = useCADStore((s) => s.updateCoilFeatureMesh);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
-
-  const buildCoilMesh = (): THREE.Mesh | null => {
-    const geo = buildCoilGeometry(coilDiameter, pitch, effectiveHeight, effectiveRevolutions, sectionDiameter, section, direction);
-    if (!geo) return null;
-    try {
-      const forTopo = geo.index ? geo : mergeVertices(geo, 1e-6);
-      geo.userData.topology = extractEdgeTopology(forTopo);
-      if (forTopo !== geo) forTopo.dispose();
-    } catch { /* non-fatal */ }
-    return new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x8899aa, roughness: 0.5, metalness: 0.3 }));
-  };
 
   const [coilType, setCoilType] = useState<CoilType>((p.coilType as CoilType) ?? 'pitch-height');
   const [section, setSection] = useState<CoilSection>((p.section as CoilSection) ?? 'circle');
@@ -158,6 +71,47 @@ export function CoilDialog({ onClose }: { onClose: () => void }) {
     }
   }, [coilType, pitch, height, revolutions]);
 
+  /**
+   * Build the coil mesh.  Circle section: OCC helical sweep first, THREE TubeGeometry
+   * fallback.  Square / triangle: always THREE ExtrudeGeometry (no OCC equivalent).
+   * featureId is forwarded as sourceFeatureId so the resulting BRepBody is tracked.
+   * Uses COIL_MESH_MATERIAL (module-level singleton) for the THREE path — no per-call leak.
+   */
+  const buildCoilMesh = useCallback((featureId: string): THREE.Mesh | null => {
+    // ── OCC-first for circle section ────────────────────────────────────────
+    if (section === 'circle') {
+      const occ = getOccSync();
+      if (occ) {
+        try {
+          const effectivePitch = effectiveRevolutions > 0
+            ? effectiveHeight / effectiveRevolutions
+            : 1;
+          const body = occCoilWithInstance(
+            occ.oc,
+            coilDiameter / 2,
+            sectionDiameter / 2,
+            effectivePitch,
+            effectiveRevolutions,
+            { sourceFeatureId: featureId, rightHand: direction !== 'cw' },
+          );
+          const m = createRegisteredOccMesh(occ.oc, body, BODY_MATERIAL, featureId);
+          m.castShadow = true;
+          m.receiveShadow = true;
+          return m;
+        } catch (err) {
+          console.warn(
+            `[CoilDialog] OCC path failed (${errorMessage(err, 'unknown')}), falling back to THREE`,
+          );
+        }
+      }
+    }
+
+    // ── THREE fallback (square / triangle, or OCC unavailable / failed) ─────
+    const geo = buildCoilGeometry(coilDiameter, pitch, effectiveHeight, effectiveRevolutions, sectionDiameter, section, direction);
+    if (!geo) return null;
+    return new THREE.Mesh(geo, COIL_MESH_MATERIAL);
+  }, [section, direction, coilDiameter, sectionDiameter, pitch, effectiveRevolutions, effectiveHeight]);
+
   const canApply = effectiveRevolutions > 0.01 && effectiveHeight > 0.001 && coilDiameter > 0 && sectionDiameter > 0;
 
   const handleApply = () => {
@@ -167,13 +121,16 @@ export function CoilDialog({ onClose }: { onClose: () => void }) {
     };
 
     if (editing) {
-      const mesh = buildCoilMesh();
+      const mesh = buildCoilMesh(editing.id);
       if (!mesh) { setStatusMessage('Coil: invalid parameters'); return; }
       updateCoilFeatureMesh(editing.id, mesh, params);
     } else {
-      const mesh = buildCoilMesh() ?? undefined;
+      // Generate the ID before building the mesh so the OCC body can be
+      // registered under the correct sourceFeatureId straight away.
+      const featureId = crypto.randomUUID();
+      const mesh = buildCoilMesh(featureId) ?? undefined;
       const feature: Feature = {
-        id: crypto.randomUUID(),
+        id: featureId,
         name: `Coil (⌀${coilDiameter}mm × ${effectiveRevolutions.toFixed(1)}rev)`,
         type: 'coil',
         params,

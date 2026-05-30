@@ -42,9 +42,24 @@ export default function DuetFileEditor({ filePath, onClose, isNew = false, inlin
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lineNumbersRef = useRef<HTMLDivElement>(null);
   const highlightRef = useRef<HTMLPreElement>(null);
+  const caretFrameRef = useRef<number | null>(null);
 
   const fileName = filePath.split('/').pop() || filePath;
   const hasChanges = content !== originalContent;
+
+  useEffect(() => () => {
+    if (caretFrameRef.current !== null) cancelAnimationFrame(caretFrameRef.current);
+  }, []);
+
+  const scheduleCaretRestore = useCallback((textarea: HTMLTextAreaElement, caret: number, focus = false) => {
+    if (caretFrameRef.current !== null) cancelAnimationFrame(caretFrameRef.current);
+    caretFrameRef.current = requestAnimationFrame(() => {
+      caretFrameRef.current = null;
+      if (!textarea.isConnected) return;
+      if (focus) textarea.focus();
+      textarea.selectionStart = textarea.selectionEnd = caret;
+    });
+  }, []);
 
   // Notify parent of dirty-state changes (used to render unsaved dots in
   // the adjacent file list).
@@ -75,11 +90,8 @@ export default function DuetFileEditor({ filePath, onClose, isNew = false, inlin
     setContent(next);
     // Place the cursor at the end of the inserted snippet.
     const caret = start + inserted.length;
-    requestAnimationFrame(() => {
-      ta.focus();
-      ta.selectionStart = ta.selectionEnd = caret;
-    });
-  }, [content]);
+    scheduleCaretRestore(ta, caret, true);
+  }, [content, scheduleCaretRestore]);
 
   // Line count
   const lineCount = useMemo(() => content.split('\n').length, [content]);
@@ -204,12 +216,10 @@ export default function DuetFileEditor({ filePath, onClose, isNew = false, inlin
         const newContent = content.substring(0, start) + '  ' + content.substring(end);
         setContent(newContent);
         // Restore cursor position after state update
-        requestAnimationFrame(() => {
-          ta.selectionStart = ta.selectionEnd = start + 2;
-        });
+        scheduleCaretRestore(ta, start + 2);
       }
     },
-    [content, filePath, handleSave],
+    [content, filePath, handleSave, scheduleCaretRestore],
   );
 
   // Compute file size

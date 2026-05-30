@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import * as THREE from 'three';
 import type {
+  ConstructionGeometry,
   ComponentConstraint,
 } from '../types/cad';
 import type { ComponentStore } from '../types/component-store.types';
@@ -17,6 +18,37 @@ import { createJointActions } from './component/actions/joints';
 const rootId = crypto.randomUUID();
 
 export const _liveJointValues = liveJointValues;
+
+const vector3FromSerializable = (value: unknown): THREE.Vector3 => {
+  if (value instanceof THREE.Vector3) return value;
+  if (Array.isArray(value)) return new THREE.Vector3(value[0] ?? 0, value[1] ?? 0, value[2] ?? 0);
+  const vector = value as { x?: number; y?: number; z?: number } | undefined;
+  return new THREE.Vector3(vector?.x ?? 0, vector?.y ?? 0, vector?.z ?? 0);
+};
+
+const serializeVector3 = (value: unknown): { x: number; y: number; z: number } | undefined => {
+  if (!value) return undefined;
+  const vector = vector3FromSerializable(value);
+  return { x: vector.x, y: vector.y, z: vector.z };
+};
+
+const rehydrateConstructionGeometry = (construction: ConstructionGeometry): ConstructionGeometry => ({
+  ...construction,
+  planeNormal: construction.planeNormal ? vector3FromSerializable(construction.planeNormal) : undefined,
+  planeOrigin: construction.planeOrigin ? vector3FromSerializable(construction.planeOrigin) : undefined,
+  axisDirection: construction.axisDirection ? vector3FromSerializable(construction.axisDirection) : undefined,
+  axisOrigin: construction.axisOrigin ? vector3FromSerializable(construction.axisOrigin) : undefined,
+  point: construction.point ? vector3FromSerializable(construction.point) : undefined,
+});
+
+const serializeConstructionGeometry = (construction: ConstructionGeometry) => ({
+  ...construction,
+  planeNormal: serializeVector3(construction.planeNormal),
+  planeOrigin: serializeVector3(construction.planeOrigin),
+  axisDirection: serializeVector3(construction.axisDirection),
+  axisOrigin: serializeVector3(construction.axisOrigin),
+  point: serializeVector3(construction.point),
+});
 
 export const useComponentStore = create<ComponentStore>()(persist((set, get) => ({
   rootComponentId: rootId,
@@ -75,6 +107,13 @@ export const useComponentStore = create<ComponentStore>()(persist((set, get) => 
         );
       }
     }
+    // Reconstruct THREE.Vector3 fields for component construction geometry
+    state.constructions = Object.fromEntries(
+      Object.entries(state.constructions ?? {}).map(([id, construction]) => [
+        id,
+        rehydrateConstructionGeometry(construction as ConstructionGeometry),
+      ]),
+    );
     // Reconstruct THREE.Vector3 for Joint origin / axis
     for (const joint of Object.values(state.joints ?? {})) {
       const j = joint as unknown as { origin: unknown; axis?: unknown };
@@ -127,6 +166,13 @@ export const useComponentStore = create<ComponentStore>()(persist((set, get) => 
       Object.entries(state.bodies).map(([id, body]) => [
         id,
         { ...body, mesh: null },
+      ]),
+    ),
+    // Serialize component construction vectors as plain objects
+    constructions: Object.fromEntries(
+      Object.entries(state.constructions).map(([id, construction]) => [
+        id,
+        serializeConstructionGeometry(construction),
       ]),
     ),
     // Serialize Joint: origin and axis as plain objects

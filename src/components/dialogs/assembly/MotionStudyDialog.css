@@ -1,0 +1,245 @@
+/* ===== Motion Study Dialog ===== */
+
+/* Transport bar */
+.ms-transport {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ms-transport__btn {
+  padding: 3px 7px;
+  flex-shrink: 0;
+}
+
+.ms-loop-btn {
+  opacity: 0.5;
+}
+
+.ms-loop-btn--on {
+  opacity: 1;
+  color: #4caf50;
+  border-color: #4caf50;
+}
+
+.ms-transport__time {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-secondary, #aaa);
+  margin-right: auto;
+}
+
+.ms-transport__speed-label {
+  white-space: nowrap;
+}
+
+.ms-transport__speed {
+  width: 60px;
+}
+
+.ms-export-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0.6;
+}
+
+.ms-export-label {
+  font-size: 11px;
+}
+
+/* ── Timeline ── */
+.ms-timeline {
+  position: relative;
+  border: 1px solid var(--color-border, #333);
+  border-radius: 4px;
+  padding: 6px 8px 10px;
+  margin-bottom: 10px;
+  background: var(--color-bg-elevated, #1a1a1a);
+  overflow: hidden;
+}
+
+.ms-timeline__ruler {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--color-text-secondary, #777);
+  margin-bottom: 4px;
+  padding: 0 1px;
+  user-select: none;
+}
+
+.ms-timeline__tracks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 20px;
+}
+
+.ms-timeline__track-row {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  gap: 6px;
+  align-items: center;
+}
+
+.ms-timeline__track-label {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-primary, #ddd);
+}
+
+.ms-timeline__bar-wrap {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--color-bg-base, #111);
+}
+
+.ms-timeline__bar {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to right,
+    var(--color-accent, #2563eb) 0%,
+    #60a5fa 100%
+  );
+  border-radius: 4px;
+  opacity: 0.75;
+}
+
+/* Vary bar opacity slightly by easing to give a visual hint */
+.ms-timeline__bar[style*="ease-in"] {
+  background: linear-gradient(to right, #2563eb 0%, #3b82f6 60%, #93c5fd 100%);
+}
+.ms-timeline__bar[style*="ease-out"] {
+  background: linear-gradient(to right, #93c5fd 0%, #3b82f6 40%, #2563eb 100%);
+}
+.ms-timeline__bar[style*="ease-in-out"] {
+  background: linear-gradient(to right, #1e3a8a 0%, #3b82f6 50%, #1e3a8a 100%);
+}
+
+.ms-timeline__empty {
+  font-size: 11px;
+  color: var(--color-text-secondary, #666);
+  padding: 4px 0;
+  grid-column: 1 / -1;
+}
+
+/* Playhead + scrubber overlay */
+.ms-timeline__scrubber-wrap {
+  position: absolute;
+  inset: 22px 8px 4px; /* top clears the ruler */
+  pointer-events: none;
+}
+
+.ms-timeline__playhead {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--color-accent-secondary, #f59e0b);
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.ms-timeline__scrubber {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  pointer-events: all;
+}
+
+/* ── Track editor ── */
+.ms-tracks {
+  margin-bottom: 8px;
+}
+
+.ms-tracks__heading {
+  margin-bottom: 4px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary, #888);
+}
+
+.ms-track-row {
+  display: grid;
+  grid-template-columns: 1fr 68px 68px 110px 26px;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.ms-track-row__name {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-track-row__col {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.ms-track-row__col-label {
+  font-size: 10px;
+  color: var(--color-text-secondary, #888);
+}
+
+.ms-track-row__input {
+  padding: 2px 4px;
+  font-size: 11px;
+}
+
+/* ── Add track row ── */
+.ms-add-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+
+.ms-add-row__icon {
+  color: var(--color-text-secondary, #888);
+  flex-shrink: 0;
+}
+
+.ms-add-row__select {
+  flex: 1;
+}
+
+.ms-add-row__btn {
+  flex-shrink: 0;
+}
+
+/* ── Empty state ── */
+.ms-empty {
+  font-size: 12px;
+  color: var(--color-text-secondary, #888);
+  padding: 8px 0;
+}
+
+/* ── Duration row ── */
+.ms-duration-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.ms-duration-row__label {
+  white-space: nowrap;
+}
+
+.ms-duration-row__input {
+  width: 80px;
+}

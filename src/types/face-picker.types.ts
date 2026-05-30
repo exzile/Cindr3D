@@ -6,6 +6,8 @@ export interface FacePickResult {
   boundary: THREE.Vector3[];
   normal: THREE.Vector3;
   centroid: THREE.Vector3;
+  occBodyId?: string;
+  occFaceId?: number;
 }
 
 export interface UseFacePickerOptions {

@@ -55,7 +55,15 @@ export default function LayerGalleryPanel() {
   const [capturing, setCapturing] = useState(false);
   const [message, setMessage] = useState('');
   const previousLayerRef = useRef<number | undefined>(undefined);
+  const mountedRef = useRef(true);
   const urls = useObjectUrls(frames);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const jobName = model.job?.file?.fileName || 'manual-gallery';
   const currentLayer = model.job?.layer;
@@ -68,6 +76,7 @@ export default function LayerGalleryPanel() {
 
   const refreshFrames = useCallback(async () => {
     const loaded = await listLayerGalleryFrames(activePrinterId, jobName);
+    if (!mountedRef.current) return;
     setFrames(loaded);
   }, [activePrinterId, jobName]);
 
@@ -84,10 +93,11 @@ export default function LayerGalleryPanel() {
         fallbackUrl,
         retentionCap,
       });
+      if (!mountedRef.current) return;
       setMessage(captured.length > 0 ? `Captured layer ${layer} from ${captured.length} camera${captured.length === 1 ? '' : 's'}.` : 'No enabled snapshot-capable camera responded.');
       await refreshFrames();
     } finally {
-      setCapturing(false);
+      if (mountedRef.current) setCapturing(false);
     }
   }, [activePrinter, activePrinterId, currentLayer, fallbackUrl, jobName, prefs, printerName, refreshFrames, retentionCap]);
 
@@ -105,6 +115,7 @@ export default function LayerGalleryPanel() {
   const clearCurrent = useCallback(async () => {
     await clearLayerGalleryFrames(activePrinterId, jobName);
     await refreshFrames();
+    if (!mountedRef.current) return;
     setMessage('Layer gallery cleared for this job.');
   }, [activePrinterId, jobName, refreshFrames]);
 

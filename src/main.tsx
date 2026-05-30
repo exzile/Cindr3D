@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import * as THREE from 'three';
+import { occConsole } from './engine/occ/occConsole';
 import {
   computeBoundsTree,
   disposeBoundsTree,
@@ -9,12 +10,26 @@ import {
 import App from './App';
 import './index.css';
 import './effects/autoSaveDzn';
+import './effects/cadStatePagehideFlush';
 import './effects/language';
 import './effects/printSessionResume';
 import './effects/profileSpoolSync';
 import { registerServiceWorker } from './pwa/registerServiceWorker';
 import { installInteractiveLabelGuard } from './accessibility/interactiveLabels';
-import { initManifold } from './engine/geometryEngine/core/solid/manifoldWasm';
+
+// ─── OCC stdout filter ───────────────────────────────────────────────────────
+// Emscripten binds `console.log.bind(console)` once when the OCC WASM module
+// initialises (lazy, on first extrude/fillet).  Installing our filter HERE —
+// before any user action that triggers the load — means the bind captures the
+// filtered version.  Runtime reassignment of console.log after the module has
+// loaded has no effect because the bound function holds a permanent reference
+// to the original.  The filter only suppresses output when occConsole.suppress
+// is set (around STEPControl_Writer.Transfer / Write in stepIO.ts).
+const _origConsoleLog = console.log.bind(console);
+console.log = (...args: Parameters<typeof console.log>) => {
+  if (occConsole.suppress) return;
+  _origConsoleLog(...args);
+};
 
 // ─── three-mesh-bvh: accelerate all Three.js raycasting globally ─────────────
 // Patching the prototype once here makes every Mesh in the scene use BVH-backed
@@ -29,13 +44,10 @@ import { initManifold } from './engine/geometryEngine/core/solid/manifoldWasm';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (THREE.Mesh.prototype as any).raycast = acceleratedRaycast;
 
-// ─── Manifold WASM: pre-load so the first CSG call is fast ───────────────────
-// initManifold() resolves in ~50–200ms (WASM fetch + compile). Starting it here
-// means fillet/chamfer/extrude CSG ops that follow app load don't stall. Falls
-// back to three-bvh-csg gracefully if this fails (bad network, CSP, etc.).
-void initManifold().catch(() => {
-  console.warn('[main] Manifold WASM init failed — CSG will use three-bvh-csg fallback');
-});
+// OCC WASM loads lazily on first use (first extrude, fillet, etc.).
+// Any background prewarm — idle callback or setTimeout — competes with React
+// rendering and Three.js WebGL for memory, causing OOM in the Toolbar on
+// complex models. Keep it purely lazy.
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
