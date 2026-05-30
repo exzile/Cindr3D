@@ -201,7 +201,15 @@ function makeFakeOcc() {
       delete() {}
     },
     gp_XYZ_2: class {
-      constructor(public x: number, public y: number, public z: number) {}
+      x: number;
+      y: number;
+      z: number;
+
+      constructor(x: number, y: number, z: number) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+      }
       delete() {}
     },
     gp_Trsf_1: class {

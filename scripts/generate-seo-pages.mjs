@@ -7,7 +7,7 @@ const sourcePath = path.join(distDir, 'index.html');
 
 const pages = [
   {
-    route: '/home',
+    route: '/',
     title: 'Cindr3D | Browser CAD, Slicing, and 3D Printer Control',
     description:
       'Cindr3D is a browser-based CAD, slicing, and printer-control workspace for designing models, preparing prints, and managing 3D printer fleets.',
@@ -19,6 +19,18 @@ const pages = [
       'Design printable parts with sketch and solid modeling tools.',
       'Prepare prints with slicer profiles, previews, and G-code simulation.',
       'Monitor and control printers from a customizable fleet dashboard.',
+    ],
+    sections: [
+      {
+        title: 'One browser workspace for the full print workflow',
+        body:
+          'Cindr3D combines CAD design, model preparation, G-code inspection, and printer monitoring so makers can move from idea to print without exporting through several disconnected tools.',
+      },
+      {
+        title: 'Built for self-hosted 3D printing',
+        body:
+          'The app is open source and runs in the browser, with workflows for printable model design, slicing setup, print simulation, and direct printer dashboard control for common firmware environments.',
+      },
     ],
     priority: 1,
   },
@@ -36,6 +48,18 @@ const pages = [
       'Build solid features such as extrude, revolve, fillet, and chamfer.',
       'Keep an editable modeling timeline for design changes.',
     ],
+    sections: [
+      {
+        title: 'CAD tools focused on printable parts',
+        body:
+          'The design workspace provides sketch-driven modeling for practical 3D-print projects, including editable features, profile-based extrude workflows, edge operations, and a compact design timeline.',
+      },
+      {
+        title: 'Model history remains editable',
+        body:
+          'Cindr3D stores feature metadata for sketches, extrudes, fillets, chamfers, and related model operations so design changes can be reloaded and adjusted instead of flattened into a one-way mesh.',
+      },
+    ],
     priority: 0.8,
   },
   {
@@ -52,6 +76,18 @@ const pages = [
       'Preview layer-by-layer G-code with breakpoints and section views.',
       'Export prepared print files directly from the browser.',
     ],
+    sections: [
+      {
+        title: 'Prepare models before sending them to a printer',
+        body:
+          'The prepare workspace covers model import, layout, slicing profile management, G-code generation, and print-preview checks before committing material and machine time.',
+      },
+      {
+        title: 'Inspect toolpaths with simulation controls',
+        body:
+          'Layer preview, G-code sections, breakpoints, and simulation tools help users inspect movement, extrusion, and setup choices before exporting or sending a job to a printer dashboard.',
+      },
+    ],
     priority: 0.8,
   },
   {
@@ -67,6 +103,18 @@ const pages = [
       'Track temperatures, motion, files, macros, and printer status.',
       'Customize dashboard layouts per printer.',
       'Connect to common 3D printer firmware and network setups.',
+    ],
+    sections: [
+      {
+        title: 'Monitor and control connected 3D printers',
+        body:
+          'The printer dashboard brings together temperatures, motion controls, files, macros, cameras, print status, and printer-specific panels in one configurable browser interface.',
+      },
+      {
+        title: 'Designed for single printers and small fleets',
+        body:
+          'Dashboard layouts can be adjusted per printer so users can keep the status cards, camera views, and controls that matter most for their machines and print-farm workflow.',
+      },
     ],
     priority: 0.7,
   },
@@ -118,10 +166,17 @@ function staticContent(page) {
   const highlights = page.highlights
     .map((highlight) => `        <li>${escapeHtml(highlight)}</li>`)
     .join('\n');
+  const sections = page.sections
+    .map((section) => `      <section>
+        <h2>${escapeHtml(section.title)}</h2>
+        <p>${escapeHtml(section.body)}</p>
+      </section>`)
+    .join('\n');
 
   return `<main class="seo-static-content" aria-label="${escapeHtml(page.heading)}">
       <h1>${escapeHtml(page.heading)}</h1>
       <p>${escapeHtml(page.intro)}</p>
+${sections}
       <ul>
 ${highlights}
       </ul>
@@ -139,6 +194,7 @@ function withSeo(page) {
   let output = html;
   output = replaceTag(output, /<title>.*?<\/title>/s, `<title>${escapeHtml(page.title)}</title>`);
   output = replaceTag(output, /<meta name="description" content="[^"]*" \/>/, `<meta name="description" content="${escapeHtml(page.description)}" />`);
+  output = replaceTag(output, /<meta name="robots" content="[^"]*" \/>/, '<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />');
   output = replaceTag(output, /<link rel="canonical" href="[^"]*" \/>/, `<link rel="canonical" href="${url}" />`);
   output = replaceTag(output, /<meta property="og:title" content="[^"]*" \/>/, `<meta property="og:title" content="${escapeHtml(page.title)}" />`);
   output = replaceTag(output, /<meta property="og:description" content="[^"]*" \/>/, `<meta property="og:description" content="${escapeHtml(page.ogDescription)}" />`);
@@ -154,9 +210,11 @@ function withSeo(page) {
 }
 
 for (const page of pages) {
-  const directory = path.join(distDir, page.route.slice(1));
-  fs.mkdirSync(directory, { recursive: true });
-  fs.writeFileSync(path.join(directory, 'index.html'), withSeo(page));
+  const outputPath = page.route === '/'
+    ? path.join(distDir, 'index.html')
+    : path.join(distDir, page.route.slice(1), 'index.html');
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, withSeo(page));
 }
 
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>

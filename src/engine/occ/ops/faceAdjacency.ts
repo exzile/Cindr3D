@@ -60,11 +60,13 @@ function faceNormalAtCenter(
     const u = (surf.FirstUParameter() + surf.LastUParameter()) / 2;
     const v = (surf.FirstVParameter() + surf.LastVParameter()) / 2;
     pnt = new occ.gp_Pnt_1();
-    d1u = new occ.gp_Vec_1();
-    d1v = new occ.gp_Vec_1();
-    surf.D1(u, v, pnt, d1u, d1v);
+    const uVec = new occ.gp_Vec_1();
+    const vVec = new occ.gp_Vec_1();
+    d1u = uVec;
+    d1v = vVec;
+    surf.D1(u, v, pnt, uVec, vVec);
     // Normal = D1U × D1V
-    const cross = d1u.Crossed(d1v);
+    const cross = uVec.Crossed(vVec);
     const nx = cross.X(); const ny = cross.Y(); const nz = cross.Z();
     cross.delete();
     const len = Math.sqrt(nx * nx + ny * ny + nz * nz);

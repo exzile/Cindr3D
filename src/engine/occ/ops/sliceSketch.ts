@@ -76,7 +76,7 @@ export function occSliceSketch(
   let pnt: { delete(): void } | null = null;
   let dir: { delete(): void } | null = null;
   let ax: { delete(): void } | null = null;
-  let builder: { delete(): void } | null = null;
+  let builder: InstanceType<OccSliceApi['BRepBuilderAPI_MakeFace_1']> | null = null;
   const entities: SketchEntity[] = [];
 
   try {
