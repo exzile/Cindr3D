@@ -381,16 +381,24 @@
 # ══════════════════════════════════════════════════════════════════════════════
 # OPEN — Test & lint debt surfaced during OCC-19 audit
 # ══════════════════════════════════════════════════════════════════════════════
-# [ ] TEST-1  9 pre-existing vitest failures across 5 files, unrelated to OCC-19 (proved
-#             via stash). Mostly stale stubs lagging the OCC-17/18 refactors:
-#             edgeModHelpers.test.ts (2 — assert OLD pre-arc-propagation round-seed
-#             behavior), occStepIO.test.ts (3), occTopologySupport.test.ts (1),
-#             occSnapshot.test.ts (1), ExtrudeCommitActions.test.ts (2 — WASM-URL load
-#             error in test env). Update each stub or fix the code if a real regression.
-#             (Spawned as a background task chip 2026-05-30.)
-# [ ] LINT-2  sliceSketch.ts pre-existing @typescript-eslint/no-explicit-any debt (11
-#             errors: oc:any + 9 local makers + curve:any) + 1 unused-disable. Give it a
-#             typed OccSliceApi interface like the sibling ops instead of bare any.
+# [x] TEST-1  9 pre-existing vitest failures across 5 files — all fixed (commit ff3ea5f):
+#             edgeModHelpers.test.ts: mocked getSelectableEdges (OCC-17 changed from
+#               computeEdgeAnchor); kind='circle'/'line' now controls the round-seed guard.
+#             occStepIO.test.ts: (1) added Message_ProgressRange_1 to mock oc + corrected
+#               rawShapeDeletes→0 (VIEW not deleted); (2) fixed real code bug: reader leaked
+#               on ReadFile failure (early return before catch); (3) reordered assertion
+#               after dispose() since reader is an ownedResource.
+#             occTopologySupport.test.ts: assignTopologyIds no longer deduplicates ids map
+#               (only byPtr); updated expected keys [1,2]→[1,2,3].
+#             occSnapshot.test.ts: mocked loader returning null; added null-guard to
+#               restoreOccSnapshot so it bails without clearing registry when OCC unavailable.
+#             ExtrudeCommitActions.test.ts: mocked OCC loader + extrude + boolean + tessellate
+#               + registeredMesh + buildSingleProfileOccBooleanExtrudeMesh; flag controls
+#               join-success vs new-body-promotion per test scenario.
+# [x] LINT-2  sliceSketch.ts: replaced oc:any + 9 local any + curve:any with typed
+#             OccSliceApi interface (gp_Pnt_3/Dir_4/Ax3_2/Pln_2, MakeFace_1, Section_3,
+#             TopExp_Explorer_2, TopoDS.Edge_1, BRep_Tool.Curve_2). Zero any remaining.
+#             Same pattern as draft.ts/fillet.ts. Commit ff3ea5f.
 
 # ══════════════════════════════════════════════════════════════════════════════
 # OPEN — Fillet/Chamfer manual QA (not automatable in preview harness)
