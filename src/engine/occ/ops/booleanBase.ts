@@ -52,22 +52,21 @@ export function propagateBooleanIds(
         while (it.More()) {
           const modShape = it.Value();
           try {
-            // Re-tag: if this new face's ptr matches a face in newBody, override its ID
+            // Re-tag: if this new face's ptr matches a face in newBody, override its ID.
+            // newFace is a TopoDS.Face_1 VIEW of modShape (same ptr) — do NOT .delete()
+            // it: modShape is deleted below, so deleting the VIEW too double-frees the
+            // same pointer → WASM heap corruption.
             const newFace = oc.TopoDS.Face_1(modShape);
-            try {
-              const existingId = ptrToNewId.get(newFace.ptr);
-              if (existingId !== undefined && existingId !== oldId) {
-                // Swap IDs so the modified face keeps the old ID
-                const oldHandle = newBody.faceIds.get(existingId) as BRepTopologyHandle;
-                const newHandle = newBody.faceIds.get(oldId);
-                if (oldHandle && !newHandle) {
-                  newBody.faceIds.delete(existingId);
-                  newBody.faceIds.set(oldId, oldHandle);
-                  ptrToNewId.set(newFace.ptr, oldId);
-                }
+            const existingId = ptrToNewId.get(newFace.ptr);
+            if (existingId !== undefined && existingId !== oldId) {
+              // Swap IDs so the modified face keeps the old ID
+              const oldHandle = newBody.faceIds.get(existingId) as BRepTopologyHandle;
+              const newHandle = newBody.faceIds.get(oldId);
+              if (oldHandle && !newHandle) {
+                newBody.faceIds.delete(existingId);
+                newBody.faceIds.set(oldId, oldHandle);
+                ptrToNewId.set(newFace.ptr, oldId);
               }
-            } finally {
-              newFace.delete?.();
             }
           } finally {
             modShape.delete?.();

@@ -6,11 +6,12 @@
 import type { OcctRaw } from '../types';
 import { makeBRepBodyFromOccShape, occDeref, type BRepBody } from '../brepBody';
 import { getOcc } from '../loader';
+import { runEdgeOpBuild } from './adjacency';
 
 type OccShellApi = OcctRaw & {
   BRepOffsetAPI_MakeThickSolid: new () => {
     MakeThickSolidByJoin(...args: unknown[]): void;
-    Build(progress: unknown): void;
+    Build(progress?: unknown): void;
     IsDone(): boolean;
     HasErrors(): boolean;
     Shape(): unknown;
@@ -72,7 +73,6 @@ export function occShellWithInstance(
 
   const thickSolid = new occ.BRepOffsetAPI_MakeThickSolid();
   const joinProgress = new occ.Message_ProgressRange_1();
-  const buildProgress = new occ.Message_ProgressRange_1();
   try {
     thickSolid.MakeThickSolidByJoin(
       rawBody,
@@ -87,7 +87,7 @@ export function occShellWithInstance(
       joinProgress,
     );
 
-    thickSolid.Build(buildProgress);
+    runEdgeOpBuild(oc, thickSolid);
 
     if (!thickSolid.IsDone() || thickSolid.HasErrors()) {
       return null;
@@ -100,7 +100,6 @@ export function occShellWithInstance(
       const emptyList = new occ.TopTools_ListOfShape_1();
       const outerSolid = new occ.BRepOffsetAPI_MakeThickSolid();
       const outerJoinProg = new occ.Message_ProgressRange_1();
-      const outerBuildProg = new occ.Message_ProgressRange_1();
       try {
         outerSolid.MakeThickSolidByJoin(
           rawBody,
@@ -110,7 +109,7 @@ export function occShellWithInstance(
           false, false, 0, joinMode, false,
           outerJoinProg,
         );
-        outerSolid.Build(outerBuildProg);
+        runEdgeOpBuild(oc, outerSolid);
         if (outerSolid.IsDone() && !outerSolid.HasErrors()) {
           const outerShape = outerSolid.Shape();
           const fuse = new (oc as unknown as { BRepAlgoAPI_Fuse_3: new (a: unknown, b: unknown) => { Build(): void; IsDone?(): boolean; Shape(): unknown; delete(): void } }).BRepAlgoAPI_Fuse_3(resultShape, outerShape);
@@ -119,7 +118,6 @@ export function occShellWithInstance(
           fuse.delete();
         }
       } finally {
-        outerBuildProg.delete?.();
         outerJoinProg.delete?.();
         outerSolid.delete();
         emptyList.delete();
@@ -135,7 +133,6 @@ export function occShellWithInstance(
     return null;
   } finally {
     joinProgress.delete?.();
-    buildProgress.delete?.();
     // NOTE: rawFaces and rawBody are occDeref wrapPointer VIEWs — do NOT delete.
     thickSolid.delete();
     faceList.delete();
