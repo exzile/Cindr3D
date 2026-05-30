@@ -858,6 +858,31 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       );
     }
 
+    // Verify the operation actually CONSUMED the edges the user picked. When OCC can't
+    // solve a corner at the requested radius (e.g. a 1 mm fillet running into an adjacent
+    // 1 mm fillet), the fallbacks can return a BRepCheck-valid solid that leaves the
+    // selected edge un-rounded — sometimes as a degenerate sliver (a stray triangle).
+    // A real blend REPLACES the sharp edge, so its trim-invariant anchor no longer matches
+    // anything (the new boundary edges are offset by the radius); a failed one leaves the
+    // edge in place. If any seed edge survives, reject cleanly rather than installing
+    // broken geometry — Fusion fails such a feature too, it never ships a garbage result.
+    const seedAnchorsForCheck = seedEdgeIds
+      .map((id) => computeEdgeAnchor(occ.oc, seedSrcBody, id))
+      .filter((a): a is EdgeAnchor => a !== null);
+    if (seedAnchorsForCheck.length === seedEdgeIds.length && seedAnchorsForCheck.length > 0) {
+      const survived = seedAnchorsForCheck.some((a) => findEdgeByAnchor(occ.oc, result!, a) !== null);
+      if (survived) {
+        disposeResultBody(result);
+        return markOccEdgeModificationError(
+          featureId,
+          tool,
+          `${tool} could not round the selected edge at this radius — it runs into an adjacent ` +
+            `fillet/chamfer and OCC can't solve that corner. Try a smaller radius, or apply this ` +
+            `${tool.toLowerCase()} before the neighbouring one.`,
+        );
+      }
+    }
+
     const srcFeatureId = selection.sourceFeatureId ?? srcBody.sourceFeatureId;
     const srcFeature = srcFeatureId
       ? get().features.find((feature) => feature.id === srcFeatureId)
