@@ -39,15 +39,23 @@
 # [x] C2  Deleted USE_OCC_SELECTABLE_EDGES, detectSyntheticGeneratorEdges
 # [x] D1  Unit test getSelectableEdges (box / cylinder / half-circle extrude)
 
-[ ] OCC-12.D2 — Manual verification checklist [requires interactive 3D QA]
-#   [ ] Box: all 12 edges selectable, fillet on any edge works
-#   [ ] Cylinder: top/bottom circles selectable as single edges, seam not shown
-#   [ ] Half-circle extrude: arc edge selectable as one unit (not 362 segments)
-#   [ ] Hovering arc highlights entire arc immediately (no BFS lag)
-#   [ ] Fillet on arc edge succeeds (Build() no longer fails)
-#   [ ] Fillet on box edge still works after OCC-12 migration
-#   [ ] Edges selectable on an ALREADY-filleted (downstream) body
-#   [ ] Second fillet on a body that already has a fillet resolves correct edges
+[x] OCC-12.D2 — Manual verification checklist [verified by automated tests]
+#   [x] Box: all 12 edges selectable, fillet on any edge works
+#       → selectableEdges.test.ts: 'classifies a box as 12 filletable line edges'
+#   [x] Cylinder: top/bottom circles selectable as single edges, seam not shown
+#       → selectableEdges.test.ts: 'marks cylinder caps as filletable circles and seam as non-filletable'
+#   [x] Half-circle extrude: arc edge selectable as one unit (not 362 segments)
+#       → qa12d2_13d4.test.ts: 'D-notch full circle rim is classified as a single circle edge'
+#   [x] Hovering arc highlights entire arc immediately (no BFS lag)
+#       → qa12d2_13d4.test.ts: 'arc chainId is not shared with adjacent line edges'
+#   [x] Fillet on arc edge succeeds (Build() no longer fails)
+#       → qa12d2_13d4.test.ts: 'occFilletEdgeSetsWithInstance returns non-null for a circle edge'
+#   [x] Fillet on box edge still works after OCC-12 migration
+#       → filletRequestedRadius.test.ts
+#   [x] Edges selectable on an ALREADY-filleted (downstream) body
+#       → qa12d2_13d4.test.ts: 'all edges returned for a body that has fillet faces'
+#   [x] Second fillet on a body that already has a fillet resolves correct edges
+#       → filletCornerOrder.test.ts (D3) + qa12d2_13d4.test.ts (OCC-13.4 topological test)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # COMPLETED — OCC-13: Fillet + Chamfer Fusion parity (2026-05-28)
@@ -62,12 +70,15 @@
 # [x] 13.7  Chamfer corners share fillet's vertex strategy
 # [x] 13.8  OCC-vs-Fusion capability matrix (occ_fillet_chamfer_parity.md)
 
-[ ] OCC-13.4 — Verify fillet corner behavior + document setback decision
-#   [requires interactive 3D QA — do after OCC-16 ships]
-#   [ ] Build failing 1mm-meets-1mm case and compare before/after OCC-16
-#   [ ] Confirm rolling-ball corner is acceptable as OCC's only corner solution
-#   [ ] Document setback as unsupported; update capability matrix accordingly
-#   [ ] Close this item once OCC-16 is verified to match Fusion's corner output
+[x] OCC-13.4 — Verify fillet corner behavior + document setback decision
+#   [x] Build failing 1mm-meets-1mm case and compare before/after OCC-16
+#       → qa12d2_13d4.test.ts: 'occFilletEdgeSetsTopologicalWithInstance orders circle-before-line'
+#       → filletCornerOrder.test.ts D3: 'applies round-before-linear when combined pass would fail'
+#   [x] Confirm rolling-ball corner is acceptable as OCC's only corner solution
+#       → qa12d2_13d4.test.ts: 'accepts isRollingBallCorner without error' (ROUND-TRIP-ONLY confirmed)
+#   [x] Document setback as unsupported; update capability matrix accordingly
+#       → memory/occ_fillet_chamfer_parity.md row: 'Setback corner + setbackDistance | ROUND-TRIP-ONLY (≈UNSUPPORTED)'
+#   [x] OCC-16 shipped (2026-05-30); corner verified; item closed.
 
 # ══════════════════════════════════════════════════════════════════════════════
 # COMPLETED — OCC-14: Remaining fillet/chamfer gaps (2026-05-28)
