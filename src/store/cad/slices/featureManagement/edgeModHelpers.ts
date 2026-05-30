@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { BRepBody } from '../../../../engine/occ/brepBody';
 import { getOccSync } from '../../../../engine/occ/loader';
 import { collectTangentChainEdges } from '../../../../engine/occ/ops/adjacency';
-import { computeEdgeAnchor } from '../../../../engine/occ/ops/edgeAnchor';
+import { getSelectableEdges } from '../../../../engine/occ/ops/selectableEdges';
 import type { OccFilletEdgeSet } from '../../../../engine/occ/ops/fillet';
 
 export const DEFAULT_FILLET_RADIUS = 2;
@@ -55,14 +55,21 @@ export function resolveOccFilletEdgeSets(
   const occ = shouldPropagate ? getOccSync() : null;
   const expand = (edgeIds: number[]): number[] => {
     if (!shouldPropagate || !occ || edgeIds.length === 0) return edgeIds;
-    // Never tangent-propagate from a round (circular) seed — propagating from a full
-    // circle would extend around the whole cylinder rim. For a MIXED set (circle + lines)
-    // we still propagate the linear members; only the circular ones are held back.
+    // Hold back only a CLOSED full circle (a hole / cylinder rim): its tangent chain
+    // is just itself (verified — `collectTangentChainEdges([rim]) === [rim]`), so
+    // there is nothing to propagate and the partition keeps a mixed set's lines
+    // propagating. ARCS (span < 2π — slots/obrounds, fillet-blend boundaries) DO
+    // tangent-propagate, matching Fusion's isTangentChain and our own highlight
+    // chainId (selectableEdges groups an arc with its tangent neighbours, so the
+    // committed fillet must include the same chain the user sees highlighted).
+    // NB: getSelectableEdges distinguishes 'circle' (full) from 'arc'; computeEdgeAnchor
+    // does NOT (it returns 'circle' for both), which is why we use the former here.
+    const edgeMeta = getSelectableEdges(occ.oc, srcBody);
     const roundSet = new Set(
-      edgeIds.filter((id) => computeEdgeAnchor(occ.oc, srcBody, id)?.kind === 'circle'),
+      edgeIds.filter((id) => edgeMeta.get(id)?.kind === 'circle'),
     );
     const linearIds = edgeIds.filter((id) => !roundSet.has(id));
-    if (linearIds.length === 0) return edgeIds; // all-round set — nothing to propagate
+    if (linearIds.length === 0) return edgeIds; // all-(full-circle) set — nothing to propagate
     try {
       const expandedLinear = collectTangentChainEdges(occ.oc, srcBody, linearIds);
       const combined = [...new Set([...roundSet, ...expandedLinear])];

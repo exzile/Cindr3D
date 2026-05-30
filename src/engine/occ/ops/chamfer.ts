@@ -104,8 +104,20 @@ export function occChamferWithInstance(
     for (const edgeId of edgeIds) {
       const edgeHandle = body.edgeIds.get(edgeId);
       if (!edgeHandle) continue;
-      // rawEdge is an occDeref wrapPointer VIEW — do NOT delete.
-      const rawEdge = occDeref(oc, edgeHandle, oc.TopoDS_Edge);
+      // The chamfer API (Add_2/Add_3/AddDA) and the adjacency helpers require a
+      // real TopoDS_Edge. occDeref'ing the stored handle as TopoDS_Edge yields a
+      // TopoDS_Shape in this build, so Add_2 throws a BindingError ("Expected ...
+      // TopoDS_Edge, got an instance of TopoDS_Shape") and EVERY chamfer fails.
+      // Mirror the fillet path: deref to a Shape VIEW, then cast via TopoDS.Edge_1
+      // (also a VIEW into the retained IndexedMap — do NOT delete).
+      let rawEdge: unknown;
+      try {
+        const rawEdgeShape = occDeref(oc, edgeHandle, oc.TopoDS_Shape);
+        rawEdge = oc.TopoDS.Edge_1(rawEdgeShape);
+      } catch {
+        console.warn(`[occChamfer] could not deref edge ${edgeId}`);
+        continue;
+      }
 
       // Skip seam/boundary edges — they cause Build() to throw (matches fillet).
       if (seamDetectReady) {
@@ -127,7 +139,11 @@ export function occChamferWithInstance(
           // NOTE: rawFace is an occDeref wrapPointer VIEW — do NOT delete.
           const refFaceHandle = findAdjacentFace(oc, body, rawShape, rawEdge as { ptr: number; delete(): void });
           if (refFaceHandle) {
-            const rawFace = occDeref(oc, refFaceHandle, oc.TopoDS_Face);
+            // Cast to a real TopoDS_Face: occDeref'ing as TopoDS_Face yields a
+            // TopoDS_Shape in this build, which AddDA/Add_3 reject with a
+            // BindingError ("Expected ... TopoDS_Face"). Mirror the edge cast —
+            // deref to a Shape VIEW then TopoDS.Face_1 (also a VIEW; do NOT delete).
+            const rawFace = oc.TopoDS.Face_1(occDeref(oc, refFaceHandle, oc.TopoDS_Shape));
             const clampedDeg = Math.max(1, Math.min(89, options.angle));
             const angleRad = (clampedDeg * Math.PI) / 180;
             mk.AddDA(distance, angleRad, rawEdge, rawFace);
@@ -140,7 +156,9 @@ export function occChamferWithInstance(
           // NOTE: rawFace is an occDeref wrapPointer VIEW — do NOT delete.
           const refFaceHandle = findAdjacentFace(oc, body, rawShape, rawEdge as { ptr: number; delete(): void });
           if (refFaceHandle) {
-            const rawFace = occDeref(oc, refFaceHandle, oc.TopoDS_Face);
+            // Cast to a real TopoDS_Face (see AddDA note above) — without this
+            // Add_3 throws a BindingError and every two-distance chamfer fails.
+            const rawFace = oc.TopoDS.Face_1(occDeref(oc, refFaceHandle, oc.TopoDS_Shape));
             mk.Add_3(distance, options.distance2, rawEdge, rawFace);
           } else {
             mk.Add_2(distance, rawEdge);

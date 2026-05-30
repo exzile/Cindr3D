@@ -116,6 +116,18 @@ For correct inner-wall normals in the prism, hole wires should be CCW geometrica
 - `sketchToWire.ts` `wireToFace`: added `.Reversed()` for hole wires + changed `orientLoop2D` to keep CCW (not reverse) for holes — holes must be CCW geometry + REVERSED topology for correct OCCT hole behavior
 - `sketchEntityToWire.ts` `wiresToFace`: same `.Reversed()` fix for hole wires
 
+**⚠️ `occDeref(oc, handle, ctor)` does NOT return the `ctor` type — it returns a `TopoDS_Shape` (2026-05-30).**
+
+Recurring HIGH-severity bug (hit 5+ times). The `ctor` arg is effectively ignored when occDeref falls to `handle._object` (stored as a Shape). Passing the result to a **type-strict** OCC embind API throws `BindingError: Expected ... TopoDS_Edge/Face, got an instance of TopoDS_Shape`. These throws are usually swallowed by a try/catch → the feature **silently degrades to null/wrong output** (looks "implemented but non-functional", not a crash). ALWAYS cast before a type-strict call:
+```ts
+const rawEdge = oc.TopoDS.Edge_1(occDeref(oc, handle, oc.TopoDS_Shape)); // Edge_1 is a VIEW — never .delete()
+const rawFace = oc.TopoDS.Face_1(occDeref(oc, handle, oc.TopoDS_Shape)); // Face_1 is a VIEW — never .delete()
+```
+- **Type-strict (MUST cast):** `MakeFillet/MakeChamfer.Add_2/Add_3/Add_5/AddDA(edge|refFace)`, `BRep_Tool.Surface_2(face)`, `BRepAdaptor_Surface_2(face)`, `BRepOffsetAPI_DraftAngle.Add(face)`, `MakePolygon`/`MakeFace` wire adds.
+- **Shape-ok (no cast needed):** `Modified(shape)`, `TopTools_ListOfShape.Append(shape)`, `BRepPrimAPI_MakePrism(shape)`, boolean `AddTool/AddArgument(shape)`.
+
+Fixed: `chamfer.ts` (edge Add_2 + refFace Add_3/AddDA, 2026-05-30) — regression test `chamferEdgeCast.test.ts`. Already-correct: `fillet.ts` (Shape+Edge_1/Face_1 throughout). STILL BROKEN (TaskLists OCC-18, has compounding 2nd binding bugs): `geomSurface.sketchPlaneFromFace`, `offsetFaces`, `draft`. When writing ANY new face/edge OCC call, follow this pattern.
+
 ## What's checked in
 
 `wasm/dist/*.js` and `*.wasm` are tracked in git (per ARACHNE-9.4B). Toolchain (`wasm/.toolchain/emsdk`, `boost_1_84_0`, `clipper2`, `CuraEngine`) is gitignored — Dockerfile is canonical, build.ps1 is the no-Docker dev fallback.

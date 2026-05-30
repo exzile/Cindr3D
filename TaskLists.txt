@@ -1,6 +1,6 @@
 ## DesignCAD — Implementation Task List
 ## Status key: [x] done  [~] partial  [ ] not started  [>] in progress
-## Last updated: 2026-05-30  Branch: master (PR #69 merged)
+## Last updated: 2026-05-30  Branch: FilletOptimization (fillet/chamfer live preview + cast/heal fixes)
 ## SDK ref: C:\Users\joeyp\AppData\Local\Autodesk\webdeploy\production\
 ##          4bca736941837d3e42bba21bb36b9891e34b2fce\CPP\include\Fusion\
 ## SDK install: local Fusion 360 webdeploy SDK headers under the current user's
@@ -128,41 +128,16 @@
 # [x] Sketch entity deletion (Del/Backspace + context menu).
 
 # ══════════════════════════════════════════════════════════════════════════════
-# PHASE OCC-16: Fillet corner auto-reordering (Fusion-parity 1mm corners)
+# COMPLETED — OCC-16: Fillet corner auto-reordering (1mm Fusion-parity, 2026-05-30)
 # ══════════════════════════════════════════════════════════════════════════════
-#
-# PROBLEM (verified 2026-05-29):
-#   Filleting a line edge at 1mm fails when an adjacent circular-rim fillet
-#   already exists. OCC Build() throws. The existing combined-on-base fallback
-#   also fails (all edges combined on base = null at 1mm). But sequential
-#   application in the RIGHT ORDER succeeds:
-#     notch (r6.71 circle) → vertical line edge at 1mm = OK ✅
-#     vertical line edge → notch at 1mm = notch fails ❌
-#     all-at-once combined at 1mm = null ❌
-#     all-at-once combined at 0.5mm = OK ✅
-#   Fusion always solves this at 1mm because ASM's corner solver is more
-#   robust. Our OCC can ALSO do it — but only in the right order.
-#
-# ROOT CAUSE (why order matters):
-#   When the circular edge is filleted first, its torus blend reshapes the
-#   adjacent faces so the subsequent line-edge fillet has enough topology to
-#   close the corner blend. When the line edge goes first, it meets an un-blended
-#   notch corner that OCC's single-pass vertex blender cannot solve.
-#
-# APPROACH: Topology-aware sequential fallback
-#   After ALL existing fallbacks fail (combined, vertex-neighbor, arc-first,
-#   combined-on-base, per-edge sequential), try one more: partition the edge set
-#   by geometry type and vertex adjacency, then apply the groups in a topology-
-#   aware order. Specifically: round edges (circles/arcs) before line edges that
-#   share a vertex with them.
-#
-# ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║ CRITICAL CONSTRAINT: all fallbacks MUST honour the requested radius exactly. ║
-# ║ No silent clamping. No radius reduction. A failure should produce a clean    ║
-# ║ error + guidance — never a degenerate result. (Fusion's behaviour.)         ║
-# ╚══════════════════════════════════════════════════════════════════════════════╝
-#
-# BRANCH: fix/fillet-corner-reorder (cut from master)
+# Filleting a line edge at 1mm failed when an adjacent circular-rim fillet already
+# existed (OCC Build() threw; combined-on-base also null). Fix: apply ROUND edges
+# before adjacent LINE edges — the arc's torus blend reshapes the faces so the
+# line-edge fillet can close the corner. Shipped as a topology-ordered fallback
+# that honours the requested radius exactly (no silent clamp; clean error +
+# verified-max-radius suggestion on hard failure). All acceptance criteria met
+# (filletCornerOrder.test.ts D3, qa12d2_13d4.test.ts; 31-test regression green).
+# Track items A–E (historical record):
 
 # ── Track A: Vertex-edge topology helpers ─────────────────────────────────────
 
@@ -312,45 +287,65 @@
 #   Do this AFTER D3/D4 pass on master — it's a cleanup step, not a pre-req.
 
 # ══════════════════════════════════════════════════════════════════════════════
-# IMPLEMENTATION ORDER FOR OCC-16
+# COMPLETED — OCC-17: Fillet/Chamfer live validity preview + chamfer fixes (2026-05-30)
 # ══════════════════════════════════════════════════════════════════════════════
-#
-# Recommended sequencing (each step is independently reviewable):
-#
-#   Step 1: A1 + A2 + A3 + D1  (topology helpers + test)
-#           Pure engine work, no UI touch. Land as "feat(occ): vertex-edge
-#           topology helpers for fillet ordering".
-#
-#   Step 2: B1 + D2             (ordering function + test)
-#           Pure function, no OCC calls needed to test. Land as "feat(occ):
-#           topological fillet order for round-before-line corners".
-#
-#   Step 3: B2 + D3             (OCC integration + real-kernel test)
-#           Needs OCC. Verify D3 fails BEFORE B2 merges, passes AFTER.
-#           Land as "feat(occ): topology-ordered fallback in fillet builder".
-#
-#   Step 4: B3 + D4             (wire into store + full regression)
-#           Connects the new path to the user-facing fillet flow.
-#           Land as "feat(fillet): topology-ordered corner fallback".
-#           VALIDATE in browser: fillet the notch arc + adjacent line at 1mm
-#           with NO error and a clean torus blend on the line edge.
-#
-#   Step 5: C1                  (better error when everything still fails)
-#           Land as "fix(fillet): actionable error with radius suggestion".
-#
-#   Step 6: E1 (after Step 4 verified on master)
-#           Land as "refactor(fillet): remove superseded arc-first fallback".
-#
-# ACCEPTANCE CRITERIA (must all pass before closing OCC-16):
-#   [x] 1mm fillet on notch arc (r6.71) works (already done, OCC-16 prereq)
-#   [x] 1mm fillet on adjacent line edge (top/side) works AFTER the notch fillet
-#   [x] No degenerate sliver; seed-edge-consumed guard passes
-#   [x] BRepCheck-valid final solid
-#   [x] Prior fillets are preserved (combined-on-base + topological: all edges)
-#   [x] D3 integration test passes
-#   [x] D4 regression (31 tests across 7 files) passes
-#   [x] OCC-13.4 QA checklist completed and closed
-#       → automated by qa12d2_13d4.test.ts (commit 576bddc, 2026-05-30)
+# [x] 17.1  Live red-flash validity preview (Fusion-style). probeEdgeModification
+#           store action = non-committing dry-run (applyOccEdgeModification gains a
+#           `dryRun` flag; runs full pipeline incl. open-mesh/BRepCheck guard, then
+#           disposes instead of installing — verdict identical to commit). Debounced
+#           hook (useEdgeModValidityProbe, 350ms) → edgeModInvalidPreview → selected
+#           edge pulses red (EdgeOpEdgeHighlight invalidMat) + one error toast.
+# [x] 17.2  CHAMFER CAST BUG (root cause of "every chamfer errors"): occChamfer
+#           deref'd edge as TopoDS_Edge → got TopoDS_Shape → Add_2 BindingError →
+#           null for every edge. Fixed via TopoDS.Edge_1(occDeref(…,TopoDS_Shape)).
+# [x] 17.3  CHAMFER FACE CAST BUG: TwoDistances (Add_3) + DistanceAndAngle (AddDA)
+#           passed an un-cast TopoDS_Shape as the reference face → BindingError →
+#           both modes silently dead on EVERY edge. Fixed via TopoDS.Face_1(...).
+#           Regression test: chamferEdgeCast.test.ts (Add_2/Add_3/AddDA casts).
+# [x] 17.4  CHAMFER DEGENERACY HEAL: at OCC's valid ceiling an exact distance
+#           (e.g. 1mm meeting r=1 fillets) fails to build / builds BRep-invalid,
+#           but ±0.1% does. Retry with a tiny (≤0.5%) nudge, BRepCheck-validating
+#           each, accept first VALID. Heals degenerate value; does NOT shrink an
+#           over-large chamfer (d=5 still errors). + pre-blend replay (secondary).
+# [x] 17.5  ARC tangent-propagation: round-seed guard used edgeAnchor (lumps arc+
+#           full-circle as 'circle') → arcs wrongly blocked. Now getSelectableEdges
+#           kind==='circle' (full only, span≥2π); arcs propagate, matching Fusion +
+#           our highlight chainId. Full-circle rim chain is just itself (verified).
+# [x] 17.6  DECIMAL INPUT: NumberInput (shared, 14 dialogs) rewritten type=text
+#           inputmode=decimal + draft buffer — accepts ".25"/"0."/"0", no fallback
+#           snap mid-keystroke. Lost spinner arrows (acceptable).
+# [x] 17.7  Circle-edge audit: all 9 fillet/chamfer modes BRep-VALID on cylinder
+#           rim + box edge; two-distance verified genuinely asymmetric. fillet.ts
+#           cast/disposal CLEAN. (memory/occ_fillet_chamfer_parity.md updated.)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OPEN — OCC-18: occDeref cast bug in NON-fillet/chamfer OCC features (found 2026-05-30)
+# ══════════════════════════════════════════════════════════════════════════════
+# Same root cause as 17.2/17.3 (occDeref(…,TopoDS_Face) returns a TopoDS_Shape) is
+# silently breaking 3 more features, each with a COMPOUNDING second binding bug.
+# Spawned as a background task 2026-05-30. See memory/wasm_patterns.md occDeref note.
+# [ ] 18.1  geomSurface.sketchPlaneFromFace / isFacePlanar — every planar OCC face
+#           reports non-planar (sketch-on-face / face planarity broken). Face_1 cast
+#           is necessary but NOT sufficient — also investigate BRep_Tool.Surface_2 /
+#           Handle_Geom_Plane.DownCast; remove the line-35 VIEW .delete(). First
+#           confirm whether this is the production sketch-on-face path or secondary.
+# [ ] 18.2  offsetFaces (occOffsetFacesWithInstance) — face → BRepAdaptor_Surface_2
+#           wrong normal (defaults [0,0,1]); after Face_1 cast a SECOND binding error
+#           surfaces (BRepAlgoAPI_Boolean* ctor/method). Fix both.
+# [ ] 18.3  draft (occDraftWithInstance) — first failure is a ctor binding:
+#           `new BRepOffsetAPI_DraftAngle_1(rawShape)` expects 0 args in this build;
+#           find correct ctor/Init, then apply Face_1 cast for drafter.Add(face,…).
+# [ ] 18.4  Sweep for any other occDeref(…,TopoDS_Edge/Face/Vertex/Wire) → type-strict
+#           OCC API sites build-wide; add a lint/grep guard or a shared cast helper.
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OPEN — Fillet/Chamfer manual QA (not automatable in preview harness)
+# ══════════════════════════════════════════════════════════════════════════════
+# [ ] QA-1  Live red-flash pulse: interactive 3D — pick the bottom edge near a
+#           fillet, dial chamfer past its limit → edge flashes red + toast appears
+#           (data path verified; on-screen pulse needs a genuine 3D edge pick).
+# [ ] QA-2  Decimal entry in the live Chamfer/Fillet dialog (type ".25", "1.5").
+# [ ] QA-3  Rolling-ball corner output vs Fusion (OCC-13.4 carry-over).
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SDK reference (Fusion 360 BRep topology headers)

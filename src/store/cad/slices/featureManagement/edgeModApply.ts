@@ -338,6 +338,8 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     propagate = false,
     pushUndo = false,
     fullRoundFaces,
+    dryRun = false,
+    onDryRunError,
   }: {
     tool: "Fillet" | "Chamfer";
     featureId?: string;
@@ -355,25 +357,39 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     propagate?: boolean;
     pushUndo?: boolean;
     fullRoundFaces?: { centerFaceId: number; sideFaces: FullRoundSideFaces };
+    /**
+     * Validity-probe mode (Fusion-style live preview). Runs the full pipeline but
+     * NEVER mutates feature/store state nor installs a mesh — the computed result
+     * body is disposed and the function returns true/false for "OCC could solve
+     * it". Failure messages are routed to `onDryRunError` instead of being written
+     * to the feature's healthState / statusMessage.
+     */
+    dryRun?: boolean;
+    onDryRunError?: (message: string) => void;
   }): boolean => {
+    // In dry-run mode, route failures to the probe callback and never touch
+    // feature/store state. In commit mode this is exactly markOccEdgeModificationError.
+    const reportError = (message: string): false => {
+      if (dryRun) {
+        onDryRunError?.(message);
+        return false;
+      }
+      return markOccEdgeModificationError(featureId, tool, message);
+    };
     if (!featureId) {
-      return markOccEdgeModificationError(undefined, tool, "OCC edge operations require a feature id");
+      return reportError("OCC edge operations require a feature id");
     }
     const occ = getOccSync();
     if (!occ) {
-      return markOccEdgeModificationError(featureId, tool, "OCC kernel is still loading; try again in a moment");
+      return reportError("OCC kernel is still loading; try again in a moment");
     }
     const selection = parseOccEdgeSelection(edgeIds);
     if (!selection) {
-      return markOccEdgeModificationError(
-        featureId,
-        tool,
-        "Only OCC topology edge selections are supported on this branch",
-      );
+      return reportError("Only OCC topology edge selections are supported on this branch");
     }
     const resolvedBody = resolveLiveSourceBody(selection.bodyId, selection.edgeIds, featureId);
     if (!resolvedBody) {
-      return markOccEdgeModificationError(featureId, tool, "Selected OCC source body is no longer available");
+      return reportError("Selected OCC source body is no longer available");
     }
 
     // Prefer the most-downstream body in the feature chain that still has all
@@ -461,7 +477,7 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     }
 
     if (numericEdgeIds.length === 0) {
-      return markOccEdgeModificationError(featureId, tool, "Selected OCC edges no longer exist on the source body");
+      return reportError("Selected OCC edges no longer exist on the source body");
     }
 
     // Seed (user-picked) edges + body captured BEFORE any fallback reassigns srcBody,
@@ -472,11 +488,13 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     // GAP B/C: Propagation for chamfer (fillet propagation is handled in commitFillet
     // before filletEdgeSets are built; chamfer propagation is handled here).
     if (propagate && tool === "Chamfer") {
-      // Mirror the fillet propagation guard: never tangent-propagate from a circular
-      // edge (over-propagates around a cylinder rim). Per-edge: only propagate the
-      // linear edges so a mixed selection still extends the linear chain correctly.
+      // Mirror the fillet propagation guard (see edgeModHelpers.expand): hold back
+      // only CLOSED full circles (their tangent chain is just themselves); ARCS
+      // tangent-propagate like Fusion. Use getSelectableEdges, which distinguishes
+      // 'circle' (full) from 'arc' — computeEdgeAnchor lumps both as 'circle'.
+      const chamferEdgeMeta = getSelectableEdges(occ.oc, srcBody);
       const chamferRoundSet = new Set(
-        numericEdgeIds.filter((id) => computeEdgeAnchor(occ.oc, srcBody, id)?.kind === 'circle'),
+        numericEdgeIds.filter((id) => chamferEdgeMeta.get(id)?.kind === 'circle'),
       );
       const chamferLinearIds = numericEdgeIds.filter((id) => !chamferRoundSet.has(id));
       if (chamferLinearIds.length > 0) {
@@ -848,13 +866,83 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
         }
       }
     } else {
-      result = occChamferWithInstance(occ.oc, srcBody, numericEdgeIds, distance ?? 0, {
-        // OCC-14.6: use exact AddDA when angle is provided; otherwise fall through
-        // to Add_3 with the tan-converted distance2 (DistanceAndAngle approximation).
+      // OCC-14.6: use exact AddDA when angle is provided; otherwise fall through
+      // to Add_3 with the tan-converted distance2 (DistanceAndAngle approximation).
+      const chamferOpts = {
         angle: angle !== undefined ? angle : undefined,
         distance2: angle === undefined && distance2 !== undefined && distance2 !== distance ? distance2 : undefined,
+      };
+      result = occChamferWithInstance(occ.oc, srcBody, numericEdgeIds, distance ?? 0, {
+        ...chamferOpts,
         sourceFeatureId: featureId,
       });
+
+      // Degeneracy heal: right at OCC's valid-chamfer ceiling an EXACT distance
+      // (e.g. d=1.0 against neighbouring r=1 fillets) can fail to build OR build a
+      // BRep-INVALID solid, even though d=0.999 builds a perfectly valid chamfer —
+      // a measure-zero bad value. Retry with an imperceptible relative nudge (≤0.5%,
+      // i.e. a few microns at d=1), preferring DOWNWARD first since the failure sits
+      // at the ceiling. Each candidate is BRepCheck-validated so we never accept a
+      // built-but-invalid solid (which the open-mesh guard would reject anyway). The
+      // nudge set is tiny on purpose: it heals a degenerate exact value, it does NOT
+      // shrink an over-large chamfer to fit (that still fails with a clear message).
+      // The stored/displayed distance stays the user's value. Fusion heals such
+      // degenerate parameters internally; this matches it.
+      if (!result && (distance ?? 0) > 0) {
+        const baseDistance = distance ?? 0;
+        for (const factor of [0.999, 1.001, 0.997, 1.003, 0.995, 1.005]) {
+          const healed = occChamferWithInstance(occ.oc, srcBody, numericEdgeIds, baseDistance * factor, {
+            ...chamferOpts,
+            sourceFeatureId: `${featureId}_heal`,
+          });
+          if (!healed) continue;
+          let healedValid = false;
+          try {
+            const rawHealed = occDeref(occ.oc, healed.shape, occ.oc.TopoDS_Shape);
+            healedValid = isOccShapeValid(occ.oc, rawHealed);
+          } catch {
+            healedValid = false;
+          }
+          if (healedValid) {
+            console.warn(`[${tool}] chamfer degenerate at exactly d=${baseDistance}; healed with a ${((factor - 1) * 100).toFixed(1)}% nudge`);
+            result = healed;
+            break;
+          }
+          disposeResultBody(healed);
+        }
+      }
+
+      // Pre-blend replay fallback (mirrors the fillet round-edge pre-blend replay):
+      // OCC's chamfer can fail at SPECIFIC sizes on a post-fillet body — a narrow
+      // bad band where, e.g., d=1.0 fails even though d=0.9 and d=1.1 both succeed —
+      // while the SAME chamfer on the clean base body works at every size. When the
+      // selected edge can be found on an earlier body in the feature chain, chamfer
+      // it there first, then replay the intervening fillet features in timeline
+      // order. This matches Fusion, which chamfers the edge regardless of the
+      // neighbouring fillet. Only the fillet-meets-chamfer chain is replayable here.
+      if (!result) {
+        const chamferReplayCandidates = remappedBodyCandidates
+          .filter((candidate) => candidate.featureIndex >= 0 && candidate.body.id !== srcBody.id)
+          .sort((a, b) => a.featureIndex - b.featureIndex);
+        for (const candidate of chamferReplayCandidates) {
+          console.warn(`[${tool}] chamfer failed on downstream body — trying pre-blend replay on an earlier body`);
+          const preBlendChamfer = occChamferWithInstance(occ.oc, candidate.body, candidate.edgeIds, distance ?? 0, {
+            ...chamferOpts,
+            sourceFeatureId: `${featureId}_preblend`,
+          });
+          if (preBlendChamfer) {
+            const replayed = replayFilletFeaturesAfterCurrentRoundFillet(
+              preBlendChamfer,
+              candidate.featureIndex + 1,
+            );
+            if (replayed) {
+              result = replayed;
+              srcBody = candidate.body; // result built on the earlier body; repoint baseline
+              break;
+            }
+          }
+        }
+      }
     }
     if (!result) {
       // When all fallbacks fail for a Fillet, probe for the largest radius that
@@ -890,15 +978,13 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       const cornerMessage = tool === "Fillet"
         ? `Fillet at ${radius} mm could not be solved at this corner — the edge meets an adjacent fillet and no ordering worked.${radiusSuggestion}`
         : `OCC operation failed for the selected edge set; kept the previous body unchanged.${edgeModSizeHint(tool, radius, distance, "may")}`;
-      return markOccEdgeModificationError(featureId, tool, cornerMessage);
+      return reportError(cornerMessage);
     }
     if (result.faceIds.size <= srcBody.faceIds.size) {
       const resultFaceCount = result.faceIds.size;
       const sourceFaceCount = srcBody.faceIds.size;
       disposeResultBody(result);
-      return markOccEdgeModificationError(
-        featureId,
-        tool,
+      return reportError(
         `${tool} returned topology without a new blend face ` +
           `(source faces: ${sourceFaceCount}, result faces: ${resultFaceCount}); kept the previous body unchanged`,
       );
@@ -942,9 +1028,7 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       // discarding the good blends and making the "skipped edges" report unreachable.
       if (survivedCount > sequentialSkippedEdges) {
         disposeResultBody(result);
-        return markOccEdgeModificationError(
-          featureId,
-          tool,
+        return reportError(
           `${tool} could not round the selected edge at this radius — it runs into an adjacent ` +
             `fillet/chamfer and OCC can't solve that corner. Try a smaller radius, or apply this ` +
             `${tool.toLowerCase()} before the neighbouring one.`,
@@ -968,11 +1052,7 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       copySourceTransformToMesh(srcFeature, newMesh);
     } catch (err) {
       disposeResultBody(result);
-      return markOccEdgeModificationError(
-        featureId,
-        tool,
-        `OCC tessellation failed: ${errorMessage(err, "unknown error")}`,
-      );
+      return reportError(`OCC tessellation failed: ${errorMessage(err, "unknown error")}`);
     }
     const meshTopologyFailure = edgeModificationIntroducedOpenMesh(
       srcMesh instanceof THREE.Mesh ? srcMesh : undefined,
@@ -995,9 +1075,7 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       if (!brepValid) {
         const { boundaryDelta, nonManifoldDelta } = meshTopologyFailure;
         disposeResultMeshAndBody(newMesh, result);
-        return markOccEdgeModificationError(
-          featureId,
-          tool,
+        return reportError(
           `${tool} produced an open mesh ` +
             `(new boundary edges: ${boundaryDelta}, new non-manifold edges: ${nonManifoldDelta}); ` +
             `kept the previous body unchanged.${edgeModSizeHint(tool, radius, distance, "likely")}`,
@@ -1009,6 +1087,17 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
           `installing (mesh artifact only)`,
       );
     }
+
+    // Validity-probe mode: the result has now passed EVERY guard the commit path
+    // applies (null result, blend-face count, consumed-edge, tessellation, and the
+    // open-mesh / BRepCheck validity guard). So OCC genuinely produces an
+    // installable solid at this value. Tear down the throwaway mesh + body and
+    // report success — never mutate feature/store state in a probe.
+    if (dryRun) {
+      disposeResultMeshAndBody(newMesh, result);
+      return true;
+    }
+
     const currentFeature = get().features.find((feature) => feature.id === featureId);
     const prevMesh = currentFeature?.mesh instanceof THREE.Mesh ? currentFeature.mesh : null;
     // Capture the old body ID before set() so we can evict it from the registry

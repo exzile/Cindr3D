@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useCADStore } from "../../../../store/cadStore";
 import type { FilletEdgeSet, FilletMidRadius, FilletMode, FilletParams, RuleFilletTopology, RuleFilletType } from "./types";
+import { useEdgeModValidityProbe } from "../edgeDialog/useEdgeModValidityProbe";
 
 export function useFilletDialogState(
   onConfirm: (params: FilletParams) => void,
   initialParams?: Record<string, unknown>,
+  /** Effective selected edge IDs (live selection or, when editing, stored ones). */
+  probeEdgeIds: string[] = [],
 ) {
   const filletLiveRadius = useCADStore((s) => s.filletLiveRadius);
   const setFilletLiveRadius = useCADStore((s) => s.setFilletLiveRadius);
@@ -158,6 +161,17 @@ export function useFilletDialogState(
   ]);
 
   const buildParams = (): FilletParams => previewParams;
+
+  // Fusion-style live validity preview: dry-run the fillet at the current radius
+  // so the selected edge flashes red + a toast appears before the user clicks OK.
+  // Face-picker modes (full-round / rule-fillet) don't go through the edge-list
+  // apply path, so they are skipped.
+  useEdgeModValidityProbe(true, probeEdgeIds, {
+    tool: "Fillet",
+    radius,
+    filletParams: previewParams,
+    skip: mode === "full-round" || mode === "rule-fillet",
+  });
 
   const handleConfirm = () => {
     onConfirm(buildParams());

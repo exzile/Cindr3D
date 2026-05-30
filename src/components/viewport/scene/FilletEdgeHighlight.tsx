@@ -11,6 +11,7 @@ export default function FilletEdgeHighlight() {
   const filletEdgeIds = useCADStore((s) => s.filletEdgeIds);
   const addFilletEdge = useCADStore((s) => s.addFilletEdge);
   const removeFilletEdge = useCADStore((s) => s.removeFilletEdge);
+  const invalidPreview = useCADStore((s) => s.edgeModInvalidPreview);
 
   return (
     <EdgeOpEdgeHighlight
@@ -19,6 +20,7 @@ export default function FilletEdgeHighlight() {
       addEdge={addFilletEdge}
       removeEdge={removeFilletEdge}
       selectedColor={0xaa44ff}
+      invalidEdgeIds={invalidPreview?.edgeIds}
       allowCurvedEdges
     />
   );

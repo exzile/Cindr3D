@@ -10,6 +10,7 @@ import {
 import { getSelectableEdges } from "../../../../engine/occ/ops/selectableEdges";
 import { getOccSync } from "../../../../engine/occ/loader";
 import { storedEdgeIds } from "../../../../utils/occEdgeUtils";
+import { errorMessage } from "../../../../utils/errorHandling";
 import {
   DEFAULT_FILLET_RADIUS,
   resolveOccChamferDistances,
@@ -392,6 +393,65 @@ export function createEdgeModActions({
         propagate: params.propagate === true,
         pushUndo: true,
       });
+    },
+
+    probeEdgeModification: (args) => {
+      const { tool, edgeIds, radius, distance, distance2, angle, propagate, filletParams } = args;
+      // Nothing selected → nothing to validate; treat as valid (no red flash).
+      if (edgeIds.length === 0) return { ok: true };
+      // OCC kernel not ready yet — don't flag a not-yet-loadable op as invalid.
+      if (!getOccSync()) return { ok: true };
+
+      // Use the feature being edited so siblings exclude it correctly; for a brand
+      // new fillet/chamfer (no feature yet) use a synthetic id the apply pipeline
+      // treats as "not in the timeline" (so it combines existing siblings, exactly
+      // as the eventual commit will).
+      const featureId = get().editingFeatureId ?? "__edgeModPreview__";
+
+      if (tool === "Fillet") {
+        const mode = filletParams?.mode as string | undefined;
+        // Face-picker modes don't go through the edge-list apply path — skip.
+        if (mode === "full-round" || mode === "rule-fillet") return { ok: true };
+        const { continuity, tangencyWeight, isRollingBallCorner } =
+          resolveOccFilletOptions(filletParams);
+        let message: string | undefined;
+        try {
+          const ok = applyOccEdgeModification({
+            tool: "Fillet",
+            featureId,
+            edgeIds,
+            radius,
+            filletParams,
+            continuity,
+            tangencyWeight,
+            isRollingBallCorner,
+            dryRun: true,
+            onDryRunError: (m) => { message = m; },
+          });
+          return { ok, message };
+        } catch (err) {
+          return { ok: false, message: errorMessage(err, "OCC could not solve this fillet") };
+        }
+      }
+
+      // Chamfer (three-face mode is gated by the dialog before it reaches here).
+      let message: string | undefined;
+      try {
+        const ok = applyOccEdgeModification({
+          tool: "Chamfer",
+          featureId,
+          edgeIds,
+          distance,
+          distance2: angle === undefined ? distance2 : undefined,
+          angle,
+          propagate,
+          dryRun: true,
+          onDryRunError: (m) => { message = m; },
+        });
+        return { ok, message };
+      } catch (err) {
+        return { ok: false, message: errorMessage(err, "OCC could not solve this chamfer") };
+      }
     },
   };
 }

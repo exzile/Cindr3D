@@ -39,7 +39,7 @@ Drives which dialog controls are live vs. labelled. Update this file when a stat
 | tangencyWeight (0.1–2.0) | ROUND-TRIP-ONLY | no per-edge weight API on `BRepFilletAPI_MakeFillet` in the WASM build. |
 | isRollingBallCorner | ROUND-TRIP-ONLY | **OCC-13.1**: this is the vertex corner *solution* (rolling-ball vs setback), which OCC computes automatically and exposes no toggle for. It does **not** select the surface form (that's continuity). Previously mis-mapped to `ChFi3d_QuasiAngular`. |
 | Setback corner + setbackDistance | ROUND-TRIP-ONLY (≈UNSUPPORTED) | OCC has no per-vertex setback API. Only the rolling-ball corner solution is produced. |
-| Tangent-chain propagation (`isTangentChain`) | SUPPORTED | `collectTangentChainEdges` — the same grouping the selectable-edge `chainId` uses, so highlight/propagation agree by construction (OCC-12). |
+| Tangent-chain propagation (`isTangentChain`) | SUPPORTED | `collectTangentChainEdges` — the same grouping the selectable-edge `chainId` uses, so highlight/propagation agree by construction (OCC-12). **Round-seed guard (2026-05-30):** only CLOSED full circles (`getSelectableEdges().kind==='circle'`, span≥2π) are held back from propagation; ARCS propagate (a full-circle rim's tangent chain is just itself, so the guard's old `computeEdgeAnchor`-based block over-blocked arcs vs Fusion). |
 | Full-round fillet (`FullRoundFilletFaceSets`) | APPROXIMATED | `occFullRoundFilletWithInstance`; auto side-face inference is best-effort 2-coloring of the center face's neighbours. |
 | Rule fillet — AllEdges | SUPPORTED | `occRuleFilletAllEdgesWithInstance` (collects every edge of the face(s)). |
 | Rule fillet — BetweenFaces | SUPPORTED | `occRuleFilletBetweenFacesWithInstance` (shared edges between two face groups). |
@@ -51,13 +51,83 @@ Drives which dialog controls are live vs. labelled. Update this file when a stat
 | Fusion `ChamferTypes` / option | Status | OCC mechanism / note |
 |---|---|---|
 | EqualDistance | SUPPORTED | `Add_2(distance, edge)` |
-| TwoDistances | SUPPORTED | `Add_3(d1, d2, edge, refFace)` (reference face resolved via `findAdjacentFace`). |
-| DistanceAndAngle | SUPPORTED | **OCC-14.6**: uses `AddDA(distance, angleRad, edge, refFace)` directly (binding confirmed). Degrades to `Add_2` (equal-distance) when no reference face can be resolved. |
+| TwoDistances | SUPPORTED | `Add_3(d1, d2, edge, refFace)` (reference face resolved via `findAdjacentFace`). **Was silently DEAD until 2026-05-30** (refFace cast bug — see audit note below); now verified asymmetric (distance2 respected). |
+| DistanceAndAngle | SUPPORTED | **OCC-14.6**: uses `AddDA(distance, angleRad, edge, refFace)` directly. Degrades to `Add_2` when no reference face resolves. **Was silently DEAD until 2026-05-30** (refFace cast bug). |
 | ThreeFace | UNSUPPORTED | not implemented; dialog shows a hint and `commitChamfer` rejects with a message. |
 | Flip faces (`isFlipped`) | SUPPORTED | swaps (d1, d2). |
 | Tangent-chain propagation | SUPPORTED | `collectTangentChainEdges`. |
 | ChamferCornerType (Patch / Miter / Blend) | ROUND-TRIP-ONLY | `BRepFilletAPI_MakeChamfer` exposes no corner-type enum; the kernel computes the corner. `commitChamfer` warns when `miter` is requested. |
 | Seam / boundary edges | UNSUPPORTED | guarded: `countAdjacentFacesForEdge < 2` edges are skipped (OCC-13.5) so they never reach `Build()`. |
+
+## Live validity preview (Fusion-style red-flash, 2026-05-30)
+
+`probeEdgeModification` (store action in `edgeModActions.ts`) is a **non-committing
+dry-run** of the fillet/chamfer. `applyOccEdgeModification` gained a `dryRun` flag:
+it runs the FULL pipeline — every fallback + the null-result, blend-face,
+consumed-edge, tessellation, and open-mesh/BRepCheck guards — then disposes the
+result mesh+body instead of installing, routing failure messages to `onDryRunError`
+rather than feature health/status. So the probe verdict is identical to the commit
+by construction. The dry-run exit sits AFTER the open-mesh guard (it must tessellate
+to match commit; a radius/distance that builds a valid BRep but an invalid solid is
+correctly flagged). Disposal verified leak-free (registry body count stable).
+
+`useEdgeModValidityProbe` (debounced 350 ms) is called from both dialog state hooks
+with the dialog's effective edge IDs (live selection, or stored IDs when editing).
+On failure it sets `edgeModInvalidPreview {edgeIds, message}` (transient, cleared on
+dialog open/close) and raises one `addToast('error', …)` per new message. The
+viewport flashes those edges bright red: `EdgeOpEdgeHighlight` swaps the selected
+line's material to a red singleton (`invalidMat`) and pulses it faster. Toasts render
+globally via `<GCodeToast/>` in App.tsx. OK stays enabled (matches Fusion).
+
+**CHAMFER DEGENERACY HEAL + PRE-BLEND REPLAY (d=1mm near r=1 fillets):**
+Chamfer had NO fallbacks (fillet has 6). Two added in `applyOccEdgeModification`'s
+chamfer branch: (1) **degeneracy heal** — right at OCC's valid ceiling an EXACT
+distance can fail to build OR build a BRep-INVALID solid (e.g. a 1mm chamfer meeting
+r=1 corner fillets: d=1.0 fails to build, d≥1.001 builds invalid, but d=0.999 builds
+a valid chamfer). Retry with a tiny relative nudge (set `[0.999, 1.001, 0.997, …]`,
+≤0.5%), BRepCheck-validating each, accepting the first VALID one. Heals the
+degenerate exact value (a few microns); does NOT shrink an over-large chamfer to fit
+(d=5 on a small edge still fails with a clear message). (2) **pre-blend replay** —
+chamfer the earliest body that carries the edge, then replay intervening fillets
+(mirrors fillet round-edge pre-blend); secondary, often fails on fillet-edge
+reconstruction, so the heal is the primary win. Verified: d=1 now commits healthy.
+
+**DECIMAL INPUT** (`edgeDialog/NumberInput.tsx`, shared by 14 dialogs/panels): was a
+controlled `type=number` with `parseFloat(v) || fallback` — treated `0` and partial
+input (".", "0.") as invalid → snapped to fallback, and couldn't hold a leading-dot
+intermediate. Rewritten to `type=text inputmode=decimal` with a draft buffer: display
+= `draft ?? String(value)` (no setState-in-effect), `PARTIAL_NUMBER` regex allows
+every intermediate (".25", "0.", "-.5"), emits a clamped number per valid keystroke,
+reverts to the clamped value on blur. Lost the spinner arrows (acceptable).
+
+## WASM cast bug — chamfer was silently dead (2026-05-30)
+
+`occChamferWithInstance` deref'd edges/faces as `oc.TopoDS_Edge`/`oc.TopoDS_Face`,
+which return a `TopoDS_Shape` → `Add_2`/`Add_3`/`AddDA` threw `BindingError` → caught →
+null. Effect: **EqualDistance chamfer worked only by luck (no ref face); EVERY chamfer
+on EVERY edge actually failed once a ref face was involved, and the edge cast broke
+even EqualDistance** until both were fixed to `oc.TopoDS.Edge_1/Face_1(occDeref(…,
+TopoDS_Shape))`. This is a recurring cross-cutting bug — full pattern + the other
+affected features in [[wasm_patterns]] (occDeref note). Regression test:
+`__tests__/chamferEdgeCast.test.ts` (asserts Add_2/Add_3/AddDA receive Edge_1/Face_1
+casts). Post-fix, chamfer-near-fillet works at small sizes and only fails above OCC's
+valid ceiling — Fusion's "works to a measurement then errors".
+
+## Circle-edge audit results (2026-05-30, verified live on cylinder rim + box edge)
+
+- **All modes BRep-VALID on a full-circle rim:** constant/variable/varMidpts/chord/
+  asymmetric/G2 fillet (valid even near max radius); equal/two-dist/angle chamfer.
+  Same matrix all VALID on a box edge. Fusion has NO circle-specific API — circular
+  edges are ordinary edges; the only circle logic is the span≥2π full-vs-arc split
+  (`selectableEdges`) and the tangent-propagation round-seed guard (fillet table row).
+- **Two-distance chamfer is genuinely asymmetric** (not d2-ignored): box-edge volumes
+  equal(4)=7840, equal(1)=7990, two-dist(4,1)=7960 — distinct from both. Flip is applied
+  upstream by `resolveChamferDistances` swapping d1/d2 (occChamfer options carry no
+  isFlipped — correct).
+- **Same cast bug breaks 3 NON-fillet/chamfer features** (handed off via spawn_task,
+  NOT fixed here): `geomSurface.sketchPlaneFromFace` (planar faces report non-planar →
+  sketch-on-face), `offsetFaces` (+ compounding BRepAlgoAPI_Boolean binding), `draft`
+  (+ compounding `BRepOffsetAPI_DraftAngle_1` 0-arg-ctor binding). fillet.ts is CLEAN.
 
 ## Robustness baseline (shared by both, OCC-13.5)
 
@@ -70,6 +140,9 @@ non-manifold edge counts (open-mesh guard) and keeps the previous body on failur
 
 ## Open / manual-QA items
 
+- **Live red-flash preview + chamfer heal + decimal input (2026-05-30):** all verified at
+  the store/engine level; remaining = interactive 3D QA of the on-screen red pulse (needs a
+  genuine 3D edge pick, not automatable in the preview harness). Tracked in TaskLists.
 - **OCC-13.4** — **OCC-16 shipped (2026-05-30)**; the 1mm corner case is now resolved by
   topology-aware ordering. Setback corner is documented as ROUND-TRIP-ONLY (≈UNSUPPORTED) above.
   Remaining: interactive 3D browser QA to confirm rolling-ball corner matches Fusion output.

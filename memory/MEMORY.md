@@ -15,6 +15,7 @@
 - [extrude_pipeline.md](extrude_pipeline.md) - profile flat list + atomic regions, smallest-wins picker, csgIntersect overlap rule, disconnected-body splitting
 - [csg_edge_cut.md](csg_edge_cut.md) - archive of removed mesh-CSG fillet/chamfer pipeline; OCC-only edge-modification notes and deleted file list
 - [occ_parallel_handoff.md](occ_parallel_handoff.md) - OCC migration complete status; boolean commit path summary; remaining cleanup gates
+- [occ_fillet_chamfer_parity.md](occ_fillet_chamfer_parity.md) - fillet/chamfer capability matrix vs Fusion (SUPPORTED/APPROXIMATED/ROUND-TRIP/UNSUPPORTED); live red-flash validity preview; chamfer degeneracy-heal; arc-vs-full-circle propagation guard; the occDeref cast bug that silently killed chamfer/two-dist/angle
 - [sketch_interaction_pipeline.md](sketch_interaction_pipeline.md) - chain-of-responsibility commit dispatch, fingerprint-LRU preview cache, SketchCommitCtx shape
 - [duet_service_architecture.md](duet_service_architecture.md) - DuetService facade + per-concern sibling modules, where to add new API calls
 
@@ -22,7 +23,7 @@
 
 - [r3f_critical_patterns.md](r3f_critical_patterns.md) - recurring R3F bugs: per-frame allocs, plane-aware math, disposal, stale closures, JSX bufferAttribute leaks, material mutation rules
 - [gotchas.md](gotchas.md) - Vite/rolldown `import type`, drei Grid on non-horizontal planes, R3F 9.6.0 minimum, hook-rules crash, getPlaneAxes SoT
-- [wasm_patterns.md](wasm_patterns.md) - emsdk loading gotchas (HEAP32, node wasmBinary, vite-ignore), 8-byte align, single-instance ABI, warm-up pattern; **OCCT VIEW-delete rules** (FindKey_1/Face_1/faceMaker.Face()/Wire() are VIEWs — never `.delete()` or double-push to ownedResources)
+- [wasm_patterns.md](wasm_patterns.md) - emsdk loading gotchas (HEAP32, node wasmBinary, vite-ignore), 8-byte align, single-instance ABI, warm-up pattern; **OCCT VIEW-delete rules** (FindKey_1/Face_1/faceMaker.Face()/Wire() are VIEWs — never `.delete()` or double-push to ownedResources); **⚠️ occDeref(…,TopoDS_Edge/Face) returns a Shape — cast via TopoDS.Edge_1/Face_1 before type-strict APIs (recurring bug)**
 
 ## Slicer parity
 
