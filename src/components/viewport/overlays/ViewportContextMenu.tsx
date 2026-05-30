@@ -1,6 +1,6 @@
 import {
   Undo2, Redo2, Ruler, PenTool, Eye, EyeOff, MousePointer2,
-  ScanEye, CheckSquare,
+  ScanEye, CheckSquare, Trash2,
 } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
@@ -22,6 +22,9 @@ export function ViewportContextMenu({
   const activeTool = useCADStore((s) => s.activeTool);
   const activeSketch = useCADStore((s) => s.activeSketch);
   const finishSketch = useCADStore((s) => s.finishSketch);
+  const replaceSketchEntities = useCADStore((s) => s.replaceSketchEntities);
+  const selectedEntityIds = useCADStore((s) => s.selectedEntityIds);
+  const setSelectedEntityIds = useCADStore((s) => s.setSelectedEntityIds);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const setCameraNavMode = useCADStore((s) => s.setCameraNavMode);
   const showAllBodies = useComponentStore((s) => s.showAllBodies);
@@ -34,12 +37,41 @@ export function ViewportContextMenu({
 
   // ── Sketch-mode actions ──────────────────────────────────────────────
   if (activeSketch) {
+    const selectedSketchEntityIds = new Set(selectedEntityIds);
+    const selectedSketchEntityCount = activeSketch.entities.filter((entity) => selectedSketchEntityIds.has(entity.id)).length;
+
     items.push({
       kind: 'item',
       label: 'Finish Sketch',
       icon: <CheckSquare size={13} />,
       shortcut: 'Enter',
       onClick: () => { finishSketch(); onClose(); },
+    });
+    items.push({
+      kind: 'item',
+      label: selectedSketchEntityCount === 1 ? 'Delete Sketch Entity' : 'Delete Sketch Entities',
+      icon: <Trash2 size={13} />,
+      shortcut: 'Del',
+      danger: true,
+      disabled: selectedSketchEntityCount === 0,
+      onClick: () => {
+        const state = useCADStore.getState();
+        const sketch = state.activeSketch;
+        if (!sketch) {
+          onClose();
+          return;
+        }
+        const ids = new Set(state.selectedEntityIds);
+        const nextEntities = sketch.entities.filter((entity) => !ids.has(entity.id));
+        const removedCount = sketch.entities.length - nextEntities.length;
+        if (removedCount > 0) {
+          state.pushUndo();
+          setSelectedEntityIds([]);
+          replaceSketchEntities(nextEntities);
+          setStatusMessage(`Deleted ${removedCount} sketch entit${removedCount === 1 ? 'y' : 'ies'}`);
+        }
+        onClose();
+      },
     });
     items.push({ kind: 'sep' });
   }
