@@ -573,3 +573,61 @@
 #   Per CLAUDE.md: run gitnexus_impact on any edited symbol; new engine code in
 #   engine/occ/ops/ (never the shim); honor VIEW-vs-owned .delete() rules; use
 #   runEdgeOpBuild for all Build() calls.
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OCC-22: Move / Align / MergeFaces — geometry-application gaps (2026-05-30)
+# ══════════════════════════════════════════════════════════════════════════════
+# Second audit sweep (modify-tool follow-up). Found via tracing every commit action
+# for "adds a Feature but never applies geometry". The 4 stubs are OCC-21; these are
+# additional, distinct defects.
+#
+# ── 22.1  MOVE / COPY non-primitive body is a NO-OP (real bug) ────────────────────
+#   src/components/dialogs/solid/MoveBodyDialog.tsx handleApply:
+#     - primitive target  → updateFeatureParams(x/y/z/rx/ry/rz)  ✓ works (OCC rebuilds
+#       from params)
+#     - ANY OTHER body (extrude/revolve/sweep/loft/imported/OCC) → just addFeature() an
+#       'import' feature with params {isMoveBody:true, moveType, dx,dy,dz, rx,ry,rz, copy}.
+#       NOTHING consumes those params: grep shows `isMoveBody` is read ONLY by
+#       panels/timeline/editDialogFor.ts (maps the edit button back to the dialog).
+#       → The body never moves; copy never duplicates geometry. Effectively dead.
+#   Fusion MoveFeatureInput parity: free-move (transform), point-to-point, rotate, and
+#   "create copy". Reference: Features/MoveFeatureInput.h.
+#   [ ] 22.1a Implement a real move/copy commit for mesh + OCC bodies. Build a Matrix4
+#             from (dx,dy,dz, rx,ry,rz) the same way commitAlign does; for OCC bodies
+#             transform the BRep via BRepBuilderAPI_Transform (gp_Trsf SetValues / compose
+#             rotation+translation) and re-register a fresh brepBodyId (mirror.ts /
+#             scale.ts are the reference); for plain THREE meshes clone-geometry +
+#             applyMatrix4 (commitAlign mesh branch is the reference). copy=true → new
+#             Feature with a new id; copy=false → replace mesh + dispose old.
+#   [ ] 22.1b Recompute boolean dependents (recomputeBooleanDependents) like alignActions.
+#   [ ] 22.1c Tests: move extrude body by (10,0,0) shifts its bbox; copy adds a 2nd body;
+#             OCC body keeps a valid brepBodyId at the new pose (filletable afterwards).
+#
+# ── 22.2  ALIGN leaves the OCC BRep at the old pose (consistency bug) ─────────────
+#   src/store/.../meshTransform/alignActions.ts commitAlign: for a mesh-backed body it
+#   clones srcMesh.geometry, applyMatrix4(M), builds newMesh, and copies userData
+#   (INCLUDING brepBodyId) — but never transforms the underlying OCC BRepBody in
+#   globalBRepBodyRegistry. Result: the visual mesh moves while the registered OCC body
+#   stays put, so a later fillet/chamfer/combine runs on stale geometry (wrong position)
+#   and the body visually snaps back to the old pose.
+#   [ ] 22.2a When feature.mesh.userData.brepBodyId is set, transform the OCC body via
+#             BRepBuilderAPI_Transform(srcBody.shape, gp_Trsf(M)) → makeBRepBodyFromOccShape
+#             → createRegisteredOccMesh, and assign the NEW brepBodyId (do not copy the
+#             old one). Fall back to the current mesh-only path for non-OCC bodies.
+#   [ ] 22.2b Test: align an OCC box onto a target face, then fillet an edge → fillet
+#             result sits at the aligned pose (not the original).
+#   NOTE: 22.1a and 22.2a share an "OCC-transform-and-reregister" helper — extract one
+#         (e.g. occTransformBodyWithInstance(oc, body, mat4)) in engine/occ/ops/ and use
+#         it from both move and align.
+#
+# ── 22.3  MERGE FACES (solid) — Fusion parity gap (low priority) ──────────────────
+#   Fusion MergeFacesFeatureInput.h: merge selected adjacent coplanar/tangent faces of a
+#   SOLID into one face (topology simplification). We only have SURFACE merge
+#   (surfaceCreationActions setSurfaceMergeFace1/2 — stitches two surface faces). No
+#   solid MergeFaces tool exists.
+#   [ ] 22.3a Decide scope. If building: BRepFeat / ShapeUpgrade_UnifySameDomain over the
+#             selected faces (unifyShape.ts already wraps UnifySameDomain — reuse it,
+#             restricted to the picked faces) → fewer faces, identical solid.
+#
+# VERIFICATION GATE: same as OCC-21 (tsc clean, eslint, vitest src/engine/occ +
+#   src/store/cad/slices green, op-level test, gitnexus_impact before editing symbols).
