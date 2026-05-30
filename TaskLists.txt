@@ -346,9 +346,12 @@
 # ══════════════════════════════════════════════════════════════════════════════
 # [ ] QA-1  Live red-flash pulse: interactive 3D — pick the bottom edge near a
 #           fillet, dial chamfer past its limit → edge flashes red + toast appears
-#           (data path verified; on-screen pulse needs a genuine 3D edge pick).
-# [ ] QA-2  Decimal entry in the live Chamfer/Fillet dialog (type ".25", "1.5").
-# [ ] QA-3  Rolling-ball corner output vs Fusion (OCC-13.4 carry-over).
+#           (data path verified in browser eval; on-screen pulse needs a 3D edge pick).
+# [x] QA-2  Decimal entry: NumberInput rewritten type=text/inputMode=decimal + draft
+#           buffer (src/components/dialogs/solid/edgeDialog/NumberInput.tsx); ".25",
+#           "0.", "1.5" all accepted without fallback snap. Shipped in OCC-17.
+# [ ] QA-3  Rolling-ball corner output vs Fusion (OCC-13.4 carry-over; documented as
+#           ROUND-TRIP-ONLY in parity matrix — OCC computes this automatically).
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SDK reference (Fusion 360 BRep topology headers)
