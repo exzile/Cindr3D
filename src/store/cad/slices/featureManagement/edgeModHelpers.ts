@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { BRepBody } from '../../../../engine/occ/brepBody';
 import { getOccSync } from '../../../../engine/occ/loader';
 import { collectTangentChainEdges } from '../../../../engine/occ/ops/adjacency';
+import { computeEdgeAnchor } from '../../../../engine/occ/ops/edgeAnchor';
 import type { OccFilletEdgeSet } from '../../../../engine/occ/ops/fillet';
 
 export const DEFAULT_FILLET_RADIUS = 2;
@@ -54,6 +55,8 @@ export function resolveOccFilletEdgeSets(
   const occ = shouldPropagate ? getOccSync() : null;
   const expand = (edgeIds: number[]): number[] => {
     if (!shouldPropagate || !occ || edgeIds.length === 0) return edgeIds;
+    const hasRoundSeed = edgeIds.some((edgeId) => computeEdgeAnchor(occ.oc, srcBody, edgeId)?.kind === 'circle');
+    if (hasRoundSeed) return edgeIds;
     try {
       const expanded = collectTangentChainEdges(occ.oc, srcBody, edgeIds);
       return expanded.length > edgeIds.length ? expanded : edgeIds;
