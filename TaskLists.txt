@@ -342,6 +342,57 @@
 #           exist. Pattern documented in memory/wasm_patterns.md (occDeref note).
 
 # ══════════════════════════════════════════════════════════════════════════════
+# COMPLETED — OCC-19: Modify/modeling-op binding-bug sweep (2026-05-30)
+# ══════════════════════════════════════════════════════════════════════════════
+# Second audit (4 review agents across all 33 OCC ops) for the same recurring
+# binding bug-classes fixed in OCC-17/18, now in the NON-fillet/chamfer modeling
+# ops. The 0-arg-Build rule proved UNIFORM across the BRepBuilderAPI_MakeShape
+# hierarchy. Two commits: b784808, b59ca4a. tsc clean, OCC suite (52) green.
+# [x] 19.1  Build(progress) -> runEdgeOpBuild (0-arg in this build) in the modeling
+#           ops: revolve.ts (MakeRevol x2), shell.ts (MakeThickSolid x2), sweep.ts
+#           (MakePipe/MakePipeShell x4), loft.ts (ThruSections), pattern.ts (Fuse).
+#           runEdgeOpBuild is a strict superset (tries Build(progress), falls back to
+#           Build() only on "expected 0 args") → zero-regression. Smoking gun:
+#           thicken.ts already used bare prism.Build() for the same base class.
+# [x] 19.2  booleanBase.ts propagateBooleanIds: removed newFace.delete?.() —
+#           newFace = TopoDS.Face_1(modShape) is a VIEW (same ptr) deleted right after
+#           via modShape.delete?.() → double-free on every boolean that remapped a face.
+# [x] 19.3  extrude.ts applyDraftAngle (taperAngle!=0 path): full draft.ts bug set on a
+#           path that missed OCC-18 — DraftAngle_1->_2 ctor, 4-arg Add -> 5-arg (Flag),
+#           Build(progress)->runEdgeOpBuild, AND explorer.Current() owned copy +
+#           Face_1 VIEW use-after-free/double-free (split into ownedFaceCopies). Tapered
+#           extrude was fully broken/crashing; non-tapered unaffected (early-return guard).
+# [x] 19.4  sliceSketch.ts occSliceSketch: edgeShape=Current() owned + Edge_1 VIEW were
+#           never freed → per-edge heap leak. Wrapped loop in try/finally freeing the
+#           owned copy on all continue paths.
+# [x] 19.5  Cleared agent false-positives w/ reasoning: offsetFaces Value().delete()
+#           (owned gp_Pnt copy), scale/mirror (Shape() consumed before maker delete),
+#           transform.ts (binding returns owned copy — backs working off-origin
+#           primitives + 2-sided extrude). draft/helix/booleanCore/unify clean.
+# [x] 19.6  Broad re-scan (whole src) of BRepAdaptor_Surface_2 sites caught TWO more
+#           type-strict cast misses (the first agent wrongly called BRepAdaptor "shape-
+#           ok"; OCC-18 offsetFaces proved it type-strict): thicken.ts computeBodyNormal
+#           (uncast Current() → threw → normal stuck at [0,0,1] fallback → thicken always
+#           extruded along +Z, wrong for non-XY surfaces; also dropped a VIEW delete) and
+#           fillet.ts computeChordLengthRadius (uncast Current() → normals empty → chord-
+#           length fillet always used the 90° fallback, never the true dihedral). Both
+#           fixed with occ.TopoDS.Face_1 cast. Commit: <thicken+fillet>.
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OPEN — Test & lint debt surfaced during OCC-19 audit
+# ══════════════════════════════════════════════════════════════════════════════
+# [ ] TEST-1  9 pre-existing vitest failures across 5 files, unrelated to OCC-19 (proved
+#             via stash). Mostly stale stubs lagging the OCC-17/18 refactors:
+#             edgeModHelpers.test.ts (2 — assert OLD pre-arc-propagation round-seed
+#             behavior), occStepIO.test.ts (3), occTopologySupport.test.ts (1),
+#             occSnapshot.test.ts (1), ExtrudeCommitActions.test.ts (2 — WASM-URL load
+#             error in test env). Update each stub or fix the code if a real regression.
+#             (Spawned as a background task chip 2026-05-30.)
+# [ ] LINT-2  sliceSketch.ts pre-existing @typescript-eslint/no-explicit-any debt (11
+#             errors: oc:any + 9 local makers + curve:any) + 1 unused-disable. Give it a
+#             typed OccSliceApi interface like the sibling ops instead of bare any.
+
+# ══════════════════════════════════════════════════════════════════════════════
 # OPEN — Fillet/Chamfer manual QA (not automatable in preview harness)
 # ══════════════════════════════════════════════════════════════════════════════
 # [ ] QA-1  Live red-flash pulse: interactive 3D — pick the bottom edge near a

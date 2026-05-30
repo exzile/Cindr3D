@@ -43,6 +43,7 @@ type OccThickenApi = OcctRaw & {
     Next(): void;
     delete(): void;
   };
+  TopoDS: { Face_1(shape: unknown): { delete?: () => void } };
 };
 
 export interface OccThickenOptions {
@@ -121,7 +122,13 @@ function computeBodyNormal(occ: OccThickenApi, body: BRepBody): [number, number,
     let p1: { X(): number; Y(): number; Z(): number; delete?: () => void } | null = null;
     let p2: { X(): number; Y(): number; Z(): number; delete?: () => void } | null = null;
     try {
-      rawFace = occDeref(occ as unknown as OcctRaw, handle, (occ as unknown as OcctRaw).TopoDS_Face);
+      // occDeref returns a TopoDS_Shape; BRepAdaptor_Surface_2 is type-strict and
+      // needs a real TopoDS_Face. Without the Face_1 cast it throws (swallowed
+      // below) → every face skipped → computeBodyNormal always returns the [0,0,1]
+      // fallback → thicken extruded along +Z regardless of surface orientation
+      // (same wrong-normal bug fixed in offsetFaces/OCC-18). Face_1 is a VIEW —
+      // do NOT delete it (the occDeref result is also a VIEW).
+      rawFace = occ.TopoDS.Face_1(occDeref(occ as unknown as OcctRaw, handle, (occ as unknown as OcctRaw).TopoDS_Shape));
       surf = new occ.BRepAdaptor_Surface_2(rawFace, true);
       const u0 = surf.FirstUParameter(), u1 = surf.LastUParameter();
       const v0 = surf.FirstVParameter(), v1 = surf.LastVParameter();
@@ -143,7 +150,7 @@ function computeBodyNormal(occ: OccThickenApi, body: BRepBody): [number, number,
       p1?.delete?.();
       p2?.delete?.();
       surf?.delete();
-      rawFace?.delete?.();
+      // NOTE: rawFace is a TopoDS.Face_1 / occDeref VIEW — do NOT delete.
     }
   }
   if (count === 0) return [0, 0, 1];

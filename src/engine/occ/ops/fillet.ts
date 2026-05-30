@@ -329,7 +329,13 @@ function computeChordLengthRadius(
     const normals: [number, number, number][] = [];
     for (const face of adjacentFaces) {
       try {
-        const surf = new occ.BRepAdaptor_Surface_2(face, true);
+        // face is an explorer.Current() owned copy (TopoDS_Shape-typed). BRepAdaptor_
+        // Surface_2 is type-strict and needs a real TopoDS_Face — without the Face_1
+        // cast it threw, leaving normals empty so this always returned the 90°
+        // fallback instead of the true dihedral angle. Face_1 is a VIEW (same ptr as
+        // face) — do NOT delete it; the owned `face` is deleted at the loop end.
+        const rawFace = occ.TopoDS.Face_1(face);
+        const surf = new occ.BRepAdaptor_Surface_2(rawFace, true);
         const u0 = surf.FirstUParameter(), u1 = surf.LastUParameter();
         const v0 = surf.FirstVParameter(), v1 = surf.LastVParameter();
 
