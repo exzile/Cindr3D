@@ -44,7 +44,7 @@ Drives which dialog controls are live vs. labelled. Update this file when a stat
 | Rule fillet — AllEdges | SUPPORTED | `occRuleFilletAllEdgesWithInstance` (collects every edge of the face(s)). |
 | Rule fillet — BetweenFaces | SUPPORTED | `occRuleFilletBetweenFacesWithInstance` (shared edges between two face groups). |
 | Rule fillet — RuleFilletTopologyTypes (RoundsOnly / FilletsOnly / RoundsAndFillets) | SUPPORTED | **OCC-14.1 (2026-05-28):** `convex: boolean\|null` added to `SelectableEdgeMeta` via centroid-difference test. `topologyFilter` option on both rule-fillet wrappers; wired through `FilletParams.ruleFilletTopology` + dialog Topology selector. |
-| Multi-edge corner at a shared vertex | APPROXIMATED | **OCC-13.3**: all edges go into one `Build()` pass so the kernel blends the corner in a single solve. **OCC-13.2** clamps an over-large radius to local topology (0.95× a non-filleted neighbour chord, ~0.49× a co-filleted connector) so the blend shrinks to a valid value instead of throwing. Hard ASM-only vertex blends still fail → previous body preserved with a clear message. |
+| Multi-edge corner at a shared vertex | APPROXIMATED | **OCC-13.3**: all edges go into one `Build()` pass so the kernel blends the corner in a single solve. **OCC-13.2** clamps an over-large radius to local topology (0.95× a non-filleted neighbour chord, ~0.49× a co-filleted connector) so the blend shrinks to a valid value instead of throwing. **OCC-16 (2026-05-30)**: topology-aware corner auto-reordering — when a circular/arc edge is adjacent (shares a vertex) to a linear edge, the fillet chain now applies round edges first, then linear edges on the running body. This resolves the 1mm-meets-1mm corner that previously failed with all combined-pass strategies. `occFilletEdgeSetsTopologicalWithInstance` is inserted as a fallback between combined-on-base and the per-edge sequential last resort. Hard ASM-only vertex blends still fail → previous body preserved with actionable message including verified max-radius suggestion (3-probe bisection). |
 
 ## Chamfer (`occChamferWithInstance`)
 
@@ -70,11 +70,11 @@ non-manifold edge counts (open-mesh guard) and keeps the previous body on failur
 
 ## Open / manual-QA items
 
-- **OCC-13.4** — build the failing case (half-circle extrude: fillet arc edge +
-  adjacent straight edge) and compare to Fusion; decide whether a setback-corner
-  approximation is worth adding. Requires interactive 3D QA.
-- **OCC-12.D2 / C2** — flip-the-flag manual verification and deletion of the legacy
-  selection heuristics for OCC bodies remain gated on browser QA (see TaskLists.txt).
+- **OCC-13.4** — **OCC-16 shipped (2026-05-30)**; the 1mm corner case is now resolved by
+  topology-aware ordering. Setback corner is documented as ROUND-TRIP-ONLY (≈UNSUPPORTED) above.
+  Remaining: interactive 3D browser QA to confirm rolling-ball corner matches Fusion output.
+- **OCC-12.D2** — visual selection QA (all 12 box edges, cylinder seam, arc chain highlight)
+  requires browser QA (see TaskLists.txt).
 - AddDA-based DistanceAndAngle: **OCC-14.6 DONE** — switched to `AddDA`; row upgraded to SUPPORTED.
 - ThreeFace chamfer: confirmed no 3-face overload exists in this build (only Add_1/2/3 +
   AddDA) — stays UNSUPPORTED (OCC-14.5 investigation closed).
