@@ -29,7 +29,7 @@ import {
 } from "./edgeModHelpers";
 import { collectVertexNeighborEdges } from "../../../../engine/occ/ops/adjacency";
 import { analyzeMeshGeometry } from "../../../../meshRepair/meshRepair";
-import { computeEdgeAnchor, findEdgeByAnchor } from "../../../../engine/occ/ops/edgeAnchor";
+import { computeEdgeAnchor, findEdgeByAnchor, type EdgeAnchor } from "../../../../engine/occ/ops/edgeAnchor";
 import { getSelectableEdges } from "../../../../engine/occ/ops/selectableEdges";
 
 type SourceFeature = CADState['features'][number];
@@ -435,9 +435,38 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     let numericEdgeIds = srcSelection.edgeIds.filter((edgeId) =>
       srcBody.edgeIds.has(edgeId),
     );
+
+    // ── Geometry-anchored selection (survives body/edge-ID regeneration) ────────
+    // Edge IDs are POSITIONAL (assigned by walk order in makeBRepBodyFromOccShape),
+    // and body IDs regenerate, so a stored `occ:bodyId:edgeNum` selection drifts when
+    // a body rebuilds (every fillet pass) or reloads — landing on a DIFFERENT edge,
+    // notably the FAR rim of a coaxial hole/notch. We persist a trim-invariant
+    // geometric anchor per picked edge on first apply (when the live pick is correct),
+    // then re-resolve the edge IDs from those anchors on every later apply. EdgeAnchor
+    // matches circles by centre+axis+radius, so it keeps the two rims distinct and the
+    // fillet stays exactly on the edge the user picked.
+    const editFeature = get().features.find((f) => f.id === featureId);
+    const storedAnchors = editFeature?.params?.edgeAnchors as EdgeAnchor[] | undefined;
+    const seedHadAnchors = !!(storedAnchors && storedAnchors.length > 0);
+    if (seedHadAnchors) {
+      const reanchored = storedAnchors!
+        .map((anchor) => findEdgeByAnchor(occ.oc, srcBody, anchor))
+        .filter((id): id is number => id !== null && srcBody.edgeIds.has(id));
+      // Only override when every anchor resolves to a DISTINCT edge; otherwise keep the
+      // positional IDs (an anchor may legitimately be gone if a later feature consumed it).
+      if (reanchored.length === storedAnchors!.length && new Set(reanchored).size === reanchored.length) {
+        numericEdgeIds = reanchored;
+      }
+    }
+
     if (numericEdgeIds.length === 0) {
       return markOccEdgeModificationError(featureId, tool, "Selected OCC edges no longer exist on the source body");
     }
+
+    // Seed (user-picked) edges + body captured BEFORE any fallback reassigns srcBody,
+    // so we persist anchors for exactly what the user selected — not a combined set.
+    const seedSrcBody = srcBody;
+    const seedEdgeIds = [...numericEdgeIds];
 
     // GAP B/C: Propagation for chamfer (fillet propagation is handled in commitFillet
     // before filletEdgeSets are built; chamfer propagation is handled here).
@@ -891,6 +920,18 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     // Capture the old body ID before set() so we can evict it from the registry
     // after the state update. Without this, each replay leaks one WASM OCC shape.
     const oldBodyId = prevMesh?.userData['brepBodyId'] as string | undefined;
+    // On the FIRST successful application (no anchors persisted yet) capture a
+    // trim-invariant geometric anchor for each picked seed edge, computed from the
+    // seed body where the IDs are still correct. Persisted with the feature, these let
+    // every future apply re-find the exact edge regardless of ID regeneration. Only
+    // store when EVERY seed edge yields an anchor (partial would silently drop edges).
+    let anchorsToStore: EdgeAnchor[] | undefined;
+    if (!seedHadAnchors) {
+      const computed = seedEdgeIds
+        .map((id) => computeEdgeAnchor(occ.oc, seedSrcBody, id))
+        .filter((a): a is EdgeAnchor => a !== null);
+      if (computed.length === seedEdgeIds.length && computed.length > 0) anchorsToStore = computed;
+    }
     if (pushUndo) get().pushUndo();
     set((state) => ({
       features: state.features.map((feature) =>
@@ -902,6 +943,7 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
                 ...feature.params,
                 parentFeatureId: srcFeatureId ?? feature.params.parentFeatureId,
                 sourceFeatureId: srcFeatureId ?? feature.params.sourceFeatureId,
+                ...(anchorsToStore ? { edgeAnchors: anchorsToStore } : {}),
               },
               mesh: newMesh,
               healthState: "healthy" as const,

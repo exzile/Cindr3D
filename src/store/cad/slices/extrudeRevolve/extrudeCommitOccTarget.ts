@@ -9,6 +9,7 @@ import { occExtrudeWithInstance } from '../../../../engine/occ/ops/extrude';
 import { performOccBooleanWithInstance } from '../../../../engine/occ/ops/booleanCore';
 import { occFilletEdgeSetsWithInstance, type OccFilletEdgeSet } from '../../../../engine/occ/ops/fillet';
 import { occChamferWithInstance } from '../../../../engine/occ/ops/chamfer';
+import { findEdgeByAnchor, type EdgeAnchor } from '../../../../engine/occ/ops/edgeAnchor';
 import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
 import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
 import { ensureFeatureOccBody } from '../../persistence';
@@ -222,9 +223,29 @@ async function replayEdgeModFeature(
   const selection = parseOccEdgeSelection(rawEdgeIds);
   if (!selection) return false;
 
-  // Filter to edges that actually exist on the restored source body.
-  // After replay, OCC re-uses the same IDs for deterministic geometry.
-  const numericEdgeIds = selection.edgeIds.filter((id) => sourceBody.edgeIds.has(id));
+  const occ = await getOcc();
+
+  // Edge IDs are POSITIONAL and the ID allocator restarts on reload, so the stored
+  // `occ:bodyId:edgeNum` selection can resolve to a DIFFERENT edge on the rebuilt
+  // source body — landing a fillet on the wrong edge (e.g. the far rim of a coaxial
+  // notch). When the feature carries persisted geometric anchors (written by
+  // applyOccEdgeModification on first apply), re-find each edge by its trim-invariant
+  // geometry so it stays on the edge the user actually picked. Fall back to the
+  // positional IDs when no anchors exist (older features) or an anchor can't resolve.
+  const storedAnchors = feature.params.edgeAnchors as EdgeAnchor[] | undefined;
+  let numericEdgeIds: number[] | null = null;
+  if (storedAnchors && storedAnchors.length > 0) {
+    const reanchored = storedAnchors
+      .map((anchor) => findEdgeByAnchor(occ.oc, sourceBody, anchor))
+      .filter((id): id is number => id !== null && sourceBody.edgeIds.has(id));
+    if (reanchored.length === storedAnchors.length && new Set(reanchored).size === reanchored.length) {
+      numericEdgeIds = reanchored;
+    }
+  }
+  if (!numericEdgeIds) {
+    // Filter to edges that actually exist on the restored source body.
+    numericEdgeIds = selection.edgeIds.filter((id) => sourceBody.edgeIds.has(id));
+  }
   if (numericEdgeIds.length === 0) {
     console.warn(
       `[replayEdgeModFeature] ${feature.type} ${feature.id}: ` +
@@ -233,8 +254,6 @@ async function replayEdgeModFeature(
     );
     return false;
   }
-
-  const occ = await getOcc();
   let resultBody: BRepBody | null = null;
 
   if (feature.type === 'fillet') {
@@ -291,6 +310,21 @@ export async function ensureOccBodyForFeature(
   // the latest analytical arc/circle builders, producing clean OCC geometry that
   // fillets correctly. STEP restore would reproduce old polygon-approximated arcs.
   if (await replayOccNewBodyTarget(feature, sketches)) return true;
+
+  // Geometry-anchored fillet/chamfer: prefer REPLAY over STEP restore. The serialized
+  // STEP bakes in whatever edge was filleted at save time — if that landed on the wrong
+  // edge (positional-ID drift), STEP would faithfully reproduce the mistake. Re-applying
+  // via the persisted EdgeAnchor re-finds the edge by geometry, so the fillet lands on
+  // the edge the user actually picked. Only for features that carry anchors (created
+  // after the anchor fix); older features keep the STEP-first behaviour below.
+  if (
+    (feature.type === 'fillet' || feature.type === 'chamfer') &&
+    Array.isArray(feature.params.edgeAnchors) &&
+    (feature.params.edgeAnchors as unknown[]).length > 0
+  ) {
+    if (await replayEdgeModFeature(feature, features, sketches, visited)) return true;
+  }
+
   if (await ensureFeatureOccBody(feature)) return true;
 
   // Fillet / chamfer replay: re-apply the edge modification on top of the
