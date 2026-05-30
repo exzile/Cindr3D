@@ -409,23 +409,25 @@
 #           end-to-end: nonUniformScale honors center via GTrsf SetTranslationPart(C·(1−s));
 #           commitScale threads refPoint and computes world bbox center. Commit 43e0607.
 #           Fusion ScaleFeatureInput parity now: point ✓, isUniform ✓, setToNonUniform ✓.
-# [ ] 20.2  DRAFT — DraftDialog has a Mode selector (one-side / two-side / symmetric) but
-#           the engine (occDraftWithInstance) applies a SINGLE angle and ignores `mode`.
-#           Two-side + symmetric are DEAD controls (stored in params, no geometric effect).
-#           Fusion DraftFeatureInput has setTwoAngles(angleOne, angleTwo) + setSingleAngle(
-#           isSymmetric, angle). Implement: split faces by neutral-plane side (or use the
-#           DraftAngle Flag/two-pass) so each side drafts with its own angle; add angle2 +
-#           wire `mode` through commitDraft. NON-TRIVIAL OCC work — needs its own task.
-# [ ] 20.3  DRAFT — missing isTangentChain (tangent-face propagation when selecting draft
-#           faces) and an explicit isDirectionFlipped flag (today the caller negates the
-#           pull dir). Fusion DraftFeatureInput exposes both.
-# [ ] 20.4  SHELL — missing isTangentChain (tangent-face propagation for the remove-faces
-#           selection). Fusion ShellFeatureInput exposes it. Engine has inside/outside
-#           thickness ✓ + shellType (Sharp/Rounded) ✓; only tangent-chain selection is absent.
-# [ ] 20.5  COMBINE — at parity except isNewComponent (place boolean result in a NEW
-#           component). Fusion CombineFeatureInput: operation ✓ (join/cut/intersect),
-#           isKeepToolBodies ✓ (our keepTools), toolBodies multi ✓, targetBody ✓. Add the
-#           new-component option (low priority).
+# [x] 20.2  DRAFT — DraftDialog Mode (one-side/two-side/symmetric) was dead. Fixed in
+#           commit 6773314: engine classifies each face by neutral-plane centroid position,
+#           applies angleRad to "above" faces and -angleRad2 / -angleRad (symmetric) to
+#           "below" faces. DraftDialog wires mode + new "Angle 2" input (visible in two-side
+#           mode only). Mirrors Fusion setSingleAngle(isSymmetric) / setTwoAngles(a1,a2).
+# [x] 20.3  DRAFT — isTangentChain and isDirectionFlipped now wired. Flip negates gp_Dir
+#           before OCC call. TangentChain calls expandTangentFaceChain (BFS over body faces
+#           comparing BRepAdaptor_Surface_2 D1 normals at UV midpoints). Both exposed in
+#           DraftDialog as checkboxes. Commit 6773314.
+# [x] 20.4  SHELL — isTangentChain wired. ShellDialog's tangentChain toggle existed but
+#           buildOpts() never passed it to commitShell → occShellWithInstance never saw it.
+#           Fixed: buildOpts() includes isTangentChain; engine calls expandTangentFaceChain
+#           before building the TopTools_ListOfShape. Commit 6773314.
+# [x] 20.5  COMBINE — isNewComponent checkbox added to CombineDialog. When true, input
+#           bodies are not suppressed/disposed; result body sits alongside the originals.
+#           Wired through commitCombine + recommitCombine. Commit 6773314.
+# NEW FILE: src/engine/occ/ops/faceAdjacency.ts — expandTangentFaceChain (shared by
+#   draft + shell): BFS expanding a face seed set to tangent neighbours (|n1·n2|≥cos(10°))
+#   via BRepAdaptor_Surface_2.D1 → D1U×D1V normal computation.
 
 # ══════════════════════════════════════════════════════════════════════════════
 # OPEN — Fillet/Chamfer manual QA (not automatable in preview harness)
