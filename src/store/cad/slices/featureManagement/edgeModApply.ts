@@ -30,7 +30,7 @@ import {
 } from "./edgeModHelpers";
 import { collectVertexNeighborEdges } from "../../../../engine/occ/ops/adjacency";
 import { analyzeMeshGeometry } from "../../../../meshRepair/meshRepair";
-import { computeEdgeAnchor, findEdgeByAnchor, type EdgeAnchor } from "../../../../engine/occ/ops/edgeAnchor";
+import { computeEdgeAnchor, findEdgeByAnchor, isAnchorEdgePresent, type EdgeAnchor } from "../../../../engine/occ/ops/edgeAnchor";
 import { getSelectableEdges } from "../../../../engine/occ/ops/selectableEdges";
 
 type SourceFeature = CADState['features'][number];
@@ -906,7 +906,14 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       .map((id) => computeEdgeAnchor(occ.oc, seedSrcBody, id))
       .filter((a): a is EdgeAnchor => a !== null);
     if (seedAnchorsForCheck.length === seedEdgeIds.length && seedAnchorsForCheck.length > 0) {
-      const survived = seedAnchorsForCheck.some((a) => findEdgeByAnchor(occ.oc, result!, a) !== null);
+      // Did the picked seed edge actually get consumed by the blend? Use the
+      // midpoint-aware presence test (isAnchorEdgePresent) rather than a raw
+      // findEdgeByAnchor: the latter matches a LINE by its INFINITE line and would
+      // count a DIFFERENT collinear edge (e.g. a rim split into two segments by a
+      // notch) as "survived", wrongly rejecting a perfectly good fillet. The margin
+      // is the fillet radius (the blend trims one end of any genuine survivor).
+      const margin = (radius ?? distance ?? DEFAULT_FILLET_RADIUS) + 0.5;
+      const survived = seedAnchorsForCheck.some((a) => isAnchorEdgePresent(occ.oc, result!, a, margin));
       if (survived) {
         disposeResultBody(result);
         return markOccEdgeModificationError(

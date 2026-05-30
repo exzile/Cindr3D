@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeEdgeAnchor, findEdgeByAnchor } from '../edgeAnchor';
+import { computeEdgeAnchor, findEdgeByAnchor, isAnchorEdgePresent } from '../edgeAnchor';
 import { createBRepBody, type BRepBody } from '../../brepBody';
 import { OccHandle } from '../../occHandle';
 
@@ -116,5 +116,56 @@ describe('edgeAnchor', () => {
     // Rebuilt body has only an unrelated, non-collinear line.
     const rebuilt = bodyFromEdges([{ kind: 'line', p: [0, 0, 0], d: [0, 1, 0], t0: 0, t1: 10 }]);
     expect(findEdgeByAnchor(oc, rebuilt, anchor!)).toBeNull();
+  });
+});
+
+describe('isAnchorEdgePresent (fillet result-correctness guard)', () => {
+  // Regression for the fillet-meets-fillet corner false positive: a top rim is
+  // split by a notch into TWO collinear segments on the SAME infinite line. When
+  // the seed segment is filleted (consumed), findEdgeByAnchor still matches the
+  // FAR collinear segment, so the guard must NOT treat that as "survived".
+  const oc = makeOcc();
+
+  it('treats a FAR collinear segment as gone (consumed), not survived', () => {
+    // Seed: x-axis segment [0,10], midpoint (5,0,0), half-length 5.
+    const seedBody = bodyFromEdges([{ kind: 'line', p: [0, 0, 0], d: [1, 0, 0], t0: 0, t1: 10 }]);
+    const seedAnchor = computeEdgeAnchor(oc, seedBody, 0)!;
+    // Result after fillet: the seed is gone; only a FAR collinear segment remains
+    // on the same infinite line, [40,50] (midpoint 45,0,0 — 40mm away).
+    const result = bodyFromEdges([{ kind: 'line', p: [40, 0, 0], d: [1, 0, 0], t0: 0, t1: 10 }]);
+    // findEdgeByAnchor matches it (same infinite line) — that is the false positive.
+    expect(findEdgeByAnchor(oc, result, seedAnchor)).toBe(0);
+    // isAnchorEdgePresent with a 1mm radius margin must reject it as a different edge.
+    expect(isAnchorEdgePresent(oc, result, seedAnchor, 1)).toBe(false);
+  });
+
+  it('treats a genuine survivor near the seed midpoint as present', () => {
+    const seedBody = bodyFromEdges([{ kind: 'line', p: [0, 0, 0], d: [1, 0, 0], t0: 0, t1: 10 }]);
+    const seedAnchor = computeEdgeAnchor(oc, seedBody, 0)!;
+    // Seed left un-rounded (degenerate sliver): same edge still in place.
+    const result = bodyFromEdges([{ kind: 'line', p: [0, 0, 0], d: [1, 0, 0], t0: 0, t1: 10 }]);
+    expect(isAnchorEdgePresent(oc, result, seedAnchor, 1)).toBe(true);
+  });
+
+  it('treats a shortened survivor (blend trimmed one end) as present', () => {
+    const seedBody = bodyFromEdges([{ kind: 'line', p: [0, 0, 0], d: [1, 0, 0], t0: 0, t1: 10 }]);
+    const seedAnchor = computeEdgeAnchor(oc, seedBody, 0)!;
+    // Survivor shortened to [1,10] — midpoint drifts to 5.5, well within half-length+margin.
+    const result = bodyFromEdges([{ kind: 'line', p: [0, 0, 0], d: [1, 0, 0], t0: 1, t1: 10 }]);
+    expect(isAnchorEdgePresent(oc, result, seedAnchor, 1)).toBe(true);
+  });
+
+  it('returns false when the anchor matches nothing at all (fully consumed)', () => {
+    const seedBody = bodyFromEdges([{ kind: 'line', p: [0, 0, 0], d: [1, 0, 0], t0: 0, t1: 10 }]);
+    const seedAnchor = computeEdgeAnchor(oc, seedBody, 0)!;
+    const result = bodyFromEdges([{ kind: 'line', p: [0, 5, 0], d: [0, 1, 0], t0: 0, t1: 10 }]);
+    expect(isAnchorEdgePresent(oc, result, seedAnchor, 1)).toBe(false);
+  });
+
+  it('counts any circle match as present (circles are spatially unique)', () => {
+    const seedBody = bodyFromEdges([{ kind: 'circle', c: [2, 3, 0], ax: [0, 0, 1], r: 5, t0: 0, t1: Math.PI }]);
+    const seedAnchor = computeEdgeAnchor(oc, seedBody, 0)!;
+    const result = bodyFromEdges([{ kind: 'circle', c: [2, 3, 0], ax: [0, 0, 1], r: 5, t0: 0.2, t1: Math.PI }]);
+    expect(isAnchorEdgePresent(oc, result, seedAnchor, 1)).toBe(true);
   });
 });

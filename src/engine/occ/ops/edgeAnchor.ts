@@ -194,3 +194,43 @@ export function findEdgeByAnchor(oc: OcctRaw, body: BRepBody, anchor: EdgeAnchor
 
   return best >= 0 ? best : null;
 }
+
+/**
+ * "Is the *same physical edge* that `anchor` describes still present in `body`?"
+ *
+ * This is stricter than findEdgeByAnchor and exists for the fillet/chamfer
+ * result-correctness guard. findEdgeByAnchor matches a LINE by its INFINITE line
+ * (point + direction) and returns the nearest collinear segment with NO distance
+ * cap — exactly right for trim-invariant remapping, where a survivor may have been
+ * shortened. But it produces FALSE POSITIVES when asking "did this edge survive?":
+ * a *different* edge that merely shares the seed's infinite line (e.g. a rim split
+ * into two collinear segments by a notch, or the seed's own collinear neighbour)
+ * matches, so a consumed edge looks like it survived.
+ *
+ * Here a line anchor counts as present only when the match lies near the anchor's
+ * ORIGINAL midpoint — within the seed's own half-length (so a shortened survivor
+ * whose midpoint drifted toward its un-trimmed end still counts) plus `extraMargin`
+ * (pass the fillet radius so a blend that trims one end is tolerated). A far
+ * collinear segment falls outside that span and is correctly treated as "gone".
+ *
+ * Circle/other anchors are spatially unique, so any match counts as present.
+ */
+export function isAnchorEdgePresent(
+  oc: OcctRaw,
+  body: BRepBody,
+  anchor: EdgeAnchor,
+  extraMargin = 0,
+): boolean {
+  const matchId = findEdgeByAnchor(oc, body, anchor);
+  if (matchId === null) return false;
+  if (anchor.kind !== 'line') return true;
+  const matchAnchor = computeEdgeAnchor(oc, body, matchId);
+  if (!matchAnchor) return false;
+  const seedHalfLen = Math.hypot(
+    anchor.p[0] - anchor.mid[0], anchor.p[1] - anchor.mid[1], anchor.p[2] - anchor.mid[2],
+  );
+  const midDist = Math.hypot(
+    matchAnchor.mid[0] - anchor.mid[0], matchAnchor.mid[1] - anchor.mid[1], matchAnchor.mid[2] - anchor.mid[2],
+  );
+  return midDist <= seedHalfLen + extraMargin;
+}
