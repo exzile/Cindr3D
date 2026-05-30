@@ -448,3 +448,128 @@
 #                    geometry()→Curve3D, length(), isDegenerate, pointOnEdge()
 # BRep/BRepFace.h  — edges(), vertices(), geometry()→Surface, area(), centroid()
 # BRep/BRepBody.h  — concaveEdges(), convexEdges(), isSolid, volume(), area()
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OCC-21: Modify-tool Fusion parity — stub completion + semantic fixes (2026-05-30)
+# ══════════════════════════════════════════════════════════════════════════════
+# AUDIT (this branch): offset-face / replace-face / direct-edit / texture-extrude /
+#   split-face / split-body / silhouette-split cross-referenced against the matching
+#   Fusion *FeatureInput.h headers. Findings: 1 real geometry bug (fixed), 4 outright
+#   stubs that record a Feature + params but emit NO geometry, 1 mislabeled tool, and
+#   1 limited tool. All required OCC bindings confirmed present in the WASM build:
+#   BRepFeat_SplitShape, BRepAlgoAPI_Splitter, BRepFeat_MakePrism, BRepProj_Projection,
+#   BRepAlgoAPI_Section.
+#
+# Reference param models (Fusion SDK):
+#   OffsetFacesFeatureInput.h  — faces[], distance(+normal dir), targetBaseFeature
+#   ReplaceFaceFeatureInput.h  — sourceFaces[], targetFaces(surface/plane/body),
+#                                isTangentChain(default true)
+#   SplitFaceFeatureInput.h    — facesToSplit[], splittingTool(body/plane/face/sketch),
+#                                isSplittingToolExtended, splitType enum:
+#                                {surfaceIntersection(default), alongVector, closestPoint}
+#   SplitBodyFeatureInput.h    — splitBodies(body|collection), splittingTool(SINGLE
+#                                body/plane/profile/face), isSplittingToolExtended
+#   SilhouetteSplitFeatureInput.h — targetBody, viewDirection(axis/edge/face/plane),
+#                                operation enum: {FacesOnly, ShelledBody, SolidBody}
+#
+# [x] 21.0  OFFSET FACE — reversed-normal bug FIXED (commit a797e6e). sampleFaceNormal
+#           used the raw parametric normal (D1U×D1V) and ignored topological orientation,
+#           so +distance on a TopAbs_REVERSED face pushed inward (cut) instead of outward.
+#           Now negates on REVERSED via enumEq(rawFace.Orientation_1(), TopAbs_REVERSED),
+#           matching geomSurface.ts / tessellate.ts. tsc+eslint clean, 93 OCC tests pass.
+#
+# ── 21.1  DIRECT EDIT (highest value / lowest risk) ───────────────────────────────
+#   Current: src/store/.../surfaceUi/faceFeatureDialogActions.ts commitDirectEdit is a
+#     @stub — warns + adds a 'direct-edit' Feature, emits NO geometry. DirectEditDialog
+#     has modes {offset-face, extrude, taper}, distance, tapAngle. DirectEditFacePicker
+#     stores ONLY a centroid string (setDirectEditFace(centroid.join(','))) — no body
+#     feature id, no OCC face id.
+#   Goal: route to EXISTING tested engine ops (no new geometry code):
+#     - mode 'offset-face' AND 'extrude' -> occOffsetFacesWithInstance(oc,body,[faceId],dist)
+#       (offsetFaces already does prism + fuse/cut = press-pull; +dist grows, -dist cuts)
+#     - mode 'taper' -> occDraftWithInstance with the picked face as draft face, neutral
+#       plane = face plane (sketchPlaneFromFace), pull = face normal, angle = tapAngle
+#   [ ] 21.1a Picker: capture body + OCC face. Mirror shellRemoveFaceData — store
+#             {centroid, normal, brepBodyId, featureId}. Resolve OCC face id with
+#             findOccFaceIdByCentroid(tess, centroid) (same as commitShell).
+#   [ ] 21.1b commitDirectEdit: resolve srcMesh/brepBodyId/srcBody like commitOffsetFace;
+#             dispatch by mode to occOffsetFacesWithInstance / occDraftWithInstance;
+#             createRegisteredOccMesh; replace feature mesh; disposeMeshDeferred(srcMesh);
+#             pushUndo(); featureKind:'direct-edit'.
+#   [ ] 21.1c Tests: offset-face grows volume, extrude == offset-face, taper changes
+#             face angle; reuse occ test-mock pattern from ExtrudeCommitActions.test.ts.
+#   Files: faceFeatureDialogActions.ts, DirectEditFacePicker.tsx, DirectEditDialog.tsx
+#     (already wired in ActiveDialog), state/workflowState.ts (picker payload type).
+#
+# ── 21.2  SPLIT FACE ─────────────────────────────────────────────────
+#   Current: commitSplitFace is a @stub. SplitFaceDialog picks faceId + splittingTool
+#     {sketch, plane, surface}. SplitFacePicker stores centroid string only.
+#   Goal: NEW engine op src/engine/occ/ops/splitFace.ts using BRepFeat_SplitShape:
+#     - Resolve the tool to projected edges/wires ON the target face:
+#         . sketch  -> sketchToWire (existing) -> BRepProj_Projection onto the face
+#         . plane   -> BRepAlgoAPI_Section(face, plane) -> section edges
+#         . surface -> BRepAlgoAPI_Section(face, surfaceBody) -> section edges
+#     - BRepFeat_SplitShape(body); .Add(edge, face) per split edge; Build();
+#       return Shape() (body keeps same volume, target face now imprinted/subdivided).
+#   Fusion parity: implement splitType — default surfaceIntersection; alongVector
+#     (project tool along a direction entity via BRepProj_Projection direction overload);
+#     closestPoint (project sketch curve to nearest point). Honor isSplittingToolExtended
+#     (extend section/plane to fully cross the face).
+#   [ ] 21.2a splitFace.ts engine op (+ owned/VIEW lifetime notes; runEdgeOpBuild for Build)
+#   [ ] 21.2b Picker captures body+OCC face; commit resolves tool geom + calls op
+#   [ ] 21.2c Tests: box top face split by a plane -> face count +1, volume unchanged
+#   Bindings: BRepFeat_SplitShape, BRepProj_Projection, BRepAlgoAPI_Section.
+#
+# ── 21.3  REPLACE FACE (most complex) ───────────────────────────────────
+#   Current: commitReplaceFace is a @stub. ReplaceFacePanel does 2-step source/target
+#     face pick (stores opaque centroid ids). No isTangentChain.
+#   Goal: NEW engine op src/engine/occ/ops/replaceFace.ts. Approach (BRepAlgoAPI_Splitter
+#     / sew): take source faces off the body, extend the target surface/plane so it fully
+#     intersects the body, then rebuild the solid bounded by the new surface:
+#     - Build a halfspace/trim from targetFaces (surface body or construction plane).
+#     - BRepAlgoAPI_Splitter(body, tool) -> pick the solid piece on the keep side, OR
+#       BRepBuilderAPI_Sewing to swap the face and re-solidify.
+#   Fusion parity: sourceFaces[] all on same body; targetFaces = surface/plane/body;
+#     isTangentChain (default TRUE) -> expandTangentFaceChain on sourceFaces before op.
+#   [ ] 21.3a replaceFace.ts engine op
+#   [ ] 21.3b ReplaceFacePanel: capture body + OCC face ids for source set + target;
+#             add isTangentChain toggle (default on)
+#   [ ] 21.3c commitReplaceFace wires op; tests (planar face replaced by tilted plane)
+#   Bindings: BRepAlgoAPI_Splitter, BRepBuilderAPI_Sewing, BRepAlgoAPI_Section.
+#
+# ── 21.4  SPLIT BODY (generalize) + TRUE SILHOUETTE SPLIT ───────────────────
+#   Current SPLIT BODY: commitSplitBody (splitBodyActions.ts) only origin XY/XZ/YZ planes,
+#     offset hardcoded 0, sketch/face tools rejected. Engine occPlaneSplitBodies already
+#     accepts an offset — just not exposed.
+#   [ ] 21.4a SplitBodyDialog: add plane-offset field; thread offset -> commitSplitBody ->
+#             occPlaneSplitBodies (drop the hardcoded 0). Low risk.
+#   [ ] 21.4b Generalize splittingTool to a picked face/surface/sketch (not just named
+#             principal planes): resolve tool -> cutting surface, use BRepAlgoAPI_Splitter
+#             to divide the body into all resulting solids (not just 2 halfspaces).
+#   [ ] 21.4c Honor isSplittingToolExtended (extend tool surface to bbox before split).
+#
+#   Current SILHOUETTE SPLIT: WRONG SEMANTICS. SilhouetteSplitDialog is titled
+#     "Split Body" and commitSilhouetteSplit performs a PLANAR halfspace cut identical
+#     to Split Body — NOT a silhouette split. Fusion's silhouette split computes the
+#     body's silhouette curves as seen along viewDirection (where the surface is tangent
+#     to the view ray — e.g. a cylinder's two outline lines) and splits faces there.
+#   [ ] 21.4d Rename current dialog/action away from "silhouette" (it IS a planar split
+#             body — fold into 21.4a/b or label "Planar Split"). REMOVE the misnomer.
+#   [ ] 21.4e Implement REAL silhouette split: derive silhouette edges via per-face
+#             tangency to the view direction (surface normal perpendicular to viewDir
+#             locus), or HLRBRep if a usable binding exists; imprint via
+#             BRepFeat_SplitShape. operation enum: FacesOnly | ShelledBody | SolidBody.
+#             NOTE: largest/most research-heavy item — may need its own spike.
+#
+# ── 21.5  TEXTURE EXTRUDE (lowest priority) ──────────────────────────────
+#   Current: commitTextureExtrude is a @stub. Fusion's Texture is a repeating
+#     emboss/deboss pattern on a face. Implement as a tiled prism boolean array over the
+#     face (pattern of small extrusions fused/cut), or document as out-of-scope.
+#   [ ] 21.5a Decide scope (real pattern-extrude vs defer). If building: tile face UV,
+#             build prism per cell, batch-boolean. Heavy; gate behind perf budget.
+#
+# VERIFICATION GATE for every 21.x item: npx tsc --noEmit clean . npx eslint <files> .
+#   npx vitest run src/engine/occ src/store/cad/slices stays green . add op-level test.
+#   Per CLAUDE.md: run gitnexus_impact on any edited symbol; new engine code in
+#   engine/occ/ops/ (never the shim); honor VIEW-vs-owned .delete() rules; use
+#   runEdgeOpBuild for all Build() calls.
