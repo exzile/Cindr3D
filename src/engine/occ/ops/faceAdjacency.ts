@@ -6,14 +6,17 @@
  * the combined set.  Used by Shell `isTangentChain` and Draft `isTangentChain`
  * to match Fusion 360's automatic face propagation.
  *
- * Tangency test: evaluate each candidate face's surface normal at its UV
- * midpoint, then compare with the seed face's normal.  If the angle between
- * them is ≤ `TANGENT_ANGLE_DEG` they are treated as tangent.  This is a fast
+ * Tangency test: a candidate face is added only when it (a) shares an edge with
+ * a face already in the chain AND (b) its surface normal at its UV midpoint is
+ * within `TANGENT_ANGLE_DEG` of that face's normal.  The adjacency constraint is
+ * essential — without it, a global normal comparison would wrongly chain a box's
+ * top face to its parallel (but non-adjacent) bottom face.  This is a fast
  * approximation that works correctly for the typical shell/draft use-case
  * (planar/cylindrical face sets produced by extrude/revolve).
  */
 import type { OcctRaw } from '../types';
 import { occDeref, type BRepBody } from '../brepBody';
+import { findAdjacentFacesToFace } from './adjacency';
 
 const TANGENT_ANGLE_DEG = 10; // faces within 10° are considered tangent
 const TANGENT_COS = Math.cos((TANGENT_ANGLE_DEG * Math.PI) / 180);
@@ -111,7 +114,22 @@ export function expandTangentFaceChain(
     } catch { /* skip */ }
   }
 
-  // BFS over tangent faces.
+  // rawShape (VIEW from occDeref — do NOT delete) is needed by the adjacency walk.
+  const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
+
+  // Cache adjacency per face so a multi-seed / multi-hop walk does not recompute
+  // the topology map for the same face twice.
+  const adjacencyCache = new Map<number, number[]>();
+  const adjacentOf = (faceId: number): number[] => {
+    let adj = adjacencyCache.get(faceId);
+    if (!adj) {
+      adj = findAdjacentFacesToFace(oc, body, rawShape, faceId);
+      adjacencyCache.set(faceId, adj);
+    }
+    return adj;
+  };
+
+  // BFS over tangent faces, constrained to edge-sharing neighbours.
   const resultSet = new Set<number>(seedFaceIds);
   let frontier = [...seedFaceIds];
 
@@ -122,9 +140,11 @@ export function expandTangentFaceChain(
       const seedNormal = faceNormals.get(seedId);
       if (!seedNormal) continue;
 
-      // For each candidate body face not yet in the result set, check tangency.
-      for (const [candidateId, normal] of faceNormals) {
+      // Only walk to faces that actually share an edge with this face.
+      for (const candidateId of adjacentOf(seedId)) {
         if (resultSet.has(candidateId)) continue;
+        const normal = faceNormals.get(candidateId);
+        if (!normal) continue;
 
         // Tangency check: |seedNormal · candidateNormal| ≥ cos(threshold)
         // Use absolute value because face orientation can be reversed.
