@@ -401,6 +401,33 @@
 #             Same pattern as draft.ts/fillet.ts. Commit ff3ea5f.
 
 # ══════════════════════════════════════════════════════════════════════════════
+# OCC-20: Shell/Draft/Scale/Combine vs Fusion 360 SDK parity audit (2026-05-30)
+# ══════════════════════════════════════════════════════════════════════════════
+# Cross-referenced each engine op + dialog against the matching Fusion *FeatureInput.h.
+# [x] 20.1  SCALE — non-uniform ignored the scale center + commitScale hardcoded (0,0,0)
+#           so the dialog's "Body Centroid" refPoint (the DEFAULT) did nothing. Fixed
+#           end-to-end: nonUniformScale honors center via GTrsf SetTranslationPart(C·(1−s));
+#           commitScale threads refPoint and computes world bbox center. Commit 43e0607.
+#           Fusion ScaleFeatureInput parity now: point ✓, isUniform ✓, setToNonUniform ✓.
+# [ ] 20.2  DRAFT — DraftDialog has a Mode selector (one-side / two-side / symmetric) but
+#           the engine (occDraftWithInstance) applies a SINGLE angle and ignores `mode`.
+#           Two-side + symmetric are DEAD controls (stored in params, no geometric effect).
+#           Fusion DraftFeatureInput has setTwoAngles(angleOne, angleTwo) + setSingleAngle(
+#           isSymmetric, angle). Implement: split faces by neutral-plane side (or use the
+#           DraftAngle Flag/two-pass) so each side drafts with its own angle; add angle2 +
+#           wire `mode` through commitDraft. NON-TRIVIAL OCC work — needs its own task.
+# [ ] 20.3  DRAFT — missing isTangentChain (tangent-face propagation when selecting draft
+#           faces) and an explicit isDirectionFlipped flag (today the caller negates the
+#           pull dir). Fusion DraftFeatureInput exposes both.
+# [ ] 20.4  SHELL — missing isTangentChain (tangent-face propagation for the remove-faces
+#           selection). Fusion ShellFeatureInput exposes it. Engine has inside/outside
+#           thickness ✓ + shellType (Sharp/Rounded) ✓; only tangent-chain selection is absent.
+# [ ] 20.5  COMBINE — at parity except isNewComponent (place boolean result in a NEW
+#           component). Fusion CombineFeatureInput: operation ✓ (join/cut/intersect),
+#           isKeepToolBodies ✓ (our keepTools), toolBodies multi ✓, targetBody ✓. Add the
+#           new-component option (low priority).
+
+# ══════════════════════════════════════════════════════════════════════════════
 # OPEN — Fillet/Chamfer manual QA (not automatable in preview harness)
 # ══════════════════════════════════════════════════════════════════════════════
 # [ ] QA-1  Live red-flash pulse: interactive 3D — pick the bottom edge near a
