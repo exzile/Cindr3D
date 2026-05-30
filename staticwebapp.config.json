@@ -1,18 +1,13 @@
 {
   "routes": [
     {
-      "route": "/",
-      "redirect": "/home",
-      "statusCode": 301
-    },
-    {
       "route": "/features",
-      "redirect": "/home",
+      "redirect": "/",
       "statusCode": 301
     },
     {
       "route": "/help",
-      "redirect": "/home",
+      "redirect": "/",
       "statusCode": 301
     },
     {
@@ -22,7 +17,8 @@
     },
     {
       "route": "/home",
-      "rewrite": "/home/index.html"
+      "redirect": "/",
+      "statusCode": 301
     },
     {
       "route": "/design",

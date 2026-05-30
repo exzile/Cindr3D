@@ -57,7 +57,7 @@ export default function HomePage() {
       <section className="home-hero" aria-labelledby="home-hero-title">
         <div className="home-hero__media" aria-hidden="true" />
         <nav className="home-nav" aria-label="Site navigation">
-          <a className="home-nav__brand" href="/home">
+          <a className="home-nav__brand" href="/">
             <img src="/logo.png" alt="" />
             <span>Cindr3D</span>
           </a>

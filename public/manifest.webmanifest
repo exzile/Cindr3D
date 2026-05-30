@@ -1,11 +1,11 @@
 {
   "name": "Cindr3D",
   "short_name": "Cindr3D",
-  "id": "/home",
+  "id": "/",
   "description": "Browser-based CAD, slicing, G-code simulation, and printer dashboard tools for 3D printing.",
   "categories": ["productivity", "utilities", "graphics"],
   "lang": "en-US",
-  "start_url": "/home",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "display_override": ["window-controls-overlay", "standalone", "browser"],

@@ -7,7 +7,7 @@ const sourcePath = path.join(distDir, 'index.html');
 
 const pages = [
   {
-    route: '/home',
+    route: '/',
     title: 'Cindr3D | Browser CAD, Slicing, and 3D Printer Control',
     description:
       'Cindr3D is a browser-based CAD, slicing, and printer-control workspace for designing models, preparing prints, and managing 3D printer fleets.',
@@ -154,9 +154,11 @@ function withSeo(page) {
 }
 
 for (const page of pages) {
-  const directory = path.join(distDir, page.route.slice(1));
-  fs.mkdirSync(directory, { recursive: true });
-  fs.writeFileSync(path.join(directory, 'index.html'), withSeo(page));
+  const outputPath = page.route === '/'
+    ? path.join(distDir, 'index.html')
+    : path.join(distDir, page.route.slice(1), 'index.html');
+  fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+  fs.writeFileSync(outputPath, withSeo(page));
 }
 
 const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
