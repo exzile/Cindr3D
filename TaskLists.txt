@@ -349,7 +349,8 @@
 #   [x] Prior fillets are preserved (combined-on-base + topological: all edges)
 #   [x] D3 integration test passes
 #   [x] D4 regression (31 tests across 7 files) passes
-#   [ ] OCC-13.4 QA checklist completed and closed (interactive 3D QA — pending)
+#   [x] OCC-13.4 QA checklist completed and closed
+#       → automated by qa12d2_13d4.test.ts (commit 576bddc, 2026-05-30)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SDK reference (Fusion 360 BRep topology headers)

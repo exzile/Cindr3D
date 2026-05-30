@@ -1182,15 +1182,63 @@ export function occFilletEdgeSetsTopologicalWithInstance(
     for (const id of es.edgeIds) edgeToSet.set(id, es);
   }
 
+  // Pre-compute trim-invariant anchors for EVERY edge in the plan, evaluated
+  // against the original `body` where the edge IDs are guaranteed valid.
+  //
+  // WHY THIS IS NECESSARY: after group 0 is applied, `occFilletEdgeSetsWithInstance`
+  // calls `makeBRepBodyFromOccShape` on the OCC result shape, which walks
+  // TopExp_Explorer and assigns fresh sequential edge IDs (0, 1, 2...) based on
+  // walk order.  The resulting `running` body has a completely new ID namespace.
+  // Group 1+'s `group` arrays still contain IDs from the original body — if we
+  // passed them to `occFilletEdgeSetsWithInstance` directly, `body.edgeIds.get(id)`
+  // would return undefined, the edge would be silently skipped, and the fallback
+  // would return null without ever having applied the second group.
+  //
+  // Solution: for groups 1..N, re-find each edge in the running intermediate body
+  // via its geometric anchor (kind + location, rotation/translation invariant).
+  // Group 0 runs on the original `body` so its IDs are still correct — skip it.
+  const planAnchors: (EdgeAnchor | null)[][] = plan.map((group) =>
+    group.map((id) => computeEdgeAnchor(oc, body, id)),
+  );
+
   let running: BRepBody = body;
   let runningIsIntermediate = false;
 
-  for (const group of plan) {
+  for (let gi = 0; gi < plan.length; gi++) {
+    const group = plan[gi];
     if (group.length === 0) continue;
 
+    // For the first group (gi === 0), `running === body` and the original edge IDs
+    // are directly valid.  For all subsequent groups the running body is a post-fillet
+    // intermediate with a fresh ID namespace — re-find each edge via its anchor.
+    let resolvedIds: number[];
+    if (gi === 0) {
+      resolvedIds = group;
+    } else {
+      resolvedIds = [];
+      for (let j = 0; j < group.length; j++) {
+        const anchor = planAnchors[gi][j];
+        if (!anchor) {
+          // Edge has no computable anchor (degenerate / unknown curve type).
+          if (runningIsIntermediate) running.dispose();
+          return null;
+        }
+        const reFoundId = findEdgeByAnchor(oc, running, anchor);
+        if (reFoundId === null) {
+          // Edge was not found — likely already consumed by a prior group's fillet,
+          // which should not happen for independent groups but means we cannot proceed.
+          if (runningIsIntermediate) running.dispose();
+          return null;
+        }
+        resolvedIds.push(reFoundId);
+      }
+    }
+
     // Build edge-set list for this group, preserving per-edge radius specs.
-    const groupSets: OccFilletEdgeSet[] = group.map((id) => {
-      const src = edgeToSet.get(id);
+    // Use the ORIGINAL group IDs to look up the radius (edgeToSet is keyed by
+    // original body IDs); use resolvedIds for the actual edgeIds sent to OCC.
+    const groupSets: OccFilletEdgeSet[] = resolvedIds.map((id, j) => {
+      const src = edgeToSet.get(group[j]);
       return src ? { ...src, edgeIds: [id] } : { edgeIds: [id] };
     });
 

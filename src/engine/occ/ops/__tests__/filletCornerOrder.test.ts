@@ -38,13 +38,11 @@ function edgeSetKey(edgePtrs: number[]): string {
 
 class FakeFilletBuilder {
   private edgePtrs: number[] = [];
-  private fail: boolean;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private rawShape: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   constructor(shape: any) {
     this.rawShape = shape;
-    this.fail = false;
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Add_2(_r: number, edge: any) { this.edgePtrs.push(edge.ptr); }
@@ -56,9 +54,38 @@ class FakeFilletBuilder {
     const shouldFail = failForEdgeSets.some((s) => s.has(key));
     if (shouldFail) throw new Error('mock: OCC cannot solve this corner in one pass');
   }
-  IsDone() { return !this.fail; }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  Shape() { return { ...this.rawShape, filletedWith: this.edgePtrs }; }
+  IsDone() { return true; }
+  Shape() {
+    // Simulate real OCC behaviour: when only the arc edge (ptr 201) was filleted,
+    // the arc is CONSUMED and replaced by a new blend edge (ptr 301).  The surviving
+    // line edge (ptr 202) shifts to position 0 — a different body-level ID than in
+    // the original body (where it was at index 1 → edgeId 1).
+    //
+    // This forces the anchor-based re-resolution path in
+    // occFilletEdgeSetsTopologicalWithInstance to be exercised:  group 1 cannot
+    // naively look up edgeId 1 in the intermediate body (it would get the blend edge,
+    // not the line edge), and must instead use findEdgeByAnchor to locate the line edge
+    // at its new position (edgeId 0).
+    //
+    // The combined-failure shape (filletedWith=[201,202]) is left unchanged so that
+    // the "returns null" test case still works.
+    const filletedArcOnly = this.edgePtrs.length === 1 && this.edgePtrs[0] === 201;
+    if (filletedArcOnly) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const lineEdge = this.rawShape.edges.find((e: any) => e.ptr === 202);
+      // New torus-blend edge that replaced the arc.  ptr 301, line-typed so
+      // BRepAdaptor_Curve_2 falls back to 'line' (undefined in edgeCurveType → default).
+      const blendEdge = { ptr: 301, delete() {}, curve: 'line' as const, verts: [] };
+      return {
+        ...this.rawShape,
+        // Line edge is now first → edgeId 0 in the intermediate body.
+        // Arc edge is gone; blend edge is last → edgeId 1.
+        edges: [lineEdge, blendEdge],
+        filletedWith: this.edgePtrs,
+      };
+    }
+    return { ...this.rawShape, filletedWith: this.edgePtrs };
+  }
   delete() {}
 }
 
@@ -239,8 +266,8 @@ describe('occFilletEdgeSetsTopologicalWithInstance — OCC-16 corner case', () =
     failForEdgeSets = [new Set([combinedKey])];
 
     const result = occFilletEdgeSetsTopologicalWithInstance(oc, body, [
-      { edgeIds: [0], radius: 1 }, // circle edge
-      { edgeIds: [1], radius: 1 }, // line edge
+      { edgeIds: [0], radius: 1 }, // circle edge (body edgeId 0 → ptr 201)
+      { edgeIds: [1], radius: 1 }, // line edge   (body edgeId 1 → ptr 202)
     ]);
 
     expect(result).not.toBeNull();
@@ -248,7 +275,12 @@ describe('occFilletEdgeSetsTopologicalWithInstance — OCC-16 corner case', () =
     expect(buildCallLog[0]).toContain('201');
     expect(buildCallLog[0]).not.toContain('202');
     // Second Build() must include the line edge (ptr 202).
+    // IMPORTANT: after the arc fillet, the mock Shape() reorders edges so the line
+    // edge shifts from edgeId 1 → edgeId 0 in the intermediate body.  The function
+    // must use anchor-based re-resolution (not the original edgeId 1) to find it.
     expect(buildCallLog[1]).toContain('202');
+    // Exactly two Build() calls: one for each group.
+    expect(buildCallLog).toHaveLength(2);
   });
 
   it('returns null when there is no cross-type adjacency (both edges same type)', () => {
