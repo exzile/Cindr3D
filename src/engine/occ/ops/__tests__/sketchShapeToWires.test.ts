@@ -89,6 +89,28 @@ describe('sketchShapeToWires (OCC-15 analytic profile)', () => {
     expect(calls.line).toBeLessThan(10);          // NOT ~64 facet line edges
   });
 
+  it('keeps the final vertex of a point-built rectangle (no diagonal collapse)', () => {
+    // Regression: computeAtomicRegions builds `new THREE.Shape(points)` with NO closing
+    // duplicate, so `.curves` has N-1 LineCurves and the last vertex lives only in the
+    // last curve's v2. Taking curves.map(c => c.v1) alone DROPS it; for a rectangle the
+    // loop then re-closes across the missing corner diagonally → a triangle (extrude
+    // "cut in half"). The builder must include that final vertex → all 4 sides present.
+    const rect = new THREE.Shape([
+      new THREE.Vector2(0, 0),
+      new THREE.Vector2(40, 0),
+      new THREE.Vector2(40, 30),
+      new THREE.Vector2(0, 30), // load-bearing final corner, only present as last curve's v2
+    ]);
+    expect(rect.curves).toHaveLength(3); // point-built: 3 segments, 4th (closing) is implicit
+    expect(rect.curves.every((c) => c.type === 'LineCurve')).toBe(true);
+
+    const { oc, calls } = makeFakeOcc();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const wires = sketchShapeToWires(oc as any, rect, FRAME);
+    expect(wires).not.toBeNull();
+    expect(calls.line).toBe(4); // all four rectangle sides — NOT 3 (the diagonal-collapsed triangle)
+  });
+
   it('returns null (fall back to faceted path) when the profile contains a spline', () => {
     const shape = new THREE.Shape();
     shape.moveTo(0, 0);

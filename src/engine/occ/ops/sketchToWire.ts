@@ -481,7 +481,17 @@ function buildAnalyticWire(oc: OcctRaw, curves: ThreeCurve[], frame: SketchPlane
 
   if (curves.every((c) => c.type === 'LineCurve')) {
     // Faceted region loop → recover arcs from the polygon vertices.
+    // Each LineCurve contributes its START vertex (v1); the loop's FINAL vertex is the
+    // last curve's END (v2). THREE.Shape does NOT append a closing segment to `.curves`
+    // for a point-built shape, so `curves.map(c => c.v1)` alone DROPS that final vertex.
+    // When it is a load-bearing corner (e.g. a rectangle's last corner) the loop then
+    // re-closes across it diagonally → a triangle. Always include the last v2 (deduped
+    // against the first vertex when the curve list is already explicitly closed).
     let pts = curves.map((c) => (c.v1 as THREE.Vector2).clone());
+    const lastV2 = curves[curves.length - 1]?.v2 as THREE.Vector2 | undefined;
+    if (lastV2 && (pts.length === 0 || pts[0].distanceTo(lastV2) > SEG_MIN_LEN)) {
+      pts.push(lastV2.clone());
+    }
     if (reverse) pts = pts.reverse();
     // A faceted full circle becomes ONE analytic circle edge (the refit's 3-point
     // arc can't close a circle since start≈end).
