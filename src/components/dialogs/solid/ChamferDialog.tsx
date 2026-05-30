@@ -6,6 +6,7 @@ import { ChamferModeFields } from "./chamferDialog/ChamferModeFields";
 import { ChamferPickHeader } from "./chamferDialog/ChamferPickHeader";
 import type { ChamferParams } from "./chamferDialog/types";
 import { useChamferDialogState } from "./chamferDialog/useChamferDialogState";
+import { resolveChamferDistances } from "./chamferDialog/chamferDistances";
 import { EdgeSelectionList } from "./edgeDialog/EdgeSelectionList";
 import { storedEdgeIds } from "../../../utils/occEdgeUtils";
 
@@ -26,28 +27,6 @@ interface ChamferDialogProps {
   initialParams?: Record<string, unknown>;
 }
 
-function resolveChamferDistance2(
-  p: Pick<ChamferParams, "mode" | "distance" | "distance2" | "angle">,
-): number {
-  if (p.mode === "two-dist") return p.distance2 ?? p.distance;
-  if (p.mode === "dist-angle") {
-    const angle = Math.max(1, Math.min(89, p.angle ?? 45));
-    return Math.max(0.01, p.distance * Math.tan((angle * Math.PI) / 180));
-  }
-  return p.distance;
-}
-
-function resolveChamferDistances(
-  p: Pick<
-    ChamferParams,
-    "mode" | "distance" | "distance2" | "angle" | "isFlipped"
-  >,
-): [number, number] {
-  const d1 = p.distance;
-  const d2 = resolveChamferDistance2(p);
-  return p.isFlipped ? [d2, d1] : [d1, d2];
-}
-
 function ChamferDialogUI({
   open,
   selectedEdgeCount,
@@ -57,7 +36,7 @@ function ChamferDialogUI({
   onConfirm,
   initialParams,
 }: ChamferDialogProps) {
-  const dialog = useChamferDialogState(onConfirm, initialParams);
+  const dialog = useChamferDialogState(onConfirm, initialParams, edgeIds);
 
   if (!open) return null;
 

@@ -12,6 +12,7 @@ export default function ChamferEdgeHighlight() {
   const chamferEdgeIds = useCADStore((s) => s.chamferEdgeIds);
   const addChamferEdge = useCADStore((s) => s.addChamferEdge);
   const removeChamferEdge = useCADStore((s) => s.removeChamferEdge);
+  const invalidPreview = useCADStore((s) => s.edgeModInvalidPreview);
 
   return (
     <EdgeOpEdgeHighlight
@@ -20,6 +21,7 @@ export default function ChamferEdgeHighlight() {
       addEdge={addChamferEdge}
       removeEdge={removeChamferEdge}
       selectedColor={0xaa44ff}
+      invalidEdgeIds={invalidPreview?.edgeIds}
     />
   );
 }

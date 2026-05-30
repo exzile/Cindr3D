@@ -317,18 +317,29 @@ describe('GeometryEngine.sketchToProfileShapesFlat', () => {
     material.dispose();
   });
 
-  it('returns originals + atomic regions when two circles overlap', () => {
-    // Two overlapping circles — atomic regions should include lens, and
-    // each circle-minus-lens (crescent). Plus the two original circles.
+  it('returns only atomic faces when two circles overlap (Fusion parity)', () => {
+    // Two overlapping circles. Fusion offers ONLY the atomic faces:
+    // lens (A∩B), crescent A-B, crescent B-A = 3 regions. The whole circles
+    // must NOT be offered as profiles — selecting "the circle" would wrongly
+    // pull in the lens region the decomposition split out.
     const sketch = mkSketch([
       mkCircle(0, 0, 1),
       mkCircle(1, 0, 1),
     ]);
     const shapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
-    // At minimum: 2 originals + 3 atomic (lens, A-B, B-A) = 5.
-    // Dedup may remove one if it matches an original — but for overlapping
-    // circles, no atomic region matches either original.
-    expect(shapes.length).toBeGreaterThanOrEqual(5);
+    // Exactly the 3 atomic faces — no redundant whole-circle profiles.
+    expect(shapes.length).toBe(3);
+    // No returned profile is a full circle (area π) — each atom is smaller.
+    const fullCircleArea = Math.PI; // r = 1
+    const area = (s: THREE.Shape) => {
+      const p = s.getPoints(64);
+      let a = 0;
+      for (let i = 0, j = p.length - 1; i < p.length; j = i++) a += p[i].x * p[j].y - p[j].x * p[i].y;
+      return Math.abs(a) / 2;
+    };
+    for (const s of shapes) {
+      expect(area(s)).toBeLessThan(fullCircleArea * 0.95);
+    }
   });
 
   it('does not duplicate when shapes do not intersect (dedup)', () => {

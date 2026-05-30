@@ -12,6 +12,14 @@ const pages = [
     description:
       'Cindr3D is a browser-based CAD, slicing, and printer-control workspace for designing models, preparing prints, and managing 3D printer fleets.',
     ogDescription: 'Browser-based CAD, slicing, and 3D printer control for makers and print farms.',
+    heading: 'Browser CAD, slicing, and 3D printer control',
+    intro:
+      'Cindr3D brings model design, print preparation, G-code inspection, and printer monitoring into one browser workspace.',
+    highlights: [
+      'Design printable parts with sketch and solid modeling tools.',
+      'Prepare prints with slicer profiles, previews, and G-code simulation.',
+      'Monitor and control printers from a customizable fleet dashboard.',
+    ],
     priority: 1,
   },
   {
@@ -20,6 +28,14 @@ const pages = [
     description:
       'Design printable 3D models in the browser with parametric sketches, solid modeling tools, fillets, chamfers, and editable CAD features.',
     ogDescription: 'Parametric browser CAD tools for designing and editing printable 3D models.',
+    heading: 'Browser-based CAD for 3D printing',
+    intro:
+      'Use Cindr3D Design to sketch, extrude, edit, fillet, chamfer, and iterate on printable models without leaving the browser.',
+    highlights: [
+      'Create parametric sketches with constraints and profile selection.',
+      'Build solid features such as extrude, revolve, fillet, and chamfer.',
+      'Keep an editable modeling timeline for design changes.',
+    ],
     priority: 0.8,
   },
   {
@@ -28,6 +44,14 @@ const pages = [
     description:
       'Prepare 3D prints with model layout, slicing profiles, G-code preview, layer simulation, breakpoints, and printer-ready export tools.',
     ogDescription: 'Slice, simulate, inspect, and export printer-ready G-code from the browser.',
+    heading: 'Slice, simulate, and preview G-code',
+    intro:
+      'Use Cindr3D Prepare to arrange models, tune printer and filament profiles, inspect toolpaths, and export printer-ready G-code.',
+    highlights: [
+      'Manage printer, filament, and slicing profiles in one workspace.',
+      'Preview layer-by-layer G-code with breakpoints and section views.',
+      'Export prepared print files directly from the browser.',
+    ],
     priority: 0.8,
   },
   {
@@ -36,6 +60,14 @@ const pages = [
     description:
       'Monitor and control 3D printers with a customizable dashboard for temperatures, motion, macros, cameras, files, and print-farm workflows.',
     ogDescription: 'A customizable browser dashboard for monitoring and controlling 3D printers.',
+    heading: 'Manage 3D printers from a browser dashboard',
+    intro:
+      'Use the Cindr3D printer dashboard to monitor connected machines, arrange dashboard cards, inspect camera feeds, and manage print workflows.',
+    highlights: [
+      'Track temperatures, motion, files, macros, and printer status.',
+      'Customize dashboard layouts per printer.',
+      'Connect to common 3D printer firmware and network setups.',
+    ],
     priority: 0.7,
   },
 ];
@@ -74,12 +106,32 @@ function pageSchema(page) {
       priceCurrency: 'USD',
     },
     featureList: [
-      'Browser-based CAD modeling',
-      '3D print preparation and slicing',
-      'G-code preview and simulation',
-      '3D printer dashboard and fleet monitoring',
+      ...page.highlights,
     ],
   };
+}
+
+function staticContent(page) {
+  const navLinks = pages
+    .map((candidate) => `        <li><a href="${candidate.route}">${escapeHtml(candidate.heading)}</a></li>`)
+    .join('\n');
+  const highlights = page.highlights
+    .map((highlight) => `        <li>${escapeHtml(highlight)}</li>`)
+    .join('\n');
+
+  return `<main class="seo-static-content" aria-label="${escapeHtml(page.heading)}">
+      <h1>${escapeHtml(page.heading)}</h1>
+      <p>${escapeHtml(page.intro)}</p>
+      <ul>
+${highlights}
+      </ul>
+      <nav aria-label="Cindr3D sections">
+        <h2>Cindr3D sections</h2>
+        <ul>
+${navLinks}
+        </ul>
+      </nav>
+    </main>`;
 }
 
 function withSeo(page) {
@@ -97,6 +149,7 @@ function withSeo(page) {
   output = replaceTag(output, /<meta name="twitter:description" content="[^"]*" \/>/, `<meta name="twitter:description" content="${escapeHtml(page.ogDescription)}" />`);
   output = replaceTag(output, /<meta name="twitter:image" content="[^"]*" \/>/, `<meta name="twitter:image" content="${imageUrl}" />`);
   output = replaceTag(output, /<script type="application\/ld\+json">.*?<\/script>/s, `<script type="application/ld+json">\n      ${JSON.stringify(pageSchema(page), null, 6)}\n    </script>`);
+  output = output.replace('<div id="root"></div>', `<div id="root">\n    ${staticContent(page)}\n    </div>`);
   return output;
 }
 

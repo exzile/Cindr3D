@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { useCADStore } from "../../../../store/cadStore";
 import type { ChamferCornerType, ChamferMode, ChamferParams } from "./types";
+import { resolveChamferDistances } from "./chamferDistances";
+import { useEdgeModValidityProbe } from "../edgeDialog/useEdgeModValidityProbe";
 
 export function useChamferDialogState(
   onConfirm: (params: ChamferParams) => void,
   initialParams?: Record<string, unknown>,
+  /** Effective selected edge IDs (live selection or, when editing, stored ones). */
+  probeEdgeIds: string[] = [],
 ) {
   const chamferLiveDistance = useCADStore((s) => s.chamferLiveDistance);
   const setChamferLiveDistance = useCADStore((s) => s.setChamferLiveDistance);
@@ -68,6 +72,20 @@ export function useChamferDialogState(
   }, [angle, cornerType, distance, distance2, isFlipped, mode, propagate]);
 
   const buildParams = (): ChamferParams => previewParams;
+
+  // Fusion-style live validity preview: dry-run the chamfer at the current value
+  // so the selected edge flashes red + a toast appears before the user clicks OK.
+  // Resolve distances exactly as the commit does so the preview matches reality.
+  const [probeD1, probeD2] = resolveChamferDistances({ mode, distance, distance2, angle, isFlipped });
+  const probeAngle = mode === "dist-angle" ? angle : undefined;
+  useEdgeModValidityProbe(true, probeEdgeIds, {
+    tool: "Chamfer",
+    distance: probeD1,
+    distance2: probeAngle === undefined ? probeD2 : undefined,
+    angle: probeAngle,
+    propagate,
+    skip: mode === "three-face",
+  });
 
   const handleConfirm = () => {
     onConfirm(buildParams());

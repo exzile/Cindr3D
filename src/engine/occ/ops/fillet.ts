@@ -16,11 +16,15 @@ import type { OcctRaw } from '../types';
 import { makeBRepBodyFromOccShape, occDeref, type BRepBody } from '../brepBody';
 import { getOcc } from '../loader';
 import {
+  buildVertexEdgeMap,
   collectFaceEdgeIds,
   collectSharedEdgeIds,
   findAdjacentFacesToFace,
   findShapeIndex,
+  partitionEdgesByTopology,
 } from './adjacency';
+import { topologicalFilletOrder } from './filletOrder';
+import { getSelectableEdges } from './selectableEdges';
 import { computeEdgeAnchor, findEdgeByAnchor, type EdgeAnchor } from './edgeAnchor';
 import { isOccShapeValid } from './shapeValidity';
 
@@ -308,18 +312,48 @@ function computeChordLengthRadius(
       return fallback;
     }
 
+    // Get the edge midpoint in 3D so we can sample the adjacent face normals
+    // NEAR the shared edge rather than at the face's parametric centre. Sampling at the
+    // centre is wrong for curved faces (cylinder, cone) where the normal varies: the
+    // dihedral angle must be measured at the edge, not at some arbitrary interior point.
+    let edgeMidX = 0, edgeMidY = 0, edgeMidZ = 0;
+    try {
+      const edgeCurve = new occ.BRepAdaptor_Curve_2(rawEdge);
+      const et0 = edgeCurve.FirstParameter(), et1 = edgeCurve.LastParameter();
+      const edgeMidPt = new occ.gp_Pnt_1();
+      edgeCurve.D0((et0 + et1) / 2, edgeMidPt);
+      edgeMidX = edgeMidPt.X(); edgeMidY = edgeMidPt.Y(); edgeMidZ = edgeMidPt.Z();
+      edgeMidPt.delete(); edgeCurve.delete();
+    } catch { /* fall back to (0,0,0) — face-centre sampling still used */ }
+
     const normals: [number, number, number][] = [];
     for (const face of adjacentFaces) {
       try {
         const surf = new occ.BRepAdaptor_Surface_2(face, true);
         const u0 = surf.FirstUParameter(), u1 = surf.LastUParameter();
         const v0 = surf.FirstVParameter(), v1 = surf.LastVParameter();
-        const uC = (u0 + u1) / 2, vC = (v0 + v1) / 2;
+
+        // Find the UV parameter closest to the edge midpoint via a 3×3 grid search.
+        // This places the dihedral sample at the shared boundary for curved surfaces.
+        let bestU = (u0 + u1) / 2, bestV = (v0 + v1) / 2, bestDist = Infinity;
+        for (let ui = 0; ui <= 2; ui++) {
+          for (let vi = 0; vi <= 2; vi++) {
+            const u = u0 + (u1 - u0) * ui / 2;
+            const v = v0 + (v1 - v0) * vi / 2;
+            try {
+              const pt = surf.Value(u, v);
+              const d = Math.hypot(pt.X() - edgeMidX, pt.Y() - edgeMidY, pt.Z() - edgeMidZ);
+              pt.delete();
+              if (d < bestDist) { bestDist = d; bestU = u; bestV = v; }
+            } catch { /* skip bad UV */ }
+          }
+        }
+
         const du = (u1 - u0) * 0.01 || 1e-4;
         const dv = (v1 - v0) * 0.01 || 1e-4;
-        const p0 = surf.Value(uC, vC);
-        const p1 = surf.Value(uC + du, vC);
-        const p2 = surf.Value(uC, vC + dv);
+        const p0 = surf.Value(bestU, bestV);
+        const p1 = surf.Value(bestU + du, bestV);
+        const p2 = surf.Value(bestU, bestV + dv);
         const ax = p1.X() - p0.X(), ay = p1.Y() - p0.Y(), az = p1.Z() - p0.Z();
         const bx = p2.X() - p0.X(), by = p2.Y() - p0.Y(), bz = p2.Z() - p0.Z();
         const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
@@ -486,6 +520,9 @@ export function occFilletEdgeSetsWithInstance(
     // so Build() never sees them, producing a clean null rather than an exception.
     const seamDetectMap = new occ.TopTools_IndexedMapOfShape_1();
     let seamDetectReady = false;
+    // Tracks whether seamDetectMap has been freed, so the outer catch never issues a
+    // second .delete() on an already-freed embind object (double-free → heap corruption).
+    let seamDetectFreed = false;
     try {
       occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, seamDetectMap);
       seamDetectReady = seamDetectMap.Extent() > 0;
@@ -608,6 +645,7 @@ export function occFilletEdgeSetsWithInstance(
     }
 
     seamDetectMap.delete();
+    seamDetectFreed = true;
 
     if (!addedAny) {
       mk.delete();
@@ -653,9 +691,10 @@ export function occFilletEdgeSetsWithInstance(
     });
     } catch (e) {
       console.warn('[occFillet] threw outside Build/Shape:', e);
-      // Guard against double-free: the happy path already deleted seamDetectMap at
-      // this point only if we reached it — on a throw before that, free it here.
-      try { seamDetectMap.delete(); } catch { /* already freed on happy path */ }
+      // Free seamDetectMap only if the happy path hasn't already — a second embind
+      // .delete() on a freed object is a double-free, so gate on the freed flag rather
+      // than swallowing the resulting error after the fact.
+      if (!seamDetectFreed) { seamDetectMap.delete(); seamDetectFreed = true; }
       mk.delete();
       return null;
     }
@@ -1131,4 +1170,128 @@ export function occRuleFilletBetweenFacesWithInstance(
   const edgeIds = applyTopologyFilter(raw, options);
   if (edgeIds.length === 0) return null;
   return occFilletEdgeSetsWithInstance(oc, body, [{ edgeIds, radius }], options);
+}
+
+// ── OCC-16.B2: Topology-ordered sequential fallback ───────────────────────────
+
+/**
+ * Applies edge sets in topology-aware order: round edges adjacent to linear
+ * edges go first, so OCC has the blended topology before the linear edge is
+ * attempted.  Each group is applied as a single combined BRepFilletAPI_MakeFillet
+ * pass on the running body.
+ *
+ * Returns null when:
+ *   - the partition has no cross-type adjacency (no benefit over combined pass), OR
+ *   - any group fails to build a valid body.
+ *
+ * Never radius-clamps. Disposal: every intermediate body is disposed immediately
+ * when replaced — no WASM heap accumulation.
+ */
+export function occFilletEdgeSetsTopologicalWithInstance(
+  oc: OcctRaw,
+  body: BRepBody,
+  edgeSets: OccFilletEdgeSet[],
+  options: OccFilletOptions = {},
+): BRepBody | null {
+  if (edgeSets.length === 0) return null;
+
+  // Flatten all edge IDs for partition analysis.
+  const allEdgeIds = edgeSets.flatMap((es) => es.edgeIds);
+  if (allEdgeIds.length === 0) return null;
+
+  const edgeMeta = getSelectableEdges(oc, body);
+  const edgeKinds = new Map<number, string>(
+    [...edgeMeta.entries()].map(([id, meta]) => [id, meta.kind]),
+  );
+  const vertexMap = buildVertexEdgeMap(oc, body);
+  const partition = partitionEdgesByTopology(allEdgeIds, edgeKinds, vertexMap);
+  const plan = topologicalFilletOrder(partition);
+
+  // No cross-type adjacency — this path adds no value over the combined pass.
+  if (plan.length <= 1) return null;
+
+  // Build a lookup from edgeId → OccFilletEdgeSet so each group inherits the
+  // right radius spec from its source set.
+  const edgeToSet = new Map<number, OccFilletEdgeSet>();
+  for (const es of edgeSets) {
+    for (const id of es.edgeIds) edgeToSet.set(id, es);
+  }
+
+  // Pre-compute trim-invariant anchors for EVERY edge in the plan, evaluated
+  // against the original `body` where the edge IDs are guaranteed valid.
+  //
+  // WHY THIS IS NECESSARY: after group 0 is applied, `occFilletEdgeSetsWithInstance`
+  // calls `makeBRepBodyFromOccShape` on the OCC result shape, which walks
+  // TopExp_Explorer and assigns fresh sequential edge IDs (0, 1, 2...) based on
+  // walk order.  The resulting `running` body has a completely new ID namespace.
+  // Group 1+'s `group` arrays still contain IDs from the original body — if we
+  // passed them to `occFilletEdgeSetsWithInstance` directly, `body.edgeIds.get(id)`
+  // would return undefined, the edge would be silently skipped, and the fallback
+  // would return null without ever having applied the second group.
+  //
+  // Solution: for groups 1..N, re-find each edge in the running intermediate body
+  // via its geometric anchor (kind + location, rotation/translation invariant).
+  // Group 0 runs on the original `body` so its IDs are still correct — skip it.
+  const planAnchors: (EdgeAnchor | null)[][] = plan.map((group) =>
+    group.map((id) => computeEdgeAnchor(oc, body, id)),
+  );
+
+  let running: BRepBody = body;
+  let runningIsIntermediate = false;
+
+  for (let gi = 0; gi < plan.length; gi++) {
+    const group = plan[gi];
+    if (group.length === 0) continue;
+
+    // For the first group (gi === 0), `running === body` and the original edge IDs
+    // are directly valid.  For all subsequent groups the running body is a post-fillet
+    // intermediate with a fresh ID namespace — re-find each edge via its anchor.
+    let resolvedIds: number[];
+    if (gi === 0) {
+      resolvedIds = group;
+    } else {
+      resolvedIds = [];
+      for (let j = 0; j < group.length; j++) {
+        const anchor = planAnchors[gi][j];
+        if (!anchor) {
+          // Edge has no computable anchor (degenerate / unknown curve type).
+          if (runningIsIntermediate) running.dispose();
+          return null;
+        }
+        const reFoundId = findEdgeByAnchor(oc, running, anchor);
+        if (reFoundId === null) {
+          // Edge was not found — likely already consumed by a prior group's fillet,
+          // which should not happen for independent groups but means we cannot proceed.
+          if (runningIsIntermediate) running.dispose();
+          return null;
+        }
+        resolvedIds.push(reFoundId);
+      }
+    }
+
+    // Build edge-set list for this group, preserving per-edge radius specs.
+    // Use the ORIGINAL group IDs to look up the radius (edgeToSet is keyed by
+    // original body IDs); use resolvedIds for the actual edgeIds sent to OCC.
+    const groupSets: OccFilletEdgeSet[] = resolvedIds.map((id, j) => {
+      const src = edgeToSet.get(group[j]);
+      return src ? { ...src, edgeIds: [id] } : { edgeIds: [id] };
+    });
+
+    const next = occFilletEdgeSetsWithInstance(
+      oc, running, groupSets,
+      { sourceFeatureId: options.sourceFeatureId, continuity: options.continuity,
+        tangencyWeight: options.tangencyWeight, isRollingBallCorner: options.isRollingBallCorner },
+    );
+
+    if (!next) {
+      if (runningIsIntermediate) running.dispose();
+      return null;
+    }
+
+    if (runningIsIntermediate) running.dispose();
+    running = next;
+    runningIsIntermediate = true;
+  }
+
+  return runningIsIntermediate ? running : null;
 }

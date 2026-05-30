@@ -8,6 +8,16 @@
 import type { OcctRaw } from '../types';
 import { makeBRepBodyFromOccShape, occDeref, type BRepBody } from '../brepBody';
 import { getOcc } from '../loader';
+import { runEdgeOpBuild } from './adjacency';
+
+type OccBoolBuilder = {
+  SetNonDestructive?(v: boolean): void;
+  Build(progress?: unknown): void;
+  IsDone?(): boolean;
+  HasErrors?(): boolean;
+  Shape(): unknown;
+  delete(): void;
+};
 
 type OccOffsetFacesApi = OcctRaw & {
   BRepPrimAPI_MakePrism_1: new (shape: unknown, vec: unknown, copy: boolean, canonize: boolean) => {
@@ -15,23 +25,12 @@ type OccOffsetFacesApi = OcctRaw & {
     Shape(): unknown;
     delete(): void;
   };
-  BRepAlgoAPI_Fuse_3: new (a: unknown, b: unknown) => {
-    SetNonDestructive?(v: boolean): void;
-    Build(progress?: unknown): void;
-    IsDone?(): boolean;
-    HasErrors?(): boolean;
-    Shape(): unknown;
-    delete(): void;
-  };
-  BRepAlgoAPI_Cut_3: new (a: unknown, b: unknown) => {
-    SetNonDestructive?(v: boolean): void;
-    Build(progress?: unknown): void;
-    IsDone?(): boolean;
-    HasErrors?(): boolean;
-    Shape(): unknown;
-    delete(): void;
-  };
-  Message_ProgressRange_1: new () => { delete?: () => void };
+  BRepAlgoAPI_Fuse_3: new (a: unknown, b: unknown) => OccBoolBuilder;
+  BRepAlgoAPI_Cut_3: new (a: unknown, b: unknown) => OccBoolBuilder;
+  // occDeref returns a TopoDS_Shape; BRepAdaptor_Surface_2 needs a TopoDS_Face —
+  // cast via TopoDS.Face_1 (VIEW). Boolean Build() takes 0 args here → use
+  // runEdgeOpBuild for the binding variance.
+  TopoDS: { Face_1(s: unknown): unknown };
   gp_Vec_4: new (x: number, y: number, z: number) => { delete(): void };
   BRepAdaptor_Surface_2: new (face: unknown, restricted: boolean) => {
     FirstUParameter(): number;
@@ -76,8 +75,10 @@ export function occOffsetFacesWithInstance(
     for (const faceId of faceIds) {
       const handle = body.faceIds.get(faceId);
       if (!handle) continue;
-      // NOTE: rawFace is an occDeref wrapPointer VIEW — do NOT delete.
-      const rawFace = occDeref(oc, handle, oc.TopoDS_Face);
+      // occDeref returns a TopoDS_Shape; BRepAdaptor_Surface_2 (in sampleFaceNormal)
+      // needs a real TopoDS_Face or the normal silently defaults to [0,0,1] and the
+      // offset goes the wrong way. Face_1 is a VIEW — do NOT delete.
+      const rawFace = occ.TopoDS.Face_1(occDeref(oc, handle, oc.TopoDS_Shape));
       let prismShape: { delete?: () => void } | null = null;
 
       {
@@ -97,37 +98,25 @@ export function occOffsetFacesWithInstance(
           extVec.delete();
         }
 
-        const boolProgress = new occ.Message_ProgressRange_1();
         try {
-          if (distance > 0) {
-            const fuse = new occ.BRepAlgoAPI_Fuse_3(accumulated, prismShape);
-            try {
-              fuse.SetNonDestructive?.(true);
-              fuse.Build(boolProgress);
-              if (fuse.IsDone?.() !== false && !fuse.HasErrors?.()) {
-                if (changed) (accumulated as { delete?: () => void }).delete?.();
-                accumulated = fuse.Shape();
-                changed = true;
-              }
-            } finally {
-              fuse.delete();
+          // Build() takes 0 args in this WASM build — runEdgeOpBuild handles the
+          // Build(progress)/Build() binding variance (boolean Build(progress) threw
+          // "BRepAlgoAPI_BooleanOperation.Build called with 1 arguments, expected 0").
+          const boolOp: OccBoolBuilder = distance > 0
+            ? new occ.BRepAlgoAPI_Fuse_3(accumulated, prismShape)
+            : new occ.BRepAlgoAPI_Cut_3(accumulated, prismShape);
+          try {
+            boolOp.SetNonDestructive?.(true);
+            runEdgeOpBuild(oc, boolOp);
+            if (boolOp.IsDone?.() !== false && !boolOp.HasErrors?.()) {
+              if (changed) (accumulated as { delete?: () => void }).delete?.();
+              accumulated = boolOp.Shape();
+              changed = true;
             }
-          } else {
-            const cut = new occ.BRepAlgoAPI_Cut_3(accumulated, prismShape);
-            try {
-              cut.SetNonDestructive?.(true);
-              cut.Build(boolProgress);
-              if (cut.IsDone?.() !== false && !cut.HasErrors?.()) {
-                if (changed) (accumulated as { delete?: () => void }).delete?.();
-                accumulated = cut.Shape();
-                changed = true;
-              }
-            } finally {
-              cut.delete();
-            }
+          } finally {
+            boolOp.delete();
           }
         } finally {
-          boolProgress.delete?.();
           prismShape?.delete?.();
         }
       }

@@ -38,6 +38,12 @@ interface EdgeOpEdgeHighlightProps {
   addEdge: (id: string) => void;
   removeEdge: (id: string) => void;
   selectedColor: number;
+  /**
+   * Edge selection IDs that the live OCC validity probe flagged as unsolvable at
+   * the current fillet/chamfer value (Fusion-style). These flash bright red
+   * instead of the normal selected colour to warn the user before they click OK.
+   */
+  invalidEdgeIds?: string[];
   allowCurvedEdges?: boolean;
 }
 
@@ -150,6 +156,7 @@ export default function EdgeOpEdgeHighlight({
   addEdge,
   removeEdge,
   selectedColor,
+  invalidEdgeIds,
   allowCurvedEdges = false,
 }: EdgeOpEdgeHighlightProps) {
   const hoverMat = useMemo(
@@ -198,11 +205,31 @@ export default function EdgeOpEdgeHighlight({
       }),
     [],
   );
+  // Bright red material for edges the live OCC validity probe rejected at the
+  // current value (Fusion-style "not possible" warning).
+  const invalidMat = useMemo(
+    () =>
+      new THREE.LineBasicMaterial({
+        color: 0xff2222,
+        linewidth: 3,
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      }),
+    [],
+  );
 
   useEffect(() => () => hoverMat.dispose(), [hoverMat]);
   useEffect(() => () => selectedMat.dispose(), [selectedMat]);
   useEffect(() => () => allEdgesMat.dispose(), [allEdgesMat]);
   useEffect(() => () => pickEdgesMat.dispose(), [pickEdgesMat]);
+  useEffect(() => () => invalidMat.dispose(), [invalidMat]);
+
+  // Mirror the invalid-edge set into a ref so the useFrame loop reads the latest
+  // without rebinding (the set changes as the probe result updates). The sync
+  // effect lives after the useThree() call below (it needs invalidate()).
+  const invalidIdSetRef = useRef<Set<string>>(new Set());
 
   const allEdgeLinesRef = useRef<THREE.LineSegments[]>([]);
   const hoverLineRef = useRef<THREE.Line | null>(null);
@@ -216,6 +243,17 @@ export default function EdgeOpEdgeHighlight({
   const { scene: _scene, gl, invalidate: invalidateCanvas } = useThree();
   const features = useCADStore((state) => state.features);
   const sketches = useCADStore((state) => state.sketches);
+
+  // Sync the invalid-edge set ref + kick a frame so the red flash appears/clears
+  // even when the camera is idle (frameloop="demand").
+  const invalidKey = (invalidEdgeIds ?? []).join("|");
+  useEffect(() => {
+    invalidIdSetRef.current = new Set(invalidEdgeIds ?? []);
+    invalidateCanvas();
+    // Keyed on invalidKey (joined string) so the effect only re-runs when the SET
+    // of invalid ids actually changes, not on every new array identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invalidKey, invalidateCanvas]);
 
   // Ref exposed to the rehydration effect so it can force a guide-line rebuild
   // after OCC bodies are re-registered (needed after full page refresh).
@@ -842,9 +880,18 @@ export default function EdgeOpEdgeHighlight({
     // an invalidate() → useFrame → invalidate() loop that locks the renderer
     // at 60fps even when nothing is changing.
     if (hoverLineRef.current) applyLinePulse(hoverLineRef.current, 1, now);
-    selectedLinesRef.current.forEach((line) => {
-      const material = line.material as THREE.Material;
-      material.opacity = 0.65 + 0.35 * (0.5 + 0.5 * Math.sin(now * 0.006));
+    const invalidSet = invalidIdSetRef.current;
+    selectedLinesRef.current.forEach((line, id) => {
+      const invalid = invalidSet.has(id);
+      // Swap between the shared selected (purple) and invalid (red) singletons.
+      const desiredMat = invalid ? invalidMat : selectedMat;
+      if (line.material !== desiredMat) line.material = desiredMat;
+      const material = line.material as THREE.LineBasicMaterial;
+      // Invalid edges pulse faster + brighter so the "not possible" warning reads
+      // unmistakably; valid edges keep the gentle selection pulse.
+      material.opacity = invalid
+        ? 0.6 + 0.4 * (0.5 + 0.5 * Math.sin(now * 0.013))
+        : 0.65 + 0.35 * (0.5 + 0.5 * Math.sin(now * 0.006));
       material.transparent = true;
     });
   });

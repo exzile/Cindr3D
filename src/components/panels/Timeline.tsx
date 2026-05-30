@@ -138,7 +138,10 @@ export default function Timeline() {
       )}
 
       <div className="timeline-header">
-        <h3>Timeline</h3>
+        <div className="timeline-header__title">
+          <span className="timeline-header__eyebrow">Design history</span>
+          <h3>Timeline</h3>
+        </div>
         <div className="timeline-header__controls">
           <div className="timeline-nav">
             <button
@@ -188,8 +191,8 @@ export default function Timeline() {
             </button>
           </div>
           {rollbackIndex >= 0 && (
-            <button className="timeline-action-btn active timeline-action-btn--small" onClick={() => setRollbackIndex(-1)} title="Clear rollback marker">
-              @ {rollbackIndex + 1}/{features.length}
+            <button className="timeline-rollback-chip" onClick={() => setRollbackIndex(-1)} title="Clear rollback marker">
+              {rollbackIndex + 1}/{features.length}
             </button>
           )}
           <button
@@ -202,7 +205,7 @@ export default function Timeline() {
           >
             {isPlaying ? <PauseCircle size={11} /> : <PlayCircle size={11} />}
           </button>
-          <span className="feature-count">{features.length} features</span>
+          <span className="feature-count" title={`${features.length} features`}>{features.length}</span>
         </div>
       </div>
 

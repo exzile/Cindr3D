@@ -6,6 +6,7 @@ import { globalBRepBodyRegistry } from "../../../../engine/occ/globalRegistry";
 import {
   occFilletEdgeSetsWithInstance,
   occFilletEdgeSetsSequentialWithInstance,
+  occFilletEdgeSetsTopologicalWithInstance,
   occFullRoundFilletWithInstance,
   type FullRoundSideFaces,
   type OccFilletEdgeSet,
@@ -29,7 +30,7 @@ import {
 } from "./edgeModHelpers";
 import { collectVertexNeighborEdges } from "../../../../engine/occ/ops/adjacency";
 import { analyzeMeshGeometry } from "../../../../meshRepair/meshRepair";
-import { computeEdgeAnchor, findEdgeByAnchor, type EdgeAnchor } from "../../../../engine/occ/ops/edgeAnchor";
+import { computeEdgeAnchor, findEdgeByAnchor, isAnchorEdgePresent, type EdgeAnchor } from "../../../../engine/occ/ops/edgeAnchor";
 import { getSelectableEdges } from "../../../../engine/occ/ops/selectableEdges";
 
 type SourceFeature = CADState['features'][number];
@@ -337,6 +338,8 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     propagate = false,
     pushUndo = false,
     fullRoundFaces,
+    dryRun = false,
+    onDryRunError,
   }: {
     tool: "Fillet" | "Chamfer";
     featureId?: string;
@@ -354,25 +357,39 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     propagate?: boolean;
     pushUndo?: boolean;
     fullRoundFaces?: { centerFaceId: number; sideFaces: FullRoundSideFaces };
+    /**
+     * Validity-probe mode (Fusion-style live preview). Runs the full pipeline but
+     * NEVER mutates feature/store state nor installs a mesh — the computed result
+     * body is disposed and the function returns true/false for "OCC could solve
+     * it". Failure messages are routed to `onDryRunError` instead of being written
+     * to the feature's healthState / statusMessage.
+     */
+    dryRun?: boolean;
+    onDryRunError?: (message: string) => void;
   }): boolean => {
+    // In dry-run mode, route failures to the probe callback and never touch
+    // feature/store state. In commit mode this is exactly markOccEdgeModificationError.
+    const reportError = (message: string): false => {
+      if (dryRun) {
+        onDryRunError?.(message);
+        return false;
+      }
+      return markOccEdgeModificationError(featureId, tool, message);
+    };
     if (!featureId) {
-      return markOccEdgeModificationError(undefined, tool, "OCC edge operations require a feature id");
+      return reportError("OCC edge operations require a feature id");
     }
     const occ = getOccSync();
     if (!occ) {
-      return markOccEdgeModificationError(featureId, tool, "OCC kernel is still loading; try again in a moment");
+      return reportError("OCC kernel is still loading; try again in a moment");
     }
     const selection = parseOccEdgeSelection(edgeIds);
     if (!selection) {
-      return markOccEdgeModificationError(
-        featureId,
-        tool,
-        "Only OCC topology edge selections are supported on this branch",
-      );
+      return reportError("Only OCC topology edge selections are supported on this branch");
     }
     const resolvedBody = resolveLiveSourceBody(selection.bodyId, selection.edgeIds, featureId);
     if (!resolvedBody) {
-      return markOccEdgeModificationError(featureId, tool, "Selected OCC source body is no longer available");
+      return reportError("Selected OCC source body is no longer available");
     }
 
     // Prefer the most-downstream body in the feature chain that still has all
@@ -460,7 +477,7 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     }
 
     if (numericEdgeIds.length === 0) {
-      return markOccEdgeModificationError(featureId, tool, "Selected OCC edges no longer exist on the source body");
+      return reportError("Selected OCC edges no longer exist on the source body");
     }
 
     // Seed (user-picked) edges + body captured BEFORE any fallback reassigns srcBody,
@@ -471,7 +488,19 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     // GAP B/C: Propagation for chamfer (fillet propagation is handled in commitFillet
     // before filletEdgeSets are built; chamfer propagation is handled here).
     if (propagate && tool === "Chamfer") {
-      numericEdgeIds = propagateTangentEdges(occ, srcBody, numericEdgeIds);
+      // Mirror the fillet propagation guard (see edgeModHelpers.expand): hold back
+      // only CLOSED full circles (their tangent chain is just themselves); ARCS
+      // tangent-propagate like Fusion. Use getSelectableEdges, which distinguishes
+      // 'circle' (full) from 'arc' — computeEdgeAnchor lumps both as 'circle'.
+      const chamferEdgeMeta = getSelectableEdges(occ.oc, srcBody);
+      const chamferRoundSet = new Set(
+        numericEdgeIds.filter((id) => chamferEdgeMeta.get(id)?.kind === 'circle'),
+      );
+      const chamferLinearIds = numericEdgeIds.filter((id) => !chamferRoundSet.has(id));
+      if (chamferLinearIds.length > 0) {
+        const expandedLinear = propagateTangentEdges(occ, srcBody, chamferLinearIds);
+        numericEdgeIds = [...new Set([...chamferRoundSet, ...expandedLinear])];
+      }
     }
 
     // The "current" edge sets for this specific fillet commit.
@@ -660,46 +689,6 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
           }
         }
 
-        // Arc-first sequential fallback: the combined pass fails when the corner edge
-        // and arc edge share a vertex (OCC cannot compute the fillet surface junction in
-        // one pass). Instead, apply the current (arc) fillet to the base body first,
-        // then find the corner edge IDs in the arc-filleted intermediate body and apply
-        // all sibling (corner) fillets on top. Corner edges are geometrically far from
-        // the arc region, so their IDs remain stable after the arc fillet topology change.
-        //
-        // NOTE: there is deliberately NO radius-reduction fallback here. Fusion 360 does
-        // not silently shrink a too-large radius — it fails the feature and asks the user
-        // to reduce the value. The fallbacks below (vertex-neighbor, arc-first) only add
-        // topology context or change application order; they always honour the requested
-        // radius. An over-large radius therefore fails cleanly (see the error below).
-        if (!result && siblingFilletEdgeSets.length > 0) {
-          console.warn(`[${tool}] combined fillet failed — trying arc-first sequential fallback`);
-          try {
-            // Step 1: Apply the current (arc) fillet to the base body.
-            const arcBody = occFilletEdgeSetsWithInstance(
-              occ.oc, srcBody, currentFilletEdgeSets,
-              { sourceFeatureId: `${featureId}_arc` },
-            );
-            if (arcBody) {
-              // Step 2: Re-map sibling (corner) edge sets to the arc-filleted body.
-              // Corner edges are unaffected by the arc fillet, so their IDs survive.
-              const cornerSetsInArcBody = collectSiblingFilletEdgeSets(arcBody);
-              if (cornerSetsInArcBody.length > 0) {
-                // Step 3: Apply all corner fillets to the arc-filleted body.
-                result = occFilletEdgeSetsWithInstance(
-                  occ.oc, arcBody, cornerSetsInArcBody,
-                  { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
-                );
-              }
-              if (!result) arcBody.dispose();
-            } else {
-              console.warn(`[${tool}] arc-first fallback: arc fillet on base body failed`);
-            }
-          } catch (seqErr) {
-            console.warn(`[${tool}] arc-first fallback threw`, seqErr);
-          }
-        }
-
         // Combined-on-base fallback: in a fillet CHAIN, each feature was applied to a
         // different intermediate body, so collectSiblingFilletEdgeSets (matched by
         // bodyId) never combines them, and the per-step sequential fallbacks fail where
@@ -738,6 +727,52 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
               if (combined) {
                 result = combined;
                 srcBody = seedBody; // result is built on the base; repoint baseline + lineage
+              }
+            }
+          }
+        }
+
+        // Topological-order fallback (OCC-16): when the corner involves a round edge
+        // (circle/arc) adjacent to a linear edge, applying round-before-linear in
+        // separate passes gives OCC enough blended topology to close the corner.
+        // This handles the "1mm fillet on line edge adjacent to notch-arc fillet" case
+        // that all previous fallbacks cannot solve.  Seed on the same earliest base body
+        // as combined-on-base, remapping siblings and current edges onto it.
+        if (!result) {
+          const seedCandTopo = remappedBodyCandidates
+            .filter((c) => c.featureIndex >= 0 && c.body.id !== srcBody.id)
+            .sort((a, b) => a.featureIndex - b.featureIndex)[0];
+          const topoBaseBody = seedCandTopo?.body ?? srcBody;
+          const topoBaseEdgeIds = seedCandTopo?.edgeIds ?? numericEdgeIds;
+
+          const topoSiblingSets: OccFilletEdgeSet[] = [];
+          let topoRemapOk = true;
+          if (seedCandTopo) {
+            for (let i = 0; i < limit; i++) {
+              const f = allFeatures[i];
+              if (f.type !== 'fillet' || f.suppressed || f.id === featureId) continue;
+              const mode = f.params.mode as string | undefined;
+              if (mode === 'full-round' || mode === 'rule-fillet') continue;
+              const sibIds = remapStoredEdgeIdsToBody(storedEdgeIds(f.params.edgeIds), f.id, topoBaseBody);
+              if (!sibIds || sibIds.length === 0) { topoRemapOk = false; break; }
+              topoSiblingSets.push(...resolveOccFilletEdgeSets(sibIds, topoBaseBody, f.params as Record<string, unknown>));
+            }
+          }
+
+          if (topoRemapOk) {
+            const topoCurrentSets = resolveOccFilletEdgeSets(
+              topoBaseEdgeIds, topoBaseBody, filletParams, radius ?? DEFAULT_FILLET_RADIUS,
+            );
+            const topoAllSets = [...topoSiblingSets, ...topoCurrentSets];
+            if (topoAllSets.length > 0) {
+              console.warn(`[${tool}] all combined fallbacks failed — trying topological-order fallback`);
+              const topoResult = occFilletEdgeSetsTopologicalWithInstance(
+                occ.oc, topoBaseBody, topoAllSets,
+                { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
+              );
+              if (topoResult) {
+                result = topoResult;
+                if (seedCandTopo) srcBody = topoBaseBody;
               }
             }
           }
@@ -831,28 +866,125 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
         }
       }
     } else {
-      result = occChamferWithInstance(occ.oc, srcBody, numericEdgeIds, distance ?? 0, {
-        // OCC-14.6: use exact AddDA when angle is provided; otherwise fall through
-        // to Add_3 with the tan-converted distance2 (DistanceAndAngle approximation).
+      // OCC-14.6: use exact AddDA when angle is provided; otherwise fall through
+      // to Add_3 with the tan-converted distance2 (DistanceAndAngle approximation).
+      const chamferOpts = {
         angle: angle !== undefined ? angle : undefined,
         distance2: angle === undefined && distance2 !== undefined && distance2 !== distance ? distance2 : undefined,
+      };
+      result = occChamferWithInstance(occ.oc, srcBody, numericEdgeIds, distance ?? 0, {
+        ...chamferOpts,
         sourceFeatureId: featureId,
       });
+
+      // Degeneracy heal: right at OCC's valid-chamfer ceiling an EXACT distance
+      // (e.g. d=1.0 against neighbouring r=1 fillets) can fail to build OR build a
+      // BRep-INVALID solid, even though d=0.999 builds a perfectly valid chamfer —
+      // a measure-zero bad value. Retry with an imperceptible relative nudge (≤0.5%,
+      // i.e. a few microns at d=1), preferring DOWNWARD first since the failure sits
+      // at the ceiling. Each candidate is BRepCheck-validated so we never accept a
+      // built-but-invalid solid (which the open-mesh guard would reject anyway). The
+      // nudge set is tiny on purpose: it heals a degenerate exact value, it does NOT
+      // shrink an over-large chamfer to fit (that still fails with a clear message).
+      // The stored/displayed distance stays the user's value. Fusion heals such
+      // degenerate parameters internally; this matches it.
+      if (!result && (distance ?? 0) > 0) {
+        const baseDistance = distance ?? 0;
+        for (const factor of [0.999, 1.001, 0.997, 1.003, 0.995, 1.005]) {
+          const healed = occChamferWithInstance(occ.oc, srcBody, numericEdgeIds, baseDistance * factor, {
+            ...chamferOpts,
+            sourceFeatureId: `${featureId}_heal`,
+          });
+          if (!healed) continue;
+          let healedValid = false;
+          try {
+            const rawHealed = occDeref(occ.oc, healed.shape, occ.oc.TopoDS_Shape);
+            healedValid = isOccShapeValid(occ.oc, rawHealed);
+          } catch {
+            healedValid = false;
+          }
+          if (healedValid) {
+            console.warn(`[${tool}] chamfer degenerate at exactly d=${baseDistance}; healed with a ${((factor - 1) * 100).toFixed(1)}% nudge`);
+            result = healed;
+            break;
+          }
+          disposeResultBody(healed);
+        }
+      }
+
+      // Pre-blend replay fallback (mirrors the fillet round-edge pre-blend replay):
+      // OCC's chamfer can fail at SPECIFIC sizes on a post-fillet body — a narrow
+      // bad band where, e.g., d=1.0 fails even though d=0.9 and d=1.1 both succeed —
+      // while the SAME chamfer on the clean base body works at every size. When the
+      // selected edge can be found on an earlier body in the feature chain, chamfer
+      // it there first, then replay the intervening fillet features in timeline
+      // order. This matches Fusion, which chamfers the edge regardless of the
+      // neighbouring fillet. Only the fillet-meets-chamfer chain is replayable here.
+      if (!result) {
+        const chamferReplayCandidates = remappedBodyCandidates
+          .filter((candidate) => candidate.featureIndex >= 0 && candidate.body.id !== srcBody.id)
+          .sort((a, b) => a.featureIndex - b.featureIndex);
+        for (const candidate of chamferReplayCandidates) {
+          console.warn(`[${tool}] chamfer failed on downstream body — trying pre-blend replay on an earlier body`);
+          const preBlendChamfer = occChamferWithInstance(occ.oc, candidate.body, candidate.edgeIds, distance ?? 0, {
+            ...chamferOpts,
+            sourceFeatureId: `${featureId}_preblend`,
+          });
+          if (preBlendChamfer) {
+            const replayed = replayFilletFeaturesAfterCurrentRoundFillet(
+              preBlendChamfer,
+              candidate.featureIndex + 1,
+            );
+            if (replayed) {
+              result = replayed;
+              srcBody = candidate.body; // result built on the earlier body; repoint baseline
+              break;
+            }
+          }
+        }
+      }
     }
     if (!result) {
-      return markOccEdgeModificationError(
-        featureId,
-        tool,
-        `OCC operation failed for the selected edge set; kept the previous body unchanged.${edgeModSizeHint(tool, radius, distance, "may")}`,
-      );
+      // When all fallbacks fail for a Fillet, probe for the largest radius that
+      // does work (up to 3 bisection steps) to give the user an actionable suggestion.
+      let radiusSuggestion = "";
+      if (tool === "Fillet" && typeof radius === "number" && radius > 0) {
+        let lo = 0, hi = radius;
+        let bestRadius: number | null = null;
+        for (let probe = 0; probe < 3; probe++) {
+          const mid = (lo + hi) / 2;
+          const testSets = resolveOccFilletEdgeSets(
+            numericEdgeIds, srcBody, filletParams, mid,
+          );
+          const testResult = occFilletEdgeSetsWithInstance(
+            occ.oc, srcBody, testSets,
+            { sourceFeatureId: `${featureId}_probe` },
+          );
+          if (testResult) {
+            bestRadius = mid;
+            lo = mid;
+            testResult.dispose?.();
+          } else {
+            hi = mid;
+          }
+        }
+        if (bestRadius !== null) {
+          const suggestion = Math.floor(bestRadius * 100) / 100;
+          radiusSuggestion = ` Try ${suggestion} mm (verified max) or apply this fillet before the neighbouring one.`;
+        } else {
+          radiusSuggestion = edgeModSizeHint(tool, radius, distance, "may");
+        }
+      }
+      const cornerMessage = tool === "Fillet"
+        ? `Fillet at ${radius} mm could not be solved at this corner — the edge meets an adjacent fillet and no ordering worked.${radiusSuggestion}`
+        : `OCC operation failed for the selected edge set; kept the previous body unchanged.${edgeModSizeHint(tool, radius, distance, "may")}`;
+      return reportError(cornerMessage);
     }
     if (result.faceIds.size <= srcBody.faceIds.size) {
       const resultFaceCount = result.faceIds.size;
       const sourceFaceCount = srcBody.faceIds.size;
       disposeResultBody(result);
-      return markOccEdgeModificationError(
-        featureId,
-        tool,
+      return reportError(
         `${tool} returned topology without a new blend face ` +
           `(source faces: ${sourceFaceCount}, result faces: ${resultFaceCount}); kept the previous body unchanged`,
       );
@@ -870,12 +1002,33 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       .map((id) => computeEdgeAnchor(occ.oc, seedSrcBody, id))
       .filter((a): a is EdgeAnchor => a !== null);
     if (seedAnchorsForCheck.length === seedEdgeIds.length && seedAnchorsForCheck.length > 0) {
-      const survived = seedAnchorsForCheck.some((a) => findEdgeByAnchor(occ.oc, result!, a) !== null);
-      if (survived) {
+      // Did the picked seed edge actually get consumed by the blend? Use the
+      // midpoint-aware presence test (isAnchorEdgePresent) rather than a raw
+      // findEdgeByAnchor: the latter matches a LINE by its INFINITE line and would
+      // count a DIFFERENT collinear edge (e.g. a rim split into two segments by a
+      // notch) as "survived", wrongly rejecting a perfectly good fillet. The margin
+      // is the fillet radius (the blend trims one end of any genuine survivor).
+      // Derive margin from the actual edge-set max radius so variable-radius,
+      // chord-length, and asymmetric fillets (where `radius` is undefined) are
+      // handled correctly. Fall back to the operation-level `radius`/`distance`.
+      const maxEdgeSetRadius = effectiveFilletEdgeSets.reduce((max, es) =>
+        Math.max(max, es.radius ?? 0, es.startRadius ?? 0, es.endRadius ?? 0, es.chordLength ?? 0),
+        0,
+      );
+      const margin = (maxEdgeSetRadius > 0 ? maxEdgeSetRadius : (radius ?? distance ?? DEFAULT_FILLET_RADIUS)) + 0.5;
+      const survivedCount = seedAnchorsForCheck
+        .filter((a) => isAnchorEdgePresent(occ.oc, result!, a, margin)).length;
+      // A sequentially-skipped edge is a KNOWN, already-reported non-consumption: the
+      // per-edge fallback installs the partial result and tells the user which edges it
+      // could not round (sequentialSkippedEdges). So only reject when MORE seed edges
+      // survived than were knowingly skipped — i.e. a SILENT failure (the degenerate-sliver
+      // case this guard exists for). For a single-edge fillet with no skips this is
+      // identical to "reject if the picked edge survived". Without this, a multi-edge
+      // fillet that legitimately rounds N-1 of N edges would be rejected wholesale,
+      // discarding the good blends and making the "skipped edges" report unreachable.
+      if (survivedCount > sequentialSkippedEdges) {
         disposeResultBody(result);
-        return markOccEdgeModificationError(
-          featureId,
-          tool,
+        return reportError(
           `${tool} could not round the selected edge at this radius — it runs into an adjacent ` +
             `fillet/chamfer and OCC can't solve that corner. Try a smaller radius, or apply this ` +
             `${tool.toLowerCase()} before the neighbouring one.`,
@@ -899,11 +1052,7 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       copySourceTransformToMesh(srcFeature, newMesh);
     } catch (err) {
       disposeResultBody(result);
-      return markOccEdgeModificationError(
-        featureId,
-        tool,
-        `OCC tessellation failed: ${errorMessage(err, "unknown error")}`,
-      );
+      return reportError(`OCC tessellation failed: ${errorMessage(err, "unknown error")}`);
     }
     const meshTopologyFailure = edgeModificationIntroducedOpenMesh(
       srcMesh instanceof THREE.Mesh ? srcMesh : undefined,
@@ -926,9 +1075,7 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       if (!brepValid) {
         const { boundaryDelta, nonManifoldDelta } = meshTopologyFailure;
         disposeResultMeshAndBody(newMesh, result);
-        return markOccEdgeModificationError(
-          featureId,
-          tool,
+        return reportError(
           `${tool} produced an open mesh ` +
             `(new boundary edges: ${boundaryDelta}, new non-manifold edges: ${nonManifoldDelta}); ` +
             `kept the previous body unchanged.${edgeModSizeHint(tool, radius, distance, "likely")}`,
@@ -940,6 +1087,17 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
           `installing (mesh artifact only)`,
       );
     }
+
+    // Validity-probe mode: the result has now passed EVERY guard the commit path
+    // applies (null result, blend-face count, consumed-edge, tessellation, and the
+    // open-mesh / BRepCheck validity guard). So OCC genuinely produces an
+    // installable solid at this value. Tear down the throwaway mesh + body and
+    // report success — never mutate feature/store state in a probe.
+    if (dryRun) {
+      disposeResultMeshAndBody(newMesh, result);
+      return true;
+    }
+
     const currentFeature = get().features.find((feature) => feature.id === featureId);
     const prevMesh = currentFeature?.mesh instanceof THREE.Mesh ? currentFeature.mesh : null;
     // Capture the old body ID before set() so we can evict it from the registry

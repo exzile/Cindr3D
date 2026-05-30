@@ -395,16 +395,46 @@ export function collectTangentChainEdges(
       let vStart = -1, vEnd = -1;
       const vexp = new occ.TopExp_Explorer_2(rawEdge, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
       trash.push(vexp);
-      const verts: number[] = [];
-      while (vexp.More() && verts.length < 2) {
-        const v = vexp.Current();
+      // Keep vertex shapes alive so we can look up positions for correct t0/t1 assignment.
+      // TopExp walk order is NOT guaranteed to match parameter order; we sort by comparing
+      // vertex positions (via BRep_Tool.Pnt) with the already-computed D0(t0) endpoint.
+      const vertShapes: Array<{ idx: number; shape: { delete(): void } }> = [];
+      while (vexp.More() && vertShapes.length < 2) {
+        const v = vexp.Current(); // OWNED
         const vIdx = findShapeIndex(vertMap, v);
-        v.delete();
-        if (vIdx > 0) verts.push(vIdx);
+        if (vIdx > 0) vertShapes.push({ idx: vIdx, shape: v });
+        else v.delete();
         vexp.Next();
       }
-      if (verts.length >= 1) vStart = verts[0];
-      if (verts.length >= 2) vEnd = verts[1]; else vEnd = vStart;
+      if (vertShapes.length >= 1) {
+        const brep = oc as OcctRaw & {
+          BRep_Tool?: { Pnt(v: unknown): { X(): number; Y(): number; Z(): number; delete(): void } };
+        };
+        let assigned = false;
+        if (vertShapes.length === 2 && typeof brep.BRep_Tool?.Pnt === 'function') {
+          try {
+            // TopoDS.Vertex_1 returns a VIEW (same ptr) — do NOT delete.
+            const vs1: unknown = oc.TopoDS.Vertex_1 ? oc.TopoDS.Vertex_1(vertShapes[0].shape) : vertShapes[0].shape;
+            const vs2: unknown = oc.TopoDS.Vertex_1 ? oc.TopoDS.Vertex_1(vertShapes[1].shape) : vertShapes[1].shape;
+            const pos1 = brep.BRep_Tool.Pnt(vs1);
+            const pos2 = brep.BRep_Tool.Pnt(vs2);
+            // p0 = D0(t0): compare each vertex with the curve's first-parameter endpoint.
+            const d1 = Math.hypot(pos1.X() - p0.X(), pos1.Y() - p0.Y(), pos1.Z() - p0.Z());
+            const d2 = Math.hypot(pos2.X() - p0.X(), pos2.Y() - p0.Y(), pos2.Z() - p0.Z());
+            pos1.delete(); pos2.delete();
+            vStart = d1 <= d2 ? vertShapes[0].idx : vertShapes[1].idx;
+            vEnd   = d1 <= d2 ? vertShapes[1].idx : vertShapes[0].idx;
+            assigned = true;
+          } catch { /* fall through */ }
+        }
+        if (!assigned) {
+          // Fallback to walk order (often correct for well-formed BRep, but not guaranteed).
+          vStart = vertShapes[0].idx;
+          vEnd = vertShapes.length >= 2 ? vertShapes[1].idx : vStart;
+        }
+      }
+      // Delete vertex shapes now that position lookup is done.
+      for (const vd of vertShapes) { try { vd.shape.delete(); } catch { /* already freed */ } }
 
       const info: EdgeInfo = {
         vStart,
@@ -651,6 +681,159 @@ export function collectVertexNeighborEdges(
     if (bodyId !== undefined) result.push(bodyId);
   }
   return result;
+}
+
+// ── OCC-16: vertex-edge topology helpers for fillet ordering ─────────────────
+
+/**
+ * Maps each vertex (keyed by "x,y,z" rounded to 3 dp) to the set of body-edge
+ * IDs incident on it.  Uses body.edgeIds keys — same CRITICAL constraint as
+ * selectableEdges.ts (never a fresh TopExp index that would disagree with
+ * the stored body edge IDs).
+ *
+ * Disposal: all TopTools maps/explorers we create are OWNED → .delete().
+ * occDeref VIEWs (rawShape, edge raws, vertex raws from TopoDS.cast) are NOT deleted.
+ */
+export type VertexEdgeMap = Map<string, Set<number>>;
+
+export function buildVertexEdgeMap(
+  oc: OcctRaw,
+  body: BRepBody,
+): VertexEdgeMap {
+  const occ = oc as OccAdjacencyApi;
+  const result: VertexEdgeMap = new Map();
+
+  // rawShape is a VIEW from occDeref — do NOT delete.
+  const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
+  const edgeMap = new occ.TopTools_IndexedMapOfShape_1();
+  const vertMap = new occ.TopTools_IndexedMapOfShape_1();
+  try {
+    occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, edgeMap);
+    occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, vertMap);
+  } catch {
+    edgeMap.delete();
+    vertMap.delete();
+    return result;
+  }
+
+  // Map body edge IDs to canonical indices.
+  const bodyIdToCanonical = new Map<number, number>();
+  for (const [bodyEdgeId, edgeHandle] of body.edgeIds) {
+    // raw is a VIEW from occDeref — do NOT delete.
+    const raw = occDeref(oc, edgeHandle, oc.TopoDS_Shape) as { ptr: number; delete(): void };
+    const idx = findShapeIndex(edgeMap, raw);
+    if (idx > 0) bodyIdToCanonical.set(bodyEdgeId, idx);
+  }
+
+  // For each body edge, walk its vertices and build the map.
+  for (const bodyEdgeId of body.edgeIds.keys()) {
+    const canonicalIdx = bodyIdToCanonical.get(bodyEdgeId);
+    if (canonicalIdx === undefined) continue;
+
+    const edgeShapeView = findShapeByKey(edgeMap, canonicalIdx);
+    if (!edgeShapeView) continue;
+
+    let rawEdge: unknown;
+    try { rawEdge = oc.TopoDS.Edge_1(edgeShapeView); }
+    catch { continue; }
+
+    const vexp = new occ.TopExp_Explorer_2(rawEdge, oc.TopAbs_ShapeEnum.TopAbs_VERTEX, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
+    try {
+      while (vexp.More()) {
+        const v = vexp.Current(); // OWNED — must delete
+        const vIdx = findShapeIndex(vertMap, v);
+        // Get stable coordinate key for this vertex (3 dp rounding).
+        let key: string | null = null;
+        if (vIdx > 0) {
+          const vertShapeView = findShapeByKey(vertMap, vIdx);
+          if (vertShapeView) {
+            try {
+              // BRep_Tool.Pnt is the only reliable way to get the vertex coordinate.
+              // If it is unavailable, leave key=null: we skip the vertex rather than
+              // inserting a `v${vIdx}` fallback key that can never match a coordinate
+              // key from another call, producing spurious "no shared vertex" results.
+              const brep = oc as OcctRaw & { BRep_Tool?: { Pnt(v: unknown): { X(): number; Y(): number; Z(): number; delete(): void } } };
+              if (typeof brep.BRep_Tool?.Pnt === 'function') {
+                const rawVertex = oc.TopoDS.Vertex_1
+                  ? oc.TopoDS.Vertex_1(vertShapeView)
+                  : vertShapeView;
+                const p = brep.BRep_Tool.Pnt(rawVertex);
+                key = `${p.X().toFixed(3)},${p.Y().toFixed(3)},${p.Z().toFixed(3)}`;
+                p.delete();
+              }
+            } catch { /* skip vertex if position lookup fails */ }
+          }
+        }
+        v.delete();
+        if (key) {
+          const set = result.get(key);
+          if (set) set.add(bodyEdgeId);
+          else result.set(key, new Set([bodyEdgeId]));
+        }
+        vexp.Next();
+      }
+    } finally {
+      vexp.delete();
+    }
+  }
+
+  edgeMap.delete();
+  vertMap.delete();
+  return result;
+}
+
+/**
+ * Returns true when edge `idA` and edge `idB` share at least one vertex.
+ * Pure map lookup — no OCC calls.
+ */
+export function edgesShareVertex(vertexMap: VertexEdgeMap, idA: number, idB: number): boolean {
+  for (const set of vertexMap.values()) {
+    if (set.has(idA) && set.has(idB)) return true;
+  }
+  return false;
+}
+
+export interface EdgePartition {
+  /** Edge IDs classified as circle or arc. */
+  round: number[];
+  /** Edge IDs classified as line or unknown. */
+  linear: number[];
+  /** Round edge IDs that share a vertex with at least one linear edge in the set. */
+  roundAdjacentToLinear: number[];
+  /** Linear edge IDs that share a vertex with at least one round edge in the set. */
+  linearAdjacentToRound: number[];
+}
+
+/**
+ * Partitions `edgeIds` by geometry type (using pre-classified kinds) and vertex adjacency.
+ * Drives the ordering strategy in `topologicalFilletOrder` (filletOrder.ts).
+ *
+ * `edgeKinds` maps edgeId → 'circle' | 'arc' | other.  Pass the output of
+ * `getSelectableEdges` mapped to its `kind` field.  Kept here (rather than
+ * in filletOrder.ts) so callers who already have a `SelectableEdgeMeta` map
+ * can avoid a second OCC walk.
+ */
+export function partitionEdgesByTopology(
+  edgeIds: number[],
+  edgeKinds: ReadonlyMap<number, string>,
+  vertexMap: VertexEdgeMap,
+): EdgePartition {
+  const isRound = (id: number) => {
+    const kind = edgeKinds.get(id);
+    return kind === 'circle' || kind === 'arc';
+  };
+
+  const round = edgeIds.filter(isRound);
+  const linear = edgeIds.filter((id) => !isRound(id));
+
+  const roundAdjacentToLinear = round.filter((r) =>
+    linear.some((l) => edgesShareVertex(vertexMap, r, l)),
+  );
+  const linearAdjacentToRound = linear.filter((l) =>
+    round.some((r) => edgesShareVertex(vertexMap, l, r)),
+  );
+
+  return { round, linear, roundAdjacentToLinear, linearAdjacentToRound };
 }
 
 /**

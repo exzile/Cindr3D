@@ -39,7 +39,7 @@ function FilletDialogUI({
   facesReady,
   initialParams,
 }: FilletDialogProps) {
-  const dialog = useFilletDialogState(onConfirm, initialParams);
+  const dialog = useFilletDialogState(onConfirm, initialParams, edgeIds);
 
   if (!open) return null;
 

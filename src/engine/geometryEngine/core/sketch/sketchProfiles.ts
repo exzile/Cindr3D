@@ -281,7 +281,82 @@ export function sketchToProfileShapesFlat(sketch: Sketch): THREE.Shape[] {
     }
   }
 
-  return combined;
+  // Fusion parity: drop redundant un-split raw shapes. When a curve crosses
+  // another shape's boundary (e.g. a circle straddling a rectangle's edge), the
+  // valid profiles are ONLY the atomic faces — the original whole rectangle and
+  // whole circle must NOT be offered, because selecting "the rectangle" would
+  // wrongly pull in the half-circle region the atomic decomposition split out.
+  //
+  // A raw shape is redundant when it was NOT itself matched to an atomic face
+  // (matchedRawIndices) AND its footprint is tiled by 2+ atomic regions whose net
+  // areas sum to the raw shape's net area. A raw shape that simply equals one
+  // atomic face (single rectangle, disjoint shapes, circle-in-rectangle) is
+  // matched above and never reaches this test, so those cases are unchanged.
+  const netArea = (shape: THREE.Shape): number => {
+    let a = polygonArea(shape.getPoints(64));
+    for (const hole of shape.holes) a -= polygonArea(hole.getPoints(64));
+    return a;
+  };
+  // Only worth testing when at least one raw shape was NOT matched to an atomic
+  // face (an unmatched raw is a candidate for "subdivided by a crossing curve").
+  const hasUnmatchedRaw = rawShapes.some((_, i) => !matchedRawIndices.has(i));
+  if (!hasUnmatchedRaw) return combined;
+
+  // An atom "belongs to" a raw shape only when the atom is geometrically CONTAINED
+  // in it. Boundary-point sampling fails here: atoms are bounded BY the raw curves,
+  // so an atom's outline points lie ON the raw boundary where pointInPoly is
+  // unreliable (the lens's arc edge IS the circle, so ~half its outline points read
+  // as "outside"). Instead we sample each atom's INTERIOR via its triangulation —
+  // triangle centroids are strictly inside the atom, so a containment test against
+  // the raw polygon is robust to shared edges.
+  const interiorSamples = (shape: THREE.Shape): THREE.Vector2[] => {
+    const geo = new THREE.ShapeGeometry(shape);
+    const pos = geo.getAttribute('position') as THREE.BufferAttribute;
+    const idx = geo.index;
+    const pts: THREE.Vector2[] = [];
+    const tri = (a: number, b: number, c: number) => {
+      pts.push(new THREE.Vector2(
+        (pos.getX(a) + pos.getX(b) + pos.getX(c)) / 3,
+        (pos.getY(a) + pos.getY(b) + pos.getY(c)) / 3,
+      ));
+    };
+    if (idx) {
+      for (let i = 0; i < idx.count; i += 3) tri(idx.getX(i), idx.getX(i + 1), idx.getX(i + 2));
+    } else {
+      for (let i = 0; i < pos.count; i += 3) tri(i, i + 1, i + 2);
+    }
+    geo.dispose();
+    return pts;
+  };
+  const atomInteriors = atomic.map((atom) => ({ samples: interiorSamples(atom), area: netArea(atom) }));
+  const atomContainedIn = (samples: THREE.Vector2[], rawPoly: THREE.Vector2[]): boolean => {
+    if (samples.length === 0) return false;
+    let inside = 0;
+    for (const p of samples) if (pointInPoly(p, rawPoly)) inside += 1;
+    return inside / samples.length >= 0.85;
+  };
+  const redundantRawIndices = new Set<number>();
+  for (let i = 0; i < rawShapes.length; i++) {
+    if (matchedRawIndices.has(i)) continue;
+    const rawPoly = rawShapes[i].getPoints(64);
+    const rawArea = netArea(rawShapes[i]);
+    if (rawArea <= 1e-9) continue;
+    let covered = 0;
+    let count = 0;
+    for (const atom of atomInteriors) {
+      if (atomContainedIn(atom.samples, rawPoly)) {
+        covered += atom.area;
+        count += 1;
+      }
+    }
+    // ≥2 atomic faces contained in this raw shape, whose areas tile it = the raw
+    // shape was subdivided by a crossing curve and must not be offered as a profile.
+    if (count >= 2 && Math.abs(covered - rawArea) / rawArea < 0.03) {
+      redundantRawIndices.add(i);
+    }
+  }
+  if (redundantRawIndices.size === 0) return combined;
+  return combined.filter((_, i) => !redundantRawIndices.has(i));
 }
 
 export function sketchToShape(sketch: Sketch): THREE.Shape | null {

@@ -371,6 +371,36 @@ export interface CADModelingState {
   chamferLiveDistance: number;
   setChamferLiveDistance: (d: number) => void;
 
+  /**
+   * Fusion-style live validity preview for fillet/chamfer. When the OCC dry-run
+   * of the *current* value cannot be solved (e.g. the chamfer runs into an
+   * adjacent fillet at this size), the selected edge(s) flash bright red in the
+   * viewport and a toast explains why — before the user clicks OK. Transient:
+   * never persisted, cleared when the dialog closes or the value becomes valid.
+   */
+  edgeModInvalidPreview: { edgeIds: string[]; message: string } | null;
+  setEdgeModInvalidPreview: (
+    v: { edgeIds: string[]; message: string } | null,
+  ) => void;
+  /**
+   * Non-committing OCC dry-run of a fillet/chamfer at the given value. Runs the
+   * full apply pipeline (all fallbacks + correctness guards) but disposes the
+   * result instead of installing it, so the dialog can warn before the user
+   * clicks OK. Returns `ok: false` with an actionable message when OCC cannot
+   * solve the operation at this value. Skips face-picker modes (full-round /
+   * rule-fillet) and unsupported three-face chamfer (returns ok: true).
+   */
+  probeEdgeModification: (args: {
+    tool: "Fillet" | "Chamfer";
+    edgeIds: string[];
+    radius?: number;
+    distance?: number;
+    distance2?: number;
+    angle?: number;
+    propagate?: boolean;
+    filletParams?: Record<string, unknown>;
+  }) => { ok: boolean; message?: string };
+
   // Active feature dialog
   activeDialog: string | null;
   setActiveDialog: (dialog: string | null) => void;

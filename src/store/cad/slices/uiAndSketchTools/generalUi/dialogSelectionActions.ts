@@ -72,6 +72,8 @@ export function createDialogSelectionActions({ set }: CADSliceContext): Partial<
     clearChamferEdges: () => set({ chamferEdgeIds: [] }),
     chamferLiveDistance: 2,
     setChamferLiveDistance: (distance) => set({ chamferLiveDistance: Math.max(0.01, distance) }),
+    edgeModInvalidPreview: null,
+    setEdgeModInvalidPreview: (value) => set({ edgeModInvalidPreview: value }),
     activeDialog: null,
     setActiveDialog: (dialog) =>
       set((state) => ({
@@ -89,6 +91,8 @@ export function createDialogSelectionActions({ set }: CADSliceContext): Partial<
         filletFullRoundPickSlot: dialog === "fillet" ? null : state.filletFullRoundPickSlot,
         chamferEdgeIds: dialog === "chamfer" ? [] : state.chamferEdgeIds,
         chamferLiveDistance: dialog === "chamfer" ? 2 : state.chamferLiveDistance,
+        // Clear the live red-flash preview whenever a dialog opens/closes.
+        edgeModInvalidPreview: null,
       })),
     dialogPayload: null,
     setDialogPayload: (payload) => set({ dialogPayload: payload }),

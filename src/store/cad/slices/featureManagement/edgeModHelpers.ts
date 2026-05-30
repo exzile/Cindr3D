@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { BRepBody } from '../../../../engine/occ/brepBody';
 import { getOccSync } from '../../../../engine/occ/loader';
 import { collectTangentChainEdges } from '../../../../engine/occ/ops/adjacency';
-import { computeEdgeAnchor } from '../../../../engine/occ/ops/edgeAnchor';
+import { getSelectableEdges } from '../../../../engine/occ/ops/selectableEdges';
 import type { OccFilletEdgeSet } from '../../../../engine/occ/ops/fillet';
 
 export const DEFAULT_FILLET_RADIUS = 2;
@@ -55,11 +55,25 @@ export function resolveOccFilletEdgeSets(
   const occ = shouldPropagate ? getOccSync() : null;
   const expand = (edgeIds: number[]): number[] => {
     if (!shouldPropagate || !occ || edgeIds.length === 0) return edgeIds;
-    const hasRoundSeed = edgeIds.some((edgeId) => computeEdgeAnchor(occ.oc, srcBody, edgeId)?.kind === 'circle');
-    if (hasRoundSeed) return edgeIds;
+    // Hold back only a CLOSED full circle (a hole / cylinder rim): its tangent chain
+    // is just itself (verified — `collectTangentChainEdges([rim]) === [rim]`), so
+    // there is nothing to propagate and the partition keeps a mixed set's lines
+    // propagating. ARCS (span < 2π — slots/obrounds, fillet-blend boundaries) DO
+    // tangent-propagate, matching Fusion's isTangentChain and our own highlight
+    // chainId (selectableEdges groups an arc with its tangent neighbours, so the
+    // committed fillet must include the same chain the user sees highlighted).
+    // NB: getSelectableEdges distinguishes 'circle' (full) from 'arc'; computeEdgeAnchor
+    // does NOT (it returns 'circle' for both), which is why we use the former here.
+    const edgeMeta = getSelectableEdges(occ.oc, srcBody);
+    const roundSet = new Set(
+      edgeIds.filter((id) => edgeMeta.get(id)?.kind === 'circle'),
+    );
+    const linearIds = edgeIds.filter((id) => !roundSet.has(id));
+    if (linearIds.length === 0) return edgeIds; // all-(full-circle) set — nothing to propagate
     try {
-      const expanded = collectTangentChainEdges(occ.oc, srcBody, edgeIds);
-      return expanded.length > edgeIds.length ? expanded : edgeIds;
+      const expandedLinear = collectTangentChainEdges(occ.oc, srcBody, linearIds);
+      const combined = [...new Set([...roundSet, ...expandedLinear])];
+      return combined.length > edgeIds.length ? combined : edgeIds;
     } catch (err) {
       console.warn('[fillet.propagate] tangent-chain walk failed:', err);
       return edgeIds;

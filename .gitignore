@@ -36,9 +36,8 @@ nuget.config
 
 # Claude Code — personal AI assistant config and dev notes (never commit)
 .claude/
-CLAUDE.md
 .codex/
-# memory/ is committed — project memory persists across local + remote sessions
+# memory/ and CLAUDE.md are committed — project memory persists across local + remote sessions
 
 # GitNexus local code graph cache
 .gitnexus/

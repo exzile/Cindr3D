@@ -6,6 +6,21 @@
       "statusCode": 301
     },
     {
+      "route": "/features",
+      "redirect": "/home",
+      "statusCode": 301
+    },
+    {
+      "route": "/help",
+      "redirect": "/home",
+      "statusCode": 301
+    },
+    {
+      "route": "/printer",
+      "redirect": "/printer/dashboard",
+      "statusCode": 301
+    },
+    {
       "route": "/home",
       "rewrite": "/home/index.html"
     },
