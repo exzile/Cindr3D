@@ -490,6 +490,9 @@ export function occFilletEdgeSetsWithInstance(
     // so Build() never sees them, producing a clean null rather than an exception.
     const seamDetectMap = new occ.TopTools_IndexedMapOfShape_1();
     let seamDetectReady = false;
+    // Tracks whether seamDetectMap has been freed, so the outer catch never issues a
+    // second .delete() on an already-freed embind object (double-free → heap corruption).
+    let seamDetectFreed = false;
     try {
       occ.TopExp.MapShapes_1(rawShape, oc.TopAbs_ShapeEnum.TopAbs_EDGE, seamDetectMap);
       seamDetectReady = seamDetectMap.Extent() > 0;
@@ -612,6 +615,7 @@ export function occFilletEdgeSetsWithInstance(
     }
 
     seamDetectMap.delete();
+    seamDetectFreed = true;
 
     if (!addedAny) {
       mk.delete();
@@ -657,9 +661,10 @@ export function occFilletEdgeSetsWithInstance(
     });
     } catch (e) {
       console.warn('[occFillet] threw outside Build/Shape:', e);
-      // Guard against double-free: the happy path already deleted seamDetectMap at
-      // this point only if we reached it — on a throw before that, free it here.
-      try { seamDetectMap.delete(); } catch { /* already freed on happy path */ }
+      // Free seamDetectMap only if the happy path hasn't already — a second embind
+      // .delete() on a freed object is a double-free, so gate on the freed flag rather
+      // than swallowing the resulting error after the fact.
+      if (!seamDetectFreed) { seamDetectMap.delete(); seamDetectFreed = true; }
       mk.delete();
       return null;
     }

@@ -91,18 +91,22 @@ export function computeEdgeAnchor(oc: OcctRaw, body: BRepBody, edgeId: number): 
 
     if (enumEq(type, curveTypes.GeomAbs_Line)) {
       let lin: ReturnType<InstanceType<OccAnchorApi['BRepAdaptor_Curve_2']>['Line']> | null = null;
-      let loc: GpPnt | null = null;
       let dir: GpDir | null = null;
       try {
         lin = adaptor.Line();
-        loc = lin.Location();
         dir = lin.Direction();
-        const p: [number, number, number] = [loc.X(), loc.Y(), loc.Z()];
+        // Use the edge's FIRST ENDPOINT (D0 at FirstParameter) as `p`, NOT the
+        // underlying gp_Lin's Location(): Location() is the infinite line's
+        // reference point (parameter 0 of the surface's line), which is generally
+        // NOT an endpoint of this trimmed edge. Any point on the line is equally
+        // valid for findEdgeByAnchor's on-line projection, but anchoring `p` to a
+        // real endpoint makes |p - mid| exactly half the edge length — which
+        // isAnchorEdgePresent relies on to size its midpoint-proximity window.
+        const p: [number, number, number] = [p0!.X(), p0!.Y(), p0!.Z()];
         const d = norm([dir.X(), dir.Y(), dir.Z()]);
         return { kind: 'line', p, d, mid };
       } finally {
         dir?.delete?.();
-        loc?.delete?.();
         lin?.delete?.();
       }
     }

@@ -913,8 +913,17 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       // notch) as "survived", wrongly rejecting a perfectly good fillet. The margin
       // is the fillet radius (the blend trims one end of any genuine survivor).
       const margin = (radius ?? distance ?? DEFAULT_FILLET_RADIUS) + 0.5;
-      const survived = seedAnchorsForCheck.some((a) => isAnchorEdgePresent(occ.oc, result!, a, margin));
-      if (survived) {
+      const survivedCount = seedAnchorsForCheck
+        .filter((a) => isAnchorEdgePresent(occ.oc, result!, a, margin)).length;
+      // A sequentially-skipped edge is a KNOWN, already-reported non-consumption: the
+      // per-edge fallback installs the partial result and tells the user which edges it
+      // could not round (sequentialSkippedEdges). So only reject when MORE seed edges
+      // survived than were knowingly skipped — i.e. a SILENT failure (the degenerate-sliver
+      // case this guard exists for). For a single-edge fillet with no skips this is
+      // identical to "reject if the picked edge survived". Without this, a multi-edge
+      // fillet that legitimately rounds N-1 of N edges would be rejected wholesale,
+      // discarding the good blends and making the "skipped edges" report unreachable.
+      if (survivedCount > sequentialSkippedEdges) {
         disposeResultBody(result);
         return markOccEdgeModificationError(
           featureId,
