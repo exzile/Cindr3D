@@ -31,6 +31,7 @@ type OccOffsetFacesApi = OcctRaw & {
   // cast via TopoDS.Face_1 (VIEW). Boolean Build() takes 0 args here → use
   // runEdgeOpBuild for the binding variance.
   TopoDS: { Face_1(s: unknown): unknown };
+  TopAbs_Orientation: { TopAbs_REVERSED?: unknown };
   gp_Vec_4: new (x: number, y: number, z: number) => { delete(): void };
   BRepAdaptor_Surface_2: new (face: unknown, restricted: boolean) => {
     FirstUParameter(): number;
@@ -41,6 +42,14 @@ type OccOffsetFacesApi = OcctRaw & {
     delete(): void;
   };
 };
+
+/** Embind enum members compare by identity in some builds and by `.value` in others. */
+function enumEq(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  const av = (a as { value?: unknown })?.value;
+  const bv = (b as { value?: unknown })?.value;
+  return av !== undefined && (av === bv || av === b);
+}
 
 export interface OccOffsetFacesOptions {
   id?: string;
@@ -132,7 +141,8 @@ export function occOffsetFacesWithInstance(
   }
 }
 
-function sampleFaceNormal(occ: OccOffsetFacesApi, rawFace: unknown): [number, number, number] {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function sampleFaceNormal(occ: OccOffsetFacesApi, rawFace: any): [number, number, number] {
   try {
     const surf = new occ.BRepAdaptor_Surface_2(rawFace, true);
     const u0 = surf.FirstUParameter(), u1 = surf.LastUParameter();
@@ -145,11 +155,22 @@ function sampleFaceNormal(occ: OccOffsetFacesApi, rawFace: unknown): [number, nu
     const p2 = surf.Value(uC, vC + dv);
     const ax = p1.X() - p0.X(), ay = p1.Y() - p0.Y(), az = p1.Z() - p0.Z();
     const bx = p2.X() - p0.X(), by = p2.Y() - p0.Y(), bz = p2.Z() - p0.Z();
-    const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
+    let nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx;
     const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
     p0.delete(); p1.delete(); p2.delete();
     surf.delete();
-    if (len > 1e-10) return [nx / len, ny / len, nz / len];
+    if (len > 1e-10) {
+      nx /= len; ny /= len; nz /= len;
+      // The cross product gives the PARAMETRIC normal (D1U×D1V). For a face that
+      // is topologically REVERSED in the solid, the outward normal is the
+      // opposite — Fusion defines +distance as the OUTWARD face-normal direction,
+      // so without this a positive offset on a reversed face pushes inward (cut
+      // instead of grow). Mirrors geomSurface.ts / tessellate.ts orientation handling.
+      if (enumEq(rawFace.Orientation_1?.(), occ.TopAbs_Orientation?.TopAbs_REVERSED)) {
+        return [-nx, -ny, -nz];
+      }
+      return [nx, ny, nz];
+    }
   } catch { /* fallback */ }
   return [0, 0, 1];
 }
