@@ -70,57 +70,62 @@ export function occSliceSketch(
     );
 
     while (edgeExp.More()) {
+      // edgeShape is the OWNED explorer copy; edge is a TopoDS.Edge_1 VIEW of it
+      // (same ptr). Free edgeShape in the finally (every continue path runs it);
+      // never delete the VIEW. The old code freed neither → a per-edge heap leak.
       const edgeShape = edgeExp.Current();
-      const edge = oc.TopoDS.Edge_1(edgeShape);
-
-      // Sample the edge: get first and last point via BRep_Tool.Curve
-      let curve: any = null;
-      let first = 0;
-      let last = 0;
       try {
-        // BRep_Tool.Curve returns (Geom_Curve, first, last) via output params
-        const firstRef = { current: 0 };
-        const lastRef  = { current: 0 };
-        curve = oc.BRep_Tool.Curve_2(edge, firstRef, lastRef);
-        first = firstRef.current;
-        last  = lastRef.current;
-      } catch {
-        curve?.delete?.();
-        edgeExp.Next();
-        continue;
-      }
+        const edge = oc.TopoDS.Edge_1(edgeShape);
 
-      if (!curve) { edgeExp.Next(); continue; }
+        // Sample the edge: get first and last point via BRep_Tool.Curve
+        let curve: any = null;
+        let first = 0;
+        let last = 0;
+        try {
+          // BRep_Tool.Curve returns (Geom_Curve, first, last) via output params
+          const firstRef = { current: 0 };
+          const lastRef  = { current: 0 };
+          curve = oc.BRep_Tool.Curve_2(edge, firstRef, lastRef);
+          first = firstRef.current;
+          last  = lastRef.current;
+        } catch {
+          curve?.delete?.();
+          continue;
+        }
 
-      try {
-        const p0 = curve.Value(first);
-        const p1 = curve.Value(last);
+        if (!curve) continue;
 
-        const x0 = p0.X(); const y0 = p0.Y(); const z0 = p0.Z();
-        const x1 = p1.X(); const y1 = p1.Y(); const z1 = p1.Z();
+        try {
+          const p0 = curve.Value(first);
+          const p1 = curve.Value(last);
 
-        p0.delete?.();
-        p1.delete?.();
+          const x0 = p0.X(); const y0 = p0.Y(); const z0 = p0.Z();
+          const x1 = p1.X(); const y1 = p1.Y(); const z1 = p1.Z();
 
-        // Skip degenerate edges.
-        const dx = x1 - x0; const dy = y1 - y0; const dz = z1 - z0;
-        if (dx * dx + dy * dy + dz * dz < 1e-8) { curve.delete?.(); edgeExp.Next(); continue; }
+          p0.delete?.();
+          p1.delete?.();
 
-        const entity: SketchEntity = {
-          id: makeId(),
-          type: 'line',
-          points: [makePoint(x0, y0, z0), makePoint(x1, y1, z1)],
-          isConstruction: false,
-        };
-        entities.push(entity);
-      } catch {
-        // Skip unsamplable edges.
+          // Skip degenerate edges.
+          const dx = x1 - x0; const dy = y1 - y0; const dz = z1 - z0;
+          if (dx * dx + dy * dy + dz * dz < 1e-8) { curve.delete?.(); continue; }
+
+          const entity: SketchEntity = {
+            id: makeId(),
+            type: 'line',
+            points: [makePoint(x0, y0, z0), makePoint(x1, y1, z1)],
+            isConstruction: false,
+          };
+          entities.push(entity);
+        } catch {
+          // Skip unsamplable edges.
+        } finally {
+          curve?.delete?.();
+          curve = null;
+        }
       } finally {
-        curve?.delete?.();
-        curve = null;
+        edgeShape.delete?.();
+        edgeExp.Next();
       }
-
-      edgeExp.Next();
     }
 
     edgeExp.delete?.();
