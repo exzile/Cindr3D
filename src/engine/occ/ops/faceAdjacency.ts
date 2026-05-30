@@ -99,12 +99,6 @@ export function expandTangentFaceChain(
     return seedFaceIds;
   }
 
-  // Build a ptr→faceId lookup for the whole body.
-  const ptrToFaceId = new Map<number, number>();
-  for (const [id, handle] of body.faceIds) {
-    if (handle.ptr) ptrToFaceId.set(handle.ptr, id);
-  }
-
   // Pre-compute normals for all body faces (best-effort; skip on error).
   const faceNormals = new Map<number, [number, number, number]>();
   for (const [id, handle] of body.faceIds) {
