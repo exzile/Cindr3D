@@ -21,9 +21,16 @@ import { disposeMeshDeferred } from "../../../../engine/occ/picking";
 import { BODY_MATERIAL } from "../../../../components/viewport/scene/bodyMaterial";
 import { isBRepBodyAlive } from "../../../../engine/occ/brepBody";
 import { refreshStaleBodySync } from "../../persistence";
-import { DEFAULT_FILLET_RADIUS, propagateTangentEdges, resolveOccFilletEdgeSets } from "./edgeModHelpers";
+import {
+  DEFAULT_FILLET_RADIUS,
+  propagateTangentEdges,
+  resolveOccFilletEdgeSets,
+  resolveOccFilletOptions,
+} from "./edgeModHelpers";
 import { collectVertexNeighborEdges } from "../../../../engine/occ/ops/adjacency";
 import { analyzeMeshGeometry } from "../../../../meshRepair/meshRepair";
+import { computeEdgeAnchor, findEdgeByAnchor } from "../../../../engine/occ/ops/edgeAnchor";
+import { getSelectableEdges } from "../../../../engine/occ/ops/selectableEdges";
 
 type SourceFeature = CADState['features'][number];
 
@@ -377,21 +384,55 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
     const currentIndex = allFeatures.findIndex((f) => f.id === featureId);
     const limit = currentIndex >= 0 ? currentIndex : allFeatures.length;
 
-    const srcBody = (() => {
-      let best = resolvedBody;
+    const remapSelectionEdgeIdsToBody = (candidate: BRepBody): number[] | null => {
+      if (candidate.id === resolvedBody.id) {
+        const sameBodyIds = selection.edgeIds.filter((edgeId) => candidate.edgeIds.has(edgeId));
+        return sameBodyIds.length === selection.edgeIds.length ? sameBodyIds : null;
+      }
+
+      const remapped: number[] = [];
+      const used = new Set<number>();
+      for (const edgeId of selection.edgeIds) {
+        const anchor = computeEdgeAnchor(occ.oc, resolvedBody, edgeId);
+        if (!anchor) return null;
+        const nextEdgeId = findEdgeByAnchor(occ.oc, candidate, anchor);
+        if (nextEdgeId === null || used.has(nextEdgeId)) return null;
+        remapped.push(nextEdgeId);
+        used.add(nextEdgeId);
+      }
+      return remapped;
+    };
+
+    const remappedBodyCandidates: Array<{ body: BRepBody; edgeIds: number[]; featureIndex: number }> = [];
+    const recordRemappedBodyCandidate = (body: BRepBody, edgeIds: number[], featureIndex: number) => {
+      if (remappedBodyCandidates.some((candidate) => candidate.body.id === body.id)) return;
+      remappedBodyCandidates.push({ body, edgeIds, featureIndex });
+    };
+
+    const srcSelection = (() => {
+      let bestBody = resolvedBody;
+      let bestEdgeIds = remapSelectionEdgeIdsToBody(resolvedBody) ?? [];
+      if (bestEdgeIds.length > 0) {
+        recordRemappedBodyCandidate(resolvedBody, bestEdgeIds, -1);
+      }
       for (let i = 0; i < limit; i++) {
         const f = allFeatures[i];
         if (f.type === 'sketch' || f.suppressed) continue;
         const candidate = bodyForFeature(f);
         const alive = candidate ? ensureBodyAlive(candidate, candidate.id) : null;
-        if (alive && selection.edgeIds.every((id) => alive.edgeIds.has(id))) {
-          best = alive;
+        if (!alive) continue;
+        const remappedEdgeIds = remapSelectionEdgeIdsToBody(alive);
+        if (remappedEdgeIds) {
+          recordRemappedBodyCandidate(alive, remappedEdgeIds, i);
+          bestBody = alive;
+          bestEdgeIds = remappedEdgeIds;
         }
       }
-      return best;
+      return { body: bestBody, edgeIds: bestEdgeIds };
     })();
 
-    let numericEdgeIds = selection.edgeIds.filter((edgeId) =>
+    let srcBody = srcSelection.body;
+    let numericEdgeIds = srcSelection.edgeIds.filter((edgeId) =>
       srcBody.edgeIds.has(edgeId),
     );
     if (numericEdgeIds.length === 0) {
@@ -435,6 +476,99 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
         edgeSets.push(...resolveOccFilletEdgeSets(sibNumericIds, body, f.params as Record<string, unknown>));
       }
       return edgeSets;
+    };
+
+    const remapStoredEdgeIdsToBody = (
+      storedIds: string[],
+      sourceFeatureId: string,
+      targetBody: BRepBody,
+    ): number[] | null => {
+      const storedSelection = parseOccEdgeSelection(storedIds);
+      if (!storedSelection) return null;
+      const sourceBody = resolveLiveSourceBody(
+        storedSelection.bodyId,
+        storedSelection.edgeIds,
+        sourceFeatureId,
+      );
+      if (!sourceBody) return null;
+      const remappedIds: number[] = [];
+      const used = new Set<number>();
+      for (const edgeId of storedSelection.edgeIds) {
+        const anchor = computeEdgeAnchor(occ.oc, sourceBody, edgeId);
+        if (!anchor) return null;
+        const nextEdgeId = findEdgeByAnchor(occ.oc, targetBody, anchor);
+        if (nextEdgeId === null || used.has(nextEdgeId)) return null;
+        remappedIds.push(nextEdgeId);
+        used.add(nextEdgeId);
+      }
+      return remappedIds;
+    };
+
+    const replayFilletFeaturesAfterCurrentRoundFillet = (
+      seedBody: BRepBody,
+      replayStartIndex: number,
+    ): BRepBody | null => {
+      let running = seedBody;
+      let ownsRunning = true;
+      for (let i = replayStartIndex; i < limit; i++) {
+        const f = allFeatures[i];
+        if (f.type === 'sketch' || f.suppressed || f.id === featureId) continue;
+        if (f.type !== 'fillet') {
+          if (ownsRunning) running.dispose();
+          return null;
+        }
+        const mode = f.params.mode as string | undefined;
+        if (mode === 'full-round' || mode === 'rule-fillet') {
+          if (ownsRunning) running.dispose();
+          return null;
+        }
+        const remappedIds = remapStoredEdgeIdsToBody(storedEdgeIds(f.params.edgeIds), f.id, running);
+        if (!remappedIds || remappedIds.length === 0) {
+          if (ownsRunning) running.dispose();
+          return null;
+        }
+        const siblingOptions = resolveOccFilletOptions(f.params as Record<string, unknown>);
+        const next = occFilletEdgeSetsWithInstance(
+          occ.oc,
+          running,
+          resolveOccFilletEdgeSets(remappedIds, running, f.params as Record<string, unknown>),
+          { sourceFeatureId: `${featureId}_replay`, ...siblingOptions },
+        );
+        if (!next) {
+          if (ownsRunning) running.dispose();
+          return null;
+        }
+        if (ownsRunning) running.dispose();
+        running = next;
+        ownsRunning = true;
+      }
+      return running;
+    };
+
+    const isRoundEdge = (body: BRepBody, edgeId: number): boolean => {
+      if (computeEdgeAnchor(occ.oc, body, edgeId)?.kind === 'circle') return true;
+      try {
+        const edgeMeta = getSelectableEdges(occ.oc, body).get(edgeId);
+        return edgeMeta?.kind === 'circle' || edgeMeta?.kind === 'arc';
+      } catch {
+        return false;
+      }
+    };
+
+    const collectFilletableRoundNeighborEdges = (body: BRepBody, edgeIdsToCheck: number[]): number[] => {
+      const edgeMeta = getSelectableEdges(occ.oc, body);
+      const selectedIsRejectedGuide = edgeIdsToCheck.some((edgeId) => {
+        const meta = edgeMeta.get(edgeId);
+        if (!meta) return false;
+        if (!meta.filletable && (meta.kind === 'seam' || meta.kind === 'boundary')) return true;
+        return meta.filletable && meta.kind === 'line' && meta.adjacentCurvedFace && !meta.sharpEdge;
+      });
+      if (!selectedIsRejectedGuide) return [];
+      return collectVertexNeighborEdges(occ.oc, body, edgeIdsToCheck)
+        .filter((edgeId) => {
+          const meta = edgeMeta.get(edgeId);
+          return meta?.filletable === true && (meta.kind === 'circle' || meta.kind === 'arc');
+        });
     };
 
     const siblingFilletEdgeSets =
@@ -537,6 +671,49 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
           }
         }
 
+        // Combined-on-base fallback: in a fillet CHAIN, each feature was applied to a
+        // different intermediate body, so collectSiblingFilletEdgeSets (matched by
+        // bodyId) never combines them, and the per-step sequential fallbacks fail where
+        // a single COMBINED build on the clean base succeeds — e.g. a notch-arc fillet
+        // plus corner fillets that share a vertex with it. Seed on the EARLIEST body that
+        // still carries the current edges (the base), remap every prior fillet feature's
+        // edges onto it by anchor, and apply current + all siblings in ONE build. The
+        // result replaces the chain's effect (correct: all fillets are present). srcBody
+        // is repointed to the seed so the new-blend-face guard below uses the right baseline.
+        if (!result) {
+          const seedCand = remappedBodyCandidates
+            .filter((c) => c.featureIndex >= 0 && c.body.id !== srcBody.id)
+            .sort((a, b) => a.featureIndex - b.featureIndex)[0];
+          if (seedCand) {
+            const seedBody = seedCand.body;
+            const siblingSetsOnSeed: OccFilletEdgeSet[] = [];
+            let remapOk = true;
+            for (let i = 0; i < limit; i++) {
+              const f = allFeatures[i];
+              if (f.type !== 'fillet' || f.suppressed || f.id === featureId) continue;
+              const mode = f.params.mode as string | undefined;
+              if (mode === 'full-round' || mode === 'rule-fillet') continue;
+              const sibIds = remapStoredEdgeIdsToBody(storedEdgeIds(f.params.edgeIds), f.id, seedBody);
+              if (!sibIds || sibIds.length === 0) { remapOk = false; break; }
+              siblingSetsOnSeed.push(...resolveOccFilletEdgeSets(sibIds, seedBody, f.params as Record<string, unknown>));
+            }
+            if (remapOk && siblingSetsOnSeed.length > 0) {
+              console.warn(`[${tool}] chain fillet failed downstream — retrying combined on base body`);
+              const currentOnSeed = resolveOccFilletEdgeSets(
+                seedCand.edgeIds, seedBody, filletParams, radius ?? DEFAULT_FILLET_RADIUS,
+              );
+              const combined = occFilletEdgeSetsWithInstance(
+                occ.oc, seedBody, [...siblingSetsOnSeed, ...currentOnSeed],
+                { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
+              );
+              if (combined) {
+                result = combined;
+                srcBody = seedBody; // result is built on the base; repoint baseline + lineage
+              }
+            }
+          }
+        }
+
         // Sequential per-edge fallback (OCC-13.5): OCC's combined multi-edge fillet
         // can leave one corner patch unclosed (a free edge) or throw on parts that
         // Fusion blends in a single pass. Apply each edge in its own Build() pass,
@@ -555,6 +732,71 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
             if (seq.body) {
               result = seq.body;
               sequentialSkippedEdges = seq.skippedCount;
+            }
+          }
+        }
+
+        // A click on the visible cylinder stroke can resolve to a seam/guide edge
+        // on the cylindrical face instead of the actual top/bottom circular rim.
+        // Those guide edges are not filletable, but their vertex neighbors include
+        // the OCC round rim edges the user intended to select.
+        if (!result) {
+          const selectedRoundNeighborIds = collectFilletableRoundNeighborEdges(
+            srcBody,
+            effectiveFilletEdgeSets.flatMap((edgeSet) => edgeSet.edgeIds),
+          );
+          if (selectedRoundNeighborIds.length > 0) {
+            console.warn(
+              `[${tool}] selected round guide edge failed — trying ${selectedRoundNeighborIds.length} neighboring rim edge(s)`,
+            );
+            const neighborRadius = currentFilletEdgeSets[0]?.radius ?? radius ?? DEFAULT_FILLET_RADIUS;
+            result = occFilletEdgeSetsWithInstance(
+              occ.oc,
+              srcBody,
+              [{ edgeIds: selectedRoundNeighborIds, radius: neighborRadius }],
+              { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
+            );
+          }
+        }
+
+        // Single circular hole/round edges can fail if applied after earlier
+        // corner fillets have already rebuilt nearby topology. When the clicked
+        // circular edge can be found on an earlier body in the same feature chain,
+        // apply this new round-edge fillet there first, then replay the intervening
+        // fillet features in timeline order. This preserves the requested radius
+        // and avoids sending OCC a post-blend circular edge it cannot solve.
+        if (!result) {
+          const currentFilletEdgeCount = currentFilletEdgeSets.reduce(
+            (sum, edgeSet) => sum + edgeSet.edgeIds.length,
+            0,
+          );
+          const hasRoundSeed = currentFilletEdgeSets.some((edgeSet) =>
+            edgeSet.edgeIds.some((edgeId) => isRoundEdge(srcBody, edgeId)),
+          );
+          if (hasRoundSeed || currentFilletEdgeCount === 1) {
+            const replayCandidates = remappedBodyCandidates
+              .filter((candidate) => candidate.featureIndex >= 0 && candidate.body.id !== srcBody.id)
+              .sort((a, b) => a.featureIndex - b.featureIndex);
+            for (const replayCandidate of replayCandidates) {
+              console.warn(`[${tool}] round-edge fillet failed — trying pre-blend replay fallback`);
+              const preBlend = occFilletEdgeSetsWithInstance(
+                occ.oc,
+                replayCandidate.body,
+                resolveOccFilletEdgeSets(
+                  replayCandidate.edgeIds,
+                  replayCandidate.body,
+                  filletParams,
+                  radius ?? DEFAULT_FILLET_RADIUS,
+                ),
+                { sourceFeatureId: `${featureId}_preblend`, continuity, tangencyWeight, isRollingBallCorner },
+              );
+              if (preBlend) {
+                result = replayFilletFeaturesAfterCurrentRoundFillet(
+                  preBlend,
+                  replayCandidate.featureIndex + 1,
+                );
+                if (result) break;
+              }
             }
           }
         }
