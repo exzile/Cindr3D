@@ -40,11 +40,17 @@ export function tessellate(
   // any subsequent OCC op (fillet, boolean, re-tessellate) with a BindingError.
   const shape = occDeref(oc, body.shape, oc.TopoDS_Shape);
 
+  // Display-quality defaults. The previous 0.5 rad angular (~28°, only ~12 facets per
+  // full circle) left small fillets and bores visibly faceted — a 1 mm fillet's minor
+  // circle got ~12 segments → chunky. 0.2 rad (~11.5°, ~31 segments/circle) renders
+  // curved walls, bores and fillet tubes smooth. Linear 0.05 mm keeps large analytic
+  // surfaces crisp at zoom. Callers can still override via options (the detail dialog
+  // passes an explicit linearDeflection).
   const mesher = new oc.BRepMesh_IncrementalMesh_2(
     shape,
-    options.linearDeflection ?? 0.1,
+    options.linearDeflection ?? 0.05,
     options.relative ?? false,
-    options.angularDeflection ?? 0.5,
+    options.angularDeflection ?? 0.2,
     options.parallel ?? false,
   );
   try {
