@@ -88,11 +88,17 @@ export function useOccEdgePicker(options: UseOccEdgePickerOptions): void {
       void debug;
       let best: OccEdgePickResult | null = null;
       let bestDistSq = Infinity;
+      let bestDepth = Infinity;
       const px = clientX - rect.left;
       const py = clientY - rect.top;
       const halfW = rect.width * 0.5;
       const halfH = rect.height * 0.5;
       const thresholdSq = 14 * 14;
+      // When two edges project to nearly the same screen location (e.g. the front and
+      // back rim of a coaxial hole/notch), screen-distance alone arbitrarily picks one —
+      // often the FAR one, which is not what the user clicked. Within this near-tie band
+      // we break ties by depth so the edge NEAREST the camera wins (the visible one).
+      const NEAR_TIE_PX_SQ = 8 * 8;
 
       for (const ls of lines) {
         const position = ls.geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
@@ -113,10 +119,20 @@ export function useOccEdgePicker(options: UseOccEdgePickerOptions): void {
           const bx = (_edgeProjB.x + 1) * halfW;
           const by = (1 - _edgeProjB.y) * halfH;
           const distSq = segDistSqPx(px, py, ax, ay, bx, by);
-          if (distSq >= bestDistSq || distSq > thresholdSq) continue;
+          if (distSq > thresholdSq) continue;
           const edgeId = edgeIdsBySegment?.[segmentIndex] ?? (ls.userData['edgeId'] as number | undefined);
           if (edgeId === undefined) continue;
+          // Mean NDC depth of the segment (smaller = nearer the camera).
+          const depth = (_edgeProjA.z + _edgeProjB.z) * 0.5;
+          // Accept when: clearly closer in 2D, OR within the near-tie band AND nearer in depth.
+          let take: boolean;
+          if (best === null) take = true;
+          else if (distSq < bestDistSq - NEAR_TIE_PX_SQ) take = true;
+          else if (distSq <= bestDistSq + NEAR_TIE_PX_SQ) take = depth < bestDepth;
+          else take = false;
+          if (!take) continue;
           bestDistSq = distSq;
+          bestDepth = depth;
           best = {
             edgeId,
             bodyId: (ls.userData['brepBodyId'] as string) ?? '',
