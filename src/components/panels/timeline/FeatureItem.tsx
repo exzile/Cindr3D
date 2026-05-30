@@ -45,6 +45,14 @@ export function FeatureItem({ feature, index, indented }: { feature: Feature; in
 
   const isSelected = selectedFeatureId === feature.id;
   const isRolledBack = rollbackIndex >= 0 && index > rollbackIndex;
+  const itemClassName = [
+    'timeline-item',
+    isSelected ? 'selected' : '',
+    isRolledBack ? 'rolled-back' : '',
+    indented ? 'indented' : '',
+    feature.suppressed ? 'suppressed' : '',
+    feature.healthState ? `timeline-item--${feature.healthState}` : '',
+  ].filter(Boolean).join(' ');
 
   const handleDoubleClick = () => {
     if (feature.type === 'sketch' && feature.sketchId) {
@@ -108,7 +116,7 @@ export function FeatureItem({ feature, index, indented }: { feature: Feature; in
   return (
     <>
       <div
-        className={`timeline-item ${isSelected ? 'selected' : ''} ${isRolledBack ? 'rolled-back' : ''} ${indented ? 'indented' : ''}`}
+        className={itemClassName}
         draggable
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
@@ -118,27 +126,31 @@ export function FeatureItem({ feature, index, indented }: { feature: Feature; in
         onContextMenu={handleContextMenu}
         title="Double-click to edit • Drag to reorder • Right-click for options"
       >
+        <span className="timeline-item-index">{String(index + 1).padStart(2, '0')}</span>
         <div className="timeline-item-icon">
           <FeatureIcon type={feature.type} />
         </div>
         <div className="timeline-item-info">
-          <span className="timeline-item-name">{feature.name}</span>
+          <span className="timeline-item-name">
+            {feature.name}
+            {feature.suppressed && <span className="timeline-state-pill">Off</span>}
+          </span>
           <span className="timeline-item-type">{feature.type}</span>
           {booleanParentNames && (
             <span className="timeline-item-type">parents: {booleanParentNames}</span>
           )}
           {feature.healthState === 'warning' && (
             <span
+              className="timeline-health-message timeline-health-message--warning"
               title={feature.healthMessage ?? 'Warning'}
-              style={{ color: '#f0a030', fontSize: 11, marginLeft: 4, cursor: 'help' }}
             >
               ⚠ {feature.healthMessage}
             </span>
           )}
           {feature.healthState === 'error' && (
             <span
+              className="timeline-health-message timeline-health-message--error"
               title={feature.healthMessage ?? 'Error'}
-              style={{ color: '#e05050', fontSize: 11, marginLeft: 4, cursor: 'help' }}
             >
               ✕ {feature.healthMessage}
             </span>

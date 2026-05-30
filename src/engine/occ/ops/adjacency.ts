@@ -726,7 +726,7 @@ export function buildVertexEdgeMap(
   }
 
   // For each body edge, walk its vertices and build the map.
-  for (const [bodyEdgeId, edgeHandle] of body.edgeIds) {
+  for (const bodyEdgeId of body.edgeIds.keys()) {
     const canonicalIdx = bodyIdToCanonical.get(bodyEdgeId);
     if (canonicalIdx === undefined) continue;
 

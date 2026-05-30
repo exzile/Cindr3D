@@ -169,7 +169,7 @@ export function useFilletDialogState(
   useEdgeModValidityProbe(true, probeEdgeIds, {
     tool: "Fillet",
     radius,
-    filletParams: previewParams,
+    filletParams: { ...previewParams },
     skip: mode === "full-round" || mode === "rule-fillet",
   });
 

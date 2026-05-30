@@ -156,10 +156,8 @@ function makeFakeOcc(vertPos: Map<number, Vec3>, edgeCurveType: Map<number, 'cir
     },
     BRepAdaptor_Curve_2: class {
       private type: 'circle' | 'line';
-      private ptr: number;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       constructor(edge: any) {
-        this.ptr = edge.ptr;
         this.type = edgeCurveType.get(edge.ptr) ?? 'line';
       }
       GetType() { return this.type === 'circle' ? GEOM_CIRCLE : GEOM_LINE; }
