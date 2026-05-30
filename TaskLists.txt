@@ -631,3 +631,28 @@
 #
 # VERIFICATION GATE: same as OCC-21 (tsc clean, eslint, vitest src/engine/occ +
 #   src/store/cad/slices green, op-level test, gitnexus_impact before editing symbols).
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OCC-23: Offset Face dialog — dead control + multi-face parity (2026-05-30)
+# ══════════════════════════════════════════════════════════════════════════════
+# Found during the third audit sweep (modify-dialog "collected-but-not-applied" class,
+# same family as the now-fixed Shell tangentChain and Direct Edit modes).
+# Engine (offsetFaces.ts) is correct as of OCC-21.0 (reversed-normal fix). These are
+# DIALOG-side gaps in OffsetFaceDialog.tsx.
+#
+# [ ] 23.1  DEAD "Extent" control. The dialog offers Extent = {Distance, All} and writes
+#           it into params, but handleOK calls commitOffsetFace(body, signedDist,{faceIds})
+#           and NEVER passes extent — so "All" does nothing. Fusion OffsetFaces is purely
+#           distance-based (no "extent" concept). FIX: remove the Extent dropdown (it is a
+#           fabricated non-functional control), or repurpose it only if a real semantic is
+#           defined. Lowest-risk = delete the control + the extent param.
+# [ ] 23.2  SINGLE-FACE limit. faceIds = offsetOccFaceId!==null ? [offsetOccFaceId] : [].
+#           Fusion OffsetFacesFeatureInput.faces() is a multi-face vector and the engine
+#           occOffsetFacesWithInstance already loops over faceIds[]. FIX: let the picker
+#           accumulate a face SET (mirror shellRemoveFaceIds/Data) and pass all OCC face
+#           ids. UI: show "N faces selected" + a clear button.
+# [ ] 23.3  While here, sweep the other modify dialogs for the same pattern (a useState
+#           value that reaches updateFeatureParams but never the geometry commit). Known
+#           clean after fixes: Shell, Draft, Combine, Scale. Spot-checked clean: Hole,
+#           Thread, Rib, Web, Emboss, Pipe, Coil, BoundaryFill. Re-verify any dialog
+#           touched by OCC-21/22 work.
