@@ -1,8 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createBRepBody } from '../engine/occ/brepBody';
 import { globalBRepBodyRegistry } from '../engine/occ/globalRegistry';
 import { captureOccSnapshot, restoreOccSnapshot } from '../engine/occ/occSnapshot';
 import { OccHandle } from '../engine/occ/occHandle';
+
+// restoreOccSnapshot calls getOcc() to await WASM — mock it so tests don't
+// attempt a real WASM load (which fails with ERR_INVALID_URL in the test env).
+vi.mock('../engine/occ/loader', () => ({
+  getOccSync: () => null,
+  getOcc: () => Promise.resolve(null),
+}));
 
 describe('OCC STEP snapshots', () => {
   beforeEach(() => {

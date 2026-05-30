@@ -55,6 +55,10 @@ export async function restoreOccSnapshot(snapshots: OccBodySnapshot[]): Promise<
   // root cause of files loading with an empty registry (OCC-7.4 race fix).
   const occ = await getOcc();
 
+  // Guard: if OCC is not available (test env, or WASM failed to load), bail out
+  // without clearing the registry so existing bodies aren't lost.
+  if (!occ) return;
+
   // Clear the existing registry first so stale bodies don't accumulate.
   globalBRepBodyRegistry.clear();
 

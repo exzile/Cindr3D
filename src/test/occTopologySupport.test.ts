@@ -36,10 +36,15 @@ describe('OCC topology support utilities', () => {
 
     const assigned = assignTopologyIds([a.handle, b.handle, duplicateA.handle], createBRepIdAllocator(1));
 
+    // byPtr maps ptr → first-seen id (deduped by pointer).
     expect(assigned.byPtr.get(100)).toBe(1);
     expect(assigned.byPtr.get(200)).toBe(2);
-    expect(Array.from(assigned.ids.keys())).toEqual([1, 2]);
-    expect(assigned.ids.get(1)).toBe(duplicateA.handle);
+    // ids assigns a monotonic id to every handle (no dedup); 3 handles → 3 ids.
+    // The first handle with ptr=100 wins byPtr; both ptr=100 handles get their own id.
+    expect(Array.from(assigned.ids.keys())).toEqual([1, 2, 3]);
+    expect(assigned.ids.get(1)).toBe(a.handle);
+    expect(assigned.ids.get(2)).toBe(b.handle);
+    expect(assigned.ids.get(3)).toBe(duplicateA.handle);
   });
 
   it('tracks max topology ids across maps', () => {

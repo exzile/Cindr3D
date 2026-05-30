@@ -22,6 +22,11 @@ describe('OCC STEP I/O cleanup', () => {
           rawShapeDeletes += 1;
         },
       }),
+      // shapeToStep creates a Message_ProgressRange_1 before calling Transfer;
+      // it must be present so the writer is actually constructed and deleted.
+      Message_ProgressRange_1: class {
+        delete() {}
+      },
       STEPControl_Writer_1: class {
         Transfer() { return 0; }
         delete() { writerDeletes += 1; }
@@ -37,7 +42,9 @@ describe('OCC STEP I/O cleanup', () => {
     const result = shapeToStep(oc, makeBody());
 
     expect(result.ok).toBe(false);
-    expect(rawShapeDeletes).toBe(1);
+    // rawShape is an occDeref VIEW — the code intentionally does NOT delete it
+    // (it would destroy the body's own shape handle). Only the writer is deleted.
+    expect(rawShapeDeletes).toBe(0);
     expect(writerDeletes).toBe(1);
   });
 
@@ -97,7 +104,11 @@ describe('OCC STEP I/O cleanup', () => {
 
     expect(result.ok).toBe(true);
     expect(progressDeletes).toBe(1);
-    expect(readerDeletes).toBe(1);
+    // The reader is kept alive as an ownedResource (reader.Shape(1) references
+    // the reader's internal storage). It is deleted when the body is disposed.
+    expect(readerDeletes).toBe(0);
     if (result.ok) result.value.dispose();
+    // After dispose(), the reader ownedResource is deleted.
+    expect(readerDeletes).toBe(1);
   });
 });
