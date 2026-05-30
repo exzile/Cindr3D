@@ -229,6 +229,8 @@
 # ══════════════════════════════════════════════════════════════════════════════
 # PHASE OCC-13: Fillet + Chamfer — Fusion parity within OCC's limits
 # ══════════════════════════════════════════════════════════════════════════════
+# SDK install: local Fusion 360 webdeploy SDK headers under the current user's
+#              Autodesk install directory. Do not commit machine-specific paths.
 #
 # ╔═══════════════════════════════════════════════════════════════════════════╗
 # ║ KERNEL REALITY (read before planning parity work):                         ║
