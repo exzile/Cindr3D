@@ -124,10 +124,11 @@ valid ceiling — Fusion's "works to a measurement then errors".
   equal(4)=7840, equal(1)=7990, two-dist(4,1)=7960 — distinct from both. Flip is applied
   upstream by `resolveChamferDistances` swapping d1/d2 (occChamfer options carry no
   isFlipped — correct).
-- **Same cast bug breaks 3 NON-fillet/chamfer features** (handed off via spawn_task,
-  NOT fixed here): `geomSurface.sketchPlaneFromFace` (planar faces report non-planar →
-  sketch-on-face), `offsetFaces` (+ compounding BRepAlgoAPI_Boolean binding), `draft`
-  (+ compounding `BRepOffsetAPI_DraftAngle_1` 0-arg-ctor binding). fillet.ts is CLEAN.
+- **Same cast bug broke 3 NON-fillet/chamfer features — FIXED in OCC-18 (2026-05-30):**
+  `geomSurface.sketchPlaneFromFace` (rewritten to BRepAdaptor_Surface; Surface_2 was the
+  1-arg overload + Handle_Geom_Plane.DownCast undefined), `offsetFaces` (Face_1 cast +
+  boolean Build()→runEdgeOpBuild), `draft` (DraftAngle_2 ctor + 5-arg Add + Face_1 +
+  runEdgeOpBuild). See [[wasm_patterns]] for the compounding-binding gotchas. fillet.ts CLEAN.
 
 ## Robustness baseline (shared by both, OCC-13.5)
 

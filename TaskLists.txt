@@ -319,24 +319,27 @@
 #           cast/disposal CLEAN. (memory/occ_fillet_chamfer_parity.md updated.)
 
 # ══════════════════════════════════════════════════════════════════════════════
-# OPEN — OCC-18: occDeref cast bug in NON-fillet/chamfer OCC features (found 2026-05-30)
+# COMPLETED — OCC-18: occDeref cast + binding bugs in NON-fillet/chamfer features (2026-05-30)
 # ══════════════════════════════════════════════════════════════════════════════
-# Same root cause as 17.2/17.3 (occDeref(…,TopoDS_Face) returns a TopoDS_Shape) is
-# silently breaking 3 more features, each with a COMPOUNDING second binding bug.
-# Spawned as a background task 2026-05-30. See memory/wasm_patterns.md occDeref note.
-# [ ] 18.1  geomSurface.sketchPlaneFromFace / isFacePlanar — every planar OCC face
-#           reports non-planar (sketch-on-face / face planarity broken). Face_1 cast
-#           is necessary but NOT sufficient — also investigate BRep_Tool.Surface_2 /
-#           Handle_Geom_Plane.DownCast; remove the line-35 VIEW .delete(). First
-#           confirm whether this is the production sketch-on-face path or secondary.
-# [ ] 18.2  offsetFaces (occOffsetFacesWithInstance) — face → BRepAdaptor_Surface_2
-#           wrong normal (defaults [0,0,1]); after Face_1 cast a SECOND binding error
-#           surfaces (BRepAlgoAPI_Boolean* ctor/method). Fix both.
-# [ ] 18.3  draft (occDraftWithInstance) — first failure is a ctor binding:
-#           `new BRepOffsetAPI_DraftAngle_1(rawShape)` expects 0 args in this build;
-#           find correct ctor/Init, then apply Face_1 cast for drafter.Add(face,…).
-# [ ] 18.4  Sweep for any other occDeref(…,TopoDS_Edge/Face/Vertex/Wire) → type-strict
-#           OCC API sites build-wide; add a lint/grep guard or a shared cast helper.
+# Same root cause as 17.2/17.3 (occDeref(…,TopoDS_Face) returns a TopoDS_Shape) was
+# silently breaking 3 more features, each with COMPOUNDING binding bugs. All fixed +
+# verified VALID on a box via the live kernel; regression tests added.
+# [x] 18.1  geomSurface.sketchPlaneFromFace / isFacePlanar — rewritten to use
+#           BRepAdaptor_Surface_2 (GetType/Plane). The compounding bugs were: Surface_2
+#           is the 1-ARG overload (loc-aware is Surface_1(F,L)) AND Handle_Geom_Plane.
+#           DownCast is UNDEFINED in this build — both made the old path always throw.
+#           NOTE: test-only/secondary (no production caller; sketch-on-face uses a
+#           mesh path). Removed the line-35 VIEW delete. Test: occGeomSurface.test.ts.
+# [x] 18.2  offsetFaces — Face_1 cast for BRepAdaptor_Surface_2 (was wrong normal);
+#           boolean Build(progress) -> runEdgeOpBuild (Build() is 0-arg here — that
+#           was the "BRepAlgoAPI_Boolean.Build called with 1 args, expected 0" error).
+# [x] 18.3  draft — ctor BRepOffsetAPI_DraftAngle_**2**(shape) (_1 is 0-arg); Add
+#           needs 5 args (F,dir,angle,plane,Flag); Face_1 cast; Build via
+#           runEdgeOpBuild. Test: draftBindings.test.ts (ctor/cast/argcount/Build).
+# [x] 18.4  Swept all occDeref(…,TopoDS_Face) sites: booleanBase.ts (Modified(shape))
+#           and shell.ts (ListOfShape.Append(shape)) pass shapes to SHAPE-typed APIs —
+#           no cast needed, confirmed OK. No occDeref(…,TopoDS_Edge/Vertex/Wire) sites
+#           exist. Pattern documented in memory/wasm_patterns.md (occDeref note).
 
 # ══════════════════════════════════════════════════════════════════════════════
 # OPEN — Fillet/Chamfer manual QA (not automatable in preview harness)

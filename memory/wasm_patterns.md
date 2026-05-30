@@ -126,7 +126,12 @@ const rawFace = oc.TopoDS.Face_1(occDeref(oc, handle, oc.TopoDS_Shape)); // Face
 - **Type-strict (MUST cast):** `MakeFillet/MakeChamfer.Add_2/Add_3/Add_5/AddDA(edge|refFace)`, `BRep_Tool.Surface_2(face)`, `BRepAdaptor_Surface_2(face)`, `BRepOffsetAPI_DraftAngle.Add(face)`, `MakePolygon`/`MakeFace` wire adds.
 - **Shape-ok (no cast needed):** `Modified(shape)`, `TopTools_ListOfShape.Append(shape)`, `BRepPrimAPI_MakePrism(shape)`, boolean `AddTool/AddArgument(shape)`.
 
-Fixed: `chamfer.ts` (edge Add_2 + refFace Add_3/AddDA, 2026-05-30) — regression test `chamferEdgeCast.test.ts`. Already-correct: `fillet.ts` (Shape+Edge_1/Face_1 throughout). STILL BROKEN (TaskLists OCC-18, has compounding 2nd binding bugs): `geomSurface.sketchPlaneFromFace`, `offsetFaces`, `draft`. When writing ANY new face/edge OCC call, follow this pattern.
+Fixed (2026-05-30): `chamfer.ts` (edge Add_2 + refFace Add_3/AddDA; test `chamferEdgeCast.test.ts`), `offsetFaces`, `draft` (test `draftBindings.test.ts`), `geomSurface` (test `occGeomSurface.test.ts`). Already-correct: `fillet.ts` (Shape+Edge_1/Face_1 throughout). Confirmed OK (shape-typed APIs, no cast needed): `booleanBase.ts` `Modified(shape)`, `shell.ts` `ListOfShape.Append(shape)`. When writing ANY new face/edge OCC call, follow this pattern.
+
+**Compounding binding gotchas found alongside the cast bug (this opencascade.js build):**
+- **`BRep_Tool.Surface` overloads are "backwards":** `Surface_1(F, L)` is the 2-arg (location-aware) version; `Surface_2(F)` is 1-arg. Calling `Surface_2(F, loc)` throws (wrong arg count). And **`Handle_Geom_Plane.DownCast` is `undefined`** — there is no generated DownCast. To classify/inspect a surface, prefer `new BRepAdaptor_Surface_2(face, true)` + `GetType()` vs `GeomAbs_SurfaceType.GeomAbs_Plane` + `.Plane()` (mirrors how `BRepAdaptor_Curve_2.GetType()/.Line()` is used for edges; folds in the face location automatically).
+- **`BRepOffsetAPI_DraftAngle_1()` is the 0-ARG ctor;** the shape ctor is `_2(shape)`. Its `Add(F, dir, angle, plane, Flag)` needs **5 args** (the trailing Flag is required).
+- **`.Build()` takes 0 args** on `BRepAlgoAPI_*` (boolean), `BRepOffsetAPI_DraftAngle`, fillet/chamfer makers in this build — calling `Build(progress)` throws `... Build called with 1 arguments, expected 0`. Always go through **`runEdgeOpBuild(oc, builder)`** (adjacency.ts), which tries `Build(progress)` then falls back to `Build()`. booleanCore calls bare `Build()`.
 
 ## What's checked in
 
