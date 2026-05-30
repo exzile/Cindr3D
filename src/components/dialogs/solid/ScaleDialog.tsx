@@ -37,7 +37,7 @@ export function ScaleDialog({ onClose }: { onClose: () => void }) {
       const sx = scaleType === 'uniform' ? factor : factorX;
       const sy = scaleType === 'uniform' ? factor : factorY;
       const sz = scaleType === 'uniform' ? factor : factorZ;
-      commitScale(selectedFeatureId, sx, sy, sz);
+      commitScale(selectedFeatureId, sx, sy, sz, refPoint);
     } else {
       const feature: Feature = {
         id: crypto.randomUUID(),

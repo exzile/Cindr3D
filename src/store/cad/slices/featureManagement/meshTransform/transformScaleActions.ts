@@ -54,7 +54,7 @@ export function createTransformScaleActions({ set, get }: CADSliceContext): Part
       if (oldMesh instanceof THREE.Mesh) disposeMeshDeferred(oldMesh as THREE.Mesh);
     },
 
-    commitScale: (featureId, sx, sy, sz) => {
+    commitScale: (featureId, sx, sy, sz, refPoint = "centroid") => {
       const { features } = get();
       const feature = features.find((f) => f.id === featureId);
       if (!feature?.mesh) {
@@ -77,6 +77,22 @@ export function createTransformScaleActions({ set, get }: CADSliceContext): Part
         get().setStatusMessage("Scale: factors must be finite and non-zero");
         return;
       }
+      // Scale center: 'centroid' scales the body in place about its bounding-box
+      // center (Fusion's default), 'origin' about the world origin. Previously the
+      // center was hardcoded to (0,0,0), so the dialog's "Body Centroid" option did
+      // nothing and off-origin bodies drifted toward/away from the origin as they scaled.
+      const scaleCenter = (() => {
+        if (refPoint === "origin") return new THREE.Vector3(0, 0, 0);
+        const geom = srcMesh.geometry as THREE.BufferGeometry | undefined;
+        if (!geom) return new THREE.Vector3(0, 0, 0);
+        if (!geom.boundingBox) geom.computeBoundingBox();
+        const center = new THREE.Vector3();
+        geom.boundingBox?.getCenter(center);
+        // Honor the mesh's world transform so the center is in world space.
+        srcMesh.updateMatrixWorld(true);
+        return center.applyMatrix4(srcMesh.matrixWorld);
+      })();
+
       const scaleOccBodyId = srcMesh.userData['brepBodyId'] as string | undefined;
       if (scaleOccBodyId) {
         const occ = getOccSync();
@@ -86,7 +102,7 @@ export function createTransformScaleActions({ set, get }: CADSliceContext): Part
             ? sx
             : { x: sx, y: sy, z: sz };
           const newFeatureId = featureId;
-          const scaleResult = occScaleWithInstance(occ.oc, scaleBody, new THREE.Vector3(0, 0, 0), scaleFactor, { sourceFeatureId: newFeatureId });
+          const scaleResult = occScaleWithInstance(occ.oc, scaleBody, scaleCenter, scaleFactor, { sourceFeatureId: newFeatureId });
           if (scaleResult) {
             let scaledMesh: THREE.Mesh;
             try {

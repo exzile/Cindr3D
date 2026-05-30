@@ -275,8 +275,9 @@ export interface CADModelingState {
     },
   ) => void;
 
-  // SLD13 — Scale (commit)
-  commitScale: (featureId: string, sx: number, sy: number, sz: number) => void;
+  // SLD13 — Scale (commit). refPoint selects the scale center: 'centroid' (default,
+  // scales the body in place about its bounding-box center) or 'origin' (world origin).
+  commitScale: (featureId: string, sx: number, sy: number, sz: number, refPoint?: 'centroid' | 'origin') => void;
 
   // 3D edge fillet (commit) — rounds edges in filletEdgeIds on the target body.
   // featureId: non-destructive path — store result on the fillet feature node.

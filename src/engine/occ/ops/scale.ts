@@ -12,9 +12,10 @@ type OccScaleApi = OcctRaw & {
   BRepBuilderAPI_Transform_2: new (shape: unknown, trsf: unknown, copy: boolean) => { Shape(): unknown; delete(): void };
   BRepBuilderAPI_GTransform_2: new (shape: unknown, gTrsf: unknown, copy: boolean) => { Shape(): unknown; IsDone(): boolean; delete(): void };
   gp_Trsf_1: new () => { SetScale(point: unknown, factor: number): void; delete(): void };
-  gp_GTrsf_1: new () => { SetVectorialPart(mat: unknown): void; delete(): void };
+  gp_GTrsf_1: new () => { SetVectorialPart(mat: unknown): void; SetTranslationPart(coord: unknown): void; delete(): void };
   gp_Mat_1: new () => { SetDiag(x: number, y: number, z: number): void; delete(): void };
   gp_Pnt_3: new (x: number, y: number, z: number) => { delete(): void };
+  gp_XYZ_2: new (x: number, y: number, z: number) => { delete(): void };
 };
 
 export type OccScaleFactor =
@@ -50,7 +51,7 @@ export function occScaleWithInstance(
     if (typeof scale === 'number') {
       return uniformScale(occ, rawShape, origin, scale, options);
     }
-    return nonUniformScale(occ, rawShape, scale, options);
+    return nonUniformScale(occ, rawShape, origin, scale, options);
   } catch (e) {
     console.warn('[occScale] failed:', e);
     return null;
@@ -83,15 +84,28 @@ function uniformScale(
 function nonUniformScale(
   occ: OccScaleApi,
   rawShape: unknown,
+  origin: THREE.Vector3,
   scale: { x: number; y: number; z: number },
   options: OccScaleOptions,
 ): BRepBody | null {
   const mat = new occ.gp_Mat_1();
   const gTrsf = new occ.gp_GTrsf_1();
+  let translation: { delete(): void } | null = null;
   let transformer: InstanceType<OccScaleApi['BRepBuilderAPI_GTransform_2']> | null = null;
   try {
     mat.SetDiag(scale.x, scale.y, scale.z);
     gTrsf.SetVectorialPart(mat);
+    // Scale about `origin` (Fusion's `point`), not the world origin. A pure
+    // diagonal GTrsf scales about (0,0,0); to scale about C the affine map is
+    // x' = diag·(x − C) + C = diag·x + (C − diag·C), so the translation part is
+    // C − diag·C = C·(1 − s) component-wise. Without this, an off-origin body
+    // was translated as it scaled (the old SetVectorialPart-only path).
+    translation = new occ.gp_XYZ_2(
+      origin.x * (1 - scale.x),
+      origin.y * (1 - scale.y),
+      origin.z * (1 - scale.z),
+    );
+    gTrsf.SetTranslationPart(translation);
     transformer = new occ.BRepBuilderAPI_GTransform_2(rawShape, gTrsf, true);
     if (!transformer.IsDone()) {
       return null;
@@ -100,6 +114,7 @@ function nonUniformScale(
     return makeBRepBodyFromOccShape(occ as unknown as OcctRaw, resultShape, options);
   } finally {
     transformer?.delete();
+    translation?.delete();
     gTrsf.delete();
     mat.delete();
   }
