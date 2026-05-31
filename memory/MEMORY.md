@@ -16,7 +16,8 @@
 - [csg_edge_cut.md](csg_edge_cut.md) - archive of removed mesh-CSG fillet/chamfer pipeline; OCC-only edge-modification notes and deleted file list
 - [occ_parallel_handoff.md](occ_parallel_handoff.md) - OCC migration complete status; boolean commit path summary; remaining cleanup gates
 - [occ_fillet_chamfer_parity.md](occ_fillet_chamfer_parity.md) - fillet/chamfer capability matrix vs Fusion (SUPPORTED/APPROXIMATED/ROUND-TRIP/UNSUPPORTED); live red-flash validity preview; chamfer degeneracy-heal; arc-vs-full-circle propagation guard; the occDeref cast bug that silently killed chamfer/two-dist/angle
-- [sketch_interaction_pipeline.md](sketch_interaction_pipeline.md) - chain-of-responsibility commit dispatch, fingerprint-LRU preview cache, SketchCommitCtx shape
+- [sketch_interaction_pipeline.md](sketch_interaction_pipeline.md) - commit/preview pipeline; snap engine (screen-space px radius, priority tiers, A2-A9 fixes, arc CCW invariants); constraint tool pointIndices; rectangle→4-lines
+- [constraint_solver.md](constraint_solver.md) - Newton-Raphson DOF model: point x/y + scalar ::radius/::startAngle/::endAngle; SolverResult.updatedScalars + rank/nParams; over-constraint via rank; curve-curve tangent
 - [duet_service_architecture.md](duet_service_architecture.md) - DuetService facade + per-concern sibling modules, where to add new API calls
 
 ## Bug catalogs (read before non-trivial UI/engine changes)

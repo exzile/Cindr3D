@@ -35,3 +35,35 @@ Parallel structure to commit. **32-entry LRU `PREVIEW_FINGERPRINT_CACHE`** keyed
 ## Event wiring — `hooks/useSketchInteractionEvents.ts`
 
 Pointer listeners attach via refs, not reactive state — the ref-sync-in-effect pattern from `r3f_critical_patterns.md`. New listener-read state must mirror to a `useRef` inside `useEffect([state])`, never in deps that would re-attach on every pointermove.
+
+## Snap engine — `SketchInteraction.tsx` findSnapCandidate
+
+- Snap radius is **screen-space** (~12 px), computed via camera FOV/depth — NOT a fixed world-space mm. Zoom-invariant.
+- Priority tiers: endpoint/center (1) > intersection (2) > midpoint/perp/tangent (3) > nearest (4) > grid (5). Higher priority wins over geometrically closer lower-priority snap.
+- Intersection snap covers line-line, **line-circle**, and **circle-circle** (analytic 2D solutions).
+- Midpoint snap includes **arc midpoint** (point at (startAngle+endAngle)/2).
+- Center snap includes **ellipse/elliptical-arc** (center = points[0]).
+- Nearest snap (lowest priority): foot of perpendicular onto line, radial projection onto circle.
+- Endpoint snap uses **exact entity geometry** (arc start/end, spline knots, rect corners) — NOT the old O(mesh-verts) scene traverse.
+- SnapType union (`types/cad/core.ts`) now matches runtime: includes `'perpendicular'` and `'tangent'`.
+
+## Constraint tool — `hooks/useSketchConstraintTool.ts`
+
+- **coincident/midpoint/concentric/symmetric** capture `pointIndices` (nearest endpoint hit-test) so the correct endpoint pair is bonded.
+- **symmetric** prompts "entity 1 → entity 2 → axis line" and reorders to `[axisId, e1, e2]` before dispatch (solver expects this order).
+- **equal** rejects line+circle mixed pairs with a clear message.
+- **arc** pick is clamped to the arc's angular sweep — can't select the un-drawn side.
+- Dedupe key in `addSketchConstraint` includes `pointIndices` so p0↔p1 and p1↔p0 coincidents are distinct.
+
+## Arc orientation invariants (SKETCH-2 fixes — 2026-05-31)
+
+Renderer forces CCW arcs (`createArc` in `sketchRendering.ts`). All commit handlers must guarantee the intended arc is CCW:
+- **arc-3point**: after computing start/end from atan2, verify through-point lies on CCW arc; swap if not.
+- **tangent-arc**: check CCW start tangent vs incoming tangentDir; swap if dot < 0.
+- **circle-2tangent / circle-3tangent**: `toUV`/`toUV3` subtract `planeOrigin` before projecting; center reconstruction adds it back.
+- **slot / slot-center** c1 cap: `axisAngle + π/2 → axisAngle + 3π/2` (not perpAngle).
+- **slot-3point-arc / slot-center-arc** caps: use actual radial angles of p0/p2 from C, independent of arcSA/arcEA swap.
+
+## Rectangle commit (B11.a — 2026-05-31)
+
+The `rectangle` commit handler now emits **4 `line` entities** + coincident constraints at corners, NOT a single `'rectangle'` entity. `rectangle-center` and `rectangle-3point` already did this. Existing saved `'rectangle'` entities still render/solve correctly.
