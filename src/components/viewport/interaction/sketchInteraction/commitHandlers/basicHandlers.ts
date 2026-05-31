@@ -32,7 +32,7 @@ function emitPolygonLines(
 function applyPolygonConstraints(
   lineIds: string[],
   addSketchConstraint: (c: SketchConstraint) => void,
-  polygonMeta?: { center: { x: number; y: number; z: number }; radius: number; baseAngle: number },
+  polygonMeta?: { center: { x: number; y: number; z: number }; radius: number; baseAngle: number; kind?: 'inscribed' | 'circumscribed' },
 ): string | undefined {
   const n = lineIds.length;
   if (n < 3) return undefined;
@@ -71,12 +71,14 @@ function polygonMetaFrom(
   firstVertex: THREE.Vector3,
   t1: THREE.Vector3,
   t2: THREE.Vector3,
-): { center: { x: number; y: number; z: number }; radius: number; baseAngle: number } {
+  kind: 'inscribed' | 'circumscribed' = 'inscribed',
+): { center: { x: number; y: number; z: number }; radius: number; baseAngle: number; kind: 'inscribed' | 'circumscribed' } {
   const d0 = firstVertex.clone().sub(center);
   return {
     center: { x: center.x, y: center.y, z: center.z },
     radius: d0.length(),
     baseAngle: Math.atan2(d0.dot(t2), d0.dot(t1)),
+    kind,
   };
 }
 
@@ -283,7 +285,14 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
           const baseAngle = Math.atan2(d.dot(t2), d.dot(t1));
           const verts = polygonVertexPositions(centerV, apothem, sides, baseAngle, 'circumscribed', t1, t2);
           const lineIds = emitPolygonLines(verts, addSketchEntity);
-          const polyId = applyPolygonConstraints(lineIds, addSketchConstraint, polygonMetaFrom(centerV, verts[0], t1, t2));
+          // Store the cursor params (apothem + edge-midpoint angle) so editing the
+          // side count keeps the inscribed circle fixed — true circumscribed behaviour.
+          const polyId = applyPolygonConstraints(lineIds, addSketchConstraint, {
+            center: { x: centerV.x, y: centerV.y, z: centerV.z },
+            radius: apothem,
+            baseAngle,
+            kind: 'circumscribed',
+          });
           if (polyId) useCADStore.getState().setEditingPolygonConstraintId(polyId);
           setStatusMessage(`${sides}-gon (circumscribed) added (apothem=${apothem.toFixed(2)})`);
         } else { setStatusMessage('Polygon too small — try again'); }

@@ -21,16 +21,18 @@ export function createPolygonEditActions({ set, get }: CADSliceContext): Partial
 
       const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
 
-      // Resolve center / circumradius / base vertex angle from the stored metadata,
+      // Resolve center / size / base angle / kind from the stored metadata,
       // falling back to deriving them from the existing member-line vertices.
       let center: THREE.Vector3;
       let radius: number;
       let baseAngle: number;
+      let kind: 'inscribed' | 'circumscribed' = 'inscribed';
       if (con.polygonMeta) {
         const m = con.polygonMeta;
         center = new THREE.Vector3(m.center.x, m.center.y, m.center.z);
         radius = m.radius;
         baseAngle = m.baseAngle;
+        kind = m.kind ?? 'inscribed';
       } else {
         const memberLines = con.entityIds
           .map((id) => activeSketch.entities.find((e) => e.id === id))
@@ -46,13 +48,16 @@ export function createPolygonEditActions({ set, get }: CADSliceContext): Partial
       }
       if (radius < 1e-6) return;
 
-      // Regenerate vertices on the same circumscribing circle (inscribed-style):
-      // changing the side count keeps the bounding circle and redistributes
-      // vertices, matching Fusion's behaviour when editing a polygon's count.
+      // Regenerate vertices so the kind's defining circle stays fixed when the
+      // side count changes: inscribed keeps the circumscribing circle (radius =
+      // circumradius); circumscribed keeps the inscribed circle (radius = apothem,
+      // circumradius = apothem / cos(π/n), edge midpoints anchored at baseAngle).
+      const circumR = kind === 'circumscribed' ? radius / Math.cos(Math.PI / sides) : radius;
+      const angleOffset = kind === 'circumscribed' ? -Math.PI / sides : 0;
       const verts: THREE.Vector3[] = [];
       for (let i = 0; i < sides; i++) {
-        const a = baseAngle + (i / sides) * Math.PI * 2;
-        verts.push(center.clone().addScaledVector(t1, Math.cos(a) * radius).addScaledVector(t2, Math.sin(a) * radius));
+        const a = baseAngle + angleOffset + (i / sides) * Math.PI * 2;
+        verts.push(center.clone().addScaledVector(t1, Math.cos(a) * circumR).addScaledVector(t2, Math.sin(a) * circumR));
       }
 
       const newLineIds: string[] = [];
@@ -87,7 +92,7 @@ export function createPolygonEditActions({ set, get }: CADSliceContext): Partial
       const newPolygonConstraintId = crypto.randomUUID();
       newConstraints.push({
         id: newPolygonConstraintId, type: 'polygon', entityIds: newLineIds,
-        polygonMeta: { center: { x: center.x, y: center.y, z: center.z }, radius, baseAngle },
+        polygonMeta: { center: { x: center.x, y: center.y, z: center.z }, radius, baseAngle, kind },
       });
 
       get().pushUndo();
