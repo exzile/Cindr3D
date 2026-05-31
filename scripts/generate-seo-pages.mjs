@@ -10,13 +10,13 @@ const pages = [
     route: '/',
     title: 'Cindr3D | Browser CAD, Slicing, and 3D Printer Control',
     description:
-      'Cindr3D is a browser-based CAD, slicing, and printer-control workspace for designing models, preparing prints, and managing 3D printer fleets.',
-    ogDescription: 'Browser-based CAD, slicing, and 3D printer control for makers and print farms.',
-    heading: 'Browser CAD, slicing, and 3D printer control',
+      'Cindr3D is an open-source, OCC-backed browser CAD, slicing, and printer-control workspace for designing models, preparing prints, and managing 3D printer fleets.',
+    ogDescription: 'Open-source OCC-backed browser CAD, slicing, and 3D printer control for makers and print farms.',
+    heading: 'OCC-backed browser CAD, slicing, and 3D printer control',
     intro:
       'Cindr3D brings model design, print preparation, G-code inspection, and printer monitoring into one browser workspace.',
     highlights: [
-      'Design printable parts with sketch and solid modeling tools.',
+      'Design printable parts with OCC-backed sketch and solid modeling tools.',
       'Prepare prints with slicer profiles, previews, and G-code simulation.',
       'Monitor and control printers from a customizable fleet dashboard.',
     ],
@@ -29,7 +29,7 @@ const pages = [
       {
         title: 'Built for self-hosted 3D printing',
         body:
-          'The app is open source and runs in the browser, with workflows for printable model design, slicing setup, print simulation, and direct printer dashboard control for common firmware environments.',
+      'The app is open source and runs in the browser, with OCC-backed printable model design, slicing setup, print simulation, and direct printer dashboard control for common firmware environments.',
       },
     ],
     priority: 1,
@@ -38,14 +38,14 @@ const pages = [
     route: '/design',
     title: 'Cindr3D Design | Browser-Based CAD for 3D Printing',
     description:
-      'Design printable 3D models in the browser with parametric sketches, solid modeling tools, fillets, chamfers, and editable CAD features.',
-    ogDescription: 'Parametric browser CAD tools for designing and editing printable 3D models.',
-    heading: 'Browser-based CAD for 3D printing',
+      'Design printable 3D models in the browser with OCC-backed parametric sketches, profile-aware extrude, fillets, chamfers, and editable CAD features.',
+    ogDescription: 'OCC-backed browser CAD tools for designing and editing printable 3D models.',
+    heading: 'OCC-backed browser CAD for 3D printing',
     intro:
-      'Use Cindr3D Design to sketch, extrude, edit, fillet, chamfer, and iterate on printable models without leaving the browser.',
+      'Use Cindr3D Design to sketch, select profiles, extrude, edit, fillet, chamfer, and iterate on printable models without leaving the browser.',
     highlights: [
       'Create parametric sketches with constraints and profile selection.',
-      'Build solid features such as extrude, revolve, fillet, and chamfer.',
+      'Build OCC-backed solid features such as extrude, revolve, fillet, and chamfer.',
       'Keep an editable modeling timeline for design changes.',
     ],
     sections: [
