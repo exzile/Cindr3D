@@ -126,8 +126,16 @@ export function renderBasicShapePreview(activeTool: string, h: SketchPreviewHelp
 
     case 'arc': {
       if (drawingPoints.length === 1) {
-        addLine([startV, mousePos]);
-        addLine(circlePoints(startV, mousePos.distanceTo(startV)));
+        const radius = mousePos.distanceTo(startV);
+        // Always draw a small crosshair at the center so the placed point is
+        // visible immediately after the first click (before cursor movement).
+        const cross = 0.4;
+        addLine([startV.clone().addScaledVector(t1, -cross), startV.clone().addScaledVector(t1, cross)]);
+        addLine([startV.clone().addScaledVector(t2, -cross), startV.clone().addScaledVector(t2, cross)]);
+        if (radius > 0.01) {
+          addLine([startV, mousePos]);
+          addLine(circlePoints(startV, radius));
+        }
       } else if (drawingPoints.length === 2) {
         const startPt = drawingPoints[1];
         const startVec = new THREE.Vector3(startPt.x, startPt.y, startPt.z);
