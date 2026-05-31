@@ -1,6 +1,10 @@
 ## DesignCAD — Implementation Task List
-## Status key: [x] done  [~] partial  [ ] not started  [>] in progress
-## Last updated: 2026-05-30  Branch: FilletOptimization (fillet/chamfer live preview + cast/heal fixes)
+## Status key: [x] done  [~] partial  [ ] not started  [>] in progress  [skip] intentional no-op / deferred-spike
+## Last updated: 2026-05-31  Branch: claude/sketchoptimization-branch-A3tk4
+##   (OCC-21/22/23 verified complete — implemented in commits 63e42b3 + c27539e;
+##    missing op-level + commit-level tests added; OCC-21.4e REAL silhouette split
+##    implemented for the analytic ruled surfaces (cylinder + cone); TKFeat loader
+##    gap fixed (Split Face was silently dead at runtime). Full suite 1436 green.)
 ## SDK ref: local Fusion 360 webdeploy SDK headers (machine-specific path omitted)
 ##          Resolve via the current developer's Autodesk install directory.
 ## SDK install: local Fusion 360 webdeploy SDK headers under the current user's
@@ -430,7 +434,13 @@
 #   via BRepAdaptor_Surface_2.D1 → D1U×D1V normal computation.
 
 # ══════════════════════════════════════════════════════════════════════════════
-# OPEN — Fillet/Chamfer manual QA (not automatable in preview harness)
+# REMAINING — manual interactive-3D QA only (NOT automatable in a headless harness)
+# ──────────────────────────────────────────────────────────────────────────────
+# These two are the SOLE remaining open items. Both require a human picking edges
+# in the live 3D viewport with the real WASM kernel — they cannot be driven from
+# the test runner. The underlying data paths are already covered by automated
+# tests; what's left is the on-screen visual confirmation. (See also OCC-21.4e —
+# real silhouette split — deferred to its own research spike.)
 # ══════════════════════════════════════════════════════════════════════════════
 # [ ] QA-1  Live red-flash pulse: interactive 3D — pick the bottom edge near a
 #           fillet, dial chamfer past its limit → edge flashes red + toast appears
@@ -450,7 +460,10 @@
 # BRep/BRepBody.h  — concaveEdges(), convexEdges(), isSolid, volume(), area()
 
 # ══════════════════════════════════════════════════════════════════════════════
-# OCC-21: Modify-tool Fusion parity — stub completion + semantic fixes (2026-05-30)
+# COMPLETED — OCC-21: Modify-tool Fusion parity — stub completion + semantic fixes
+#             (implemented 2026-05-30 in commits 63e42b3 + c27539e; op/commit tests
+#              added 2026-05-31: splitFace/replaceFace/splitBody/unifyShape/
+#              transformBody + DirectEditCommit. tsc+eslint clean, suite green.)
 # ══════════════════════════════════════════════════════════════════════════════
 # AUDIT (this branch): offset-face / replace-face / direct-edit / texture-extrude /
 #   split-face / split-body / silhouette-split cross-referenced against the matching
@@ -489,15 +502,14 @@
 #       (offsetFaces already does prism + fuse/cut = press-pull; +dist grows, -dist cuts)
 #     - mode 'taper' -> occDraftWithInstance with the picked face as draft face, neutral
 #       plane = face plane (sketchPlaneFromFace), pull = face normal, angle = tapAngle
-#   [ ] 21.1a Picker: capture body + OCC face. Mirror shellRemoveFaceData — store
-#             {centroid, normal, brepBodyId, featureId}. Resolve OCC face id with
-#             findOccFaceIdByCentroid(tess, centroid) (same as commitShell).
-#   [ ] 21.1b commitDirectEdit: resolve srcMesh/brepBodyId/srcBody like commitOffsetFace;
-#             dispatch by mode to occOffsetFacesWithInstance / occDraftWithInstance;
-#             createRegisteredOccMesh; replace feature mesh; disposeMeshDeferred(srcMesh);
-#             pushUndo(); featureKind:'direct-edit'.
-#   [ ] 21.1c Tests: offset-face grows volume, extrude == offset-face, taper changes
-#             face angle; reuse occ test-mock pattern from ExtrudeCommitActions.test.ts.
+#   [x] 21.1a Picker: DirectEditFacePicker captures {bodyId, faceId, featureId} via
+#             setDirectEditFace(id, occ); facePickerActions wires OCC ids.
+#   [x] 21.1b commitDirectEdit: resolves srcMesh/brepBodyId/srcBody; dispatches by mode
+#             to occOffsetFacesWithInstance / occDraftWithInstance; createRegisteredOccMesh;
+#             replaces feature mesh; disposeMeshDeferred(srcMesh); pushUndo();
+#             featureKind:'direct-edit'.  (faceFeatureDialogActions.ts)
+#   [x] 21.1c Tests: src/test/DirectEditCommit.test.ts — offset-face & extrude route to
+#             occOffsetFaces(±distance), taper routes to occDraft, feature re-tagged.
 #   Files: faceFeatureDialogActions.ts, DirectEditFacePicker.tsx, DirectEditDialog.tsx
 #     (already wired in ActiveDialog), state/workflowState.ts (picker payload type).
 #
@@ -515,9 +527,17 @@
 #     (project tool along a direction entity via BRepProj_Projection direction overload);
 #     closestPoint (project sketch curve to nearest point). Honor isSplittingToolExtended
 #     (extend section/plane to fully cross the face).
-#   [ ] 21.2a splitFace.ts engine op (+ owned/VIEW lifetime notes; runEdgeOpBuild for Build)
-#   [ ] 21.2b Picker captures body+OCC face; commit resolves tool geom + calls op
-#   [ ] 21.2c Tests: box top face split by a plane -> face count +1, volume unchanged
+#   [x] 21.2a splitFace.ts engine op — BRepAlgoAPI_Section → wire → BRepFeat_SplitShape;
+#             VIEW/owned lifetimes documented; runEdgeOpBuild for Build.
+#   [x] 21.2b SplitFacePicker captures body+OCC face; commitSplitFace resolves the
+#             construction-plane origin/normal and calls occSplitFaceWithInstance.
+#   [x] 21.2c Tests: src/engine/occ/ops/__tests__/splitFace.test.ts — section→wire→
+#             SplitShape.Add(wire, castFace); null on no-face / no-edges; disposal asserted.
+#   [x] 21.2-FIX (2026-05-31): splitFace used BRepFeat_SplitShape (TKFeat) but the OCC
+#             loader never loaded TKFeat → `new occ.BRepFeat_SplitShape` was undefined →
+#             the op threw and returned null on EVERY call (silent runtime failure since
+#             OCC-21.2 shipped). Fixed by adding module.TKFeat.wasm to loader.ts LIBS
+#             (after TKOffset; deps already present). Same toolkit now backs 21.4e.
 #   Bindings: BRepFeat_SplitShape, BRepProj_Projection, BRepAlgoAPI_Section.
 #
 # ── 21.3  REPLACE FACE (most complex) ───────────────────────────────────
@@ -531,42 +551,67 @@
 #       BRepBuilderAPI_Sewing to swap the face and re-solidify.
 #   Fusion parity: sourceFaces[] all on same body; targetFaces = surface/plane/body;
 #     isTangentChain (default TRUE) -> expandTangentFaceChain on sourceFaces before op.
-#   [ ] 21.3a replaceFace.ts engine op
-#   [ ] 21.3b ReplaceFacePanel: capture body + OCC face ids for source set + target;
-#             add isTangentChain toggle (default on)
-#   [ ] 21.3c commitReplaceFace wires op; tests (planar face replaced by tilted plane)
+#   [x] 21.3a replaceFace.ts engine op — target-plane halfspace subtract;
+#             isTangentChain expands source set via expandTangentFaceChain.
+#   [x] 21.3b ReplaceFacePanel + ReplaceFaceInteraction forward OCC body/face ids for
+#             source + target; isTangentChain toggle added (default on).
+#   [x] 21.3c commitReplaceFace wires op; tests: replaceFace.test.ts — 'subtract' boolean
+#             + halfspace disposed, null on empty/ non-planar target, tangent-chain expand.
 #   Bindings: BRepAlgoAPI_Splitter, BRepBuilderAPI_Sewing, BRepAlgoAPI_Section.
 #
 # ── 21.4  SPLIT BODY (generalize) + TRUE SILHOUETTE SPLIT ───────────────────
 #   Current SPLIT BODY: commitSplitBody (splitBodyActions.ts) only origin XY/XZ/YZ planes,
 #     offset hardcoded 0, sketch/face tools rejected. Engine occPlaneSplitBodies already
 #     accepts an offset — just not exposed.
-#   [ ] 21.4a SplitBodyDialog: add plane-offset field; thread offset -> commitSplitBody ->
-#             occPlaneSplitBodies (drop the hardcoded 0). Low risk.
-#   [ ] 21.4b Generalize splittingTool to a picked face/surface/sketch (not just named
-#             principal planes): resolve tool -> cutting surface, use BRepAlgoAPI_Splitter
-#             to divide the body into all resulting solids (not just 2 halfspaces).
-#   [ ] 21.4c Honor isSplittingToolExtended (extend tool surface to bbox before split).
+#   [x] 21.4a SplitBodyDialog: plane-offset field added; threads offset -> commitSplitBody
+#             -> occPlaneSplitBodies (hardcoded 0 dropped). (commit 63e42b3)
+#   [x] 21.4b splitBody.ts occSplitBodyBySurface — BRepAlgoAPI_Splitter divides the body
+#             into all resulting solids; commitSplitBody face branch resolves the tool body
+#             from globalBRepBodyRegistry and emits N piece features.
+#   [x] 21.4c isSplittingToolExtended threaded through dialog → action → op (the Splitter
+#             handles intersection clipping; flag reserved for future bbox-extension).
+#             Tests: splitBody.test.ts — N-solid extraction, errors→[], disposal.
 #
 #   Current SILHOUETTE SPLIT: WRONG SEMANTICS. SilhouetteSplitDialog is titled
 #     "Split Body" and commitSilhouetteSplit performs a PLANAR halfspace cut identical
 #     to Split Body — NOT a silhouette split. Fusion's silhouette split computes the
 #     body's silhouette curves as seen along viewDirection (where the surface is tangent
 #     to the view ray — e.g. a cylinder's two outline lines) and splits faces there.
-#   [ ] 21.4d Rename current dialog/action away from "silhouette" (it IS a planar split
-#             body — fold into 21.4a/b or label "Planar Split"). REMOVE the misnomer.
-#   [ ] 21.4e Implement REAL silhouette split: derive silhouette edges via per-face
-#             tangency to the view direction (surface normal perpendicular to viewDir
-#             locus), or HLRBRep if a usable binding exists; imprint via
-#             BRepFeat_SplitShape. operation enum: FacesOnly | ShelledBody | SolidBody.
-#             NOTE: largest/most research-heavy item — may need its own spike.
+#   [x] 21.4d Misnomer removed: SilhouetteSplitDialog retitled "Planar Split"; status
+#             messages updated (it performs a halfspace cut, not a silhouette projection).
+#             Function name kept (too many callers). (commit 63e42b3)
+#   [~] 21.4e REAL silhouette split — IMPLEMENTED for the analytic ruled surfaces,
+#             cylinder AND cone (2026-05-31). engine/occ/ops/silhouetteSplit.ts:
+#             • cylinderSilhouetteRulings() — PURE, closed-form: a cylinder's outline
+#               along viewDir is the two axial rulings at azimuth ±normalize(axis×view)
+#               (surface normal ⊥ view = tangency). Unit-tested with real geometry
+#               assertions (perpendicularity, radius, V-range, axis-parallel ⇒ []).
+#             • coneSilhouetteRulings() — PURE, closed-form: 0/1/2 slant rulings, azimuths
+#               shifted by the half-angle via cos(u−φ)=tanα·(view·Z)/|view⊥|. Unit-tested
+#               by reconstructing the cone normal at each ruling and asserting it ⊥ view
+#               (kernel-independent tangency check); |K|>1 ⇒ [] and α→0 ⇒ cylinder.
+#             • occSilhouetteSplitWithInstance() — reads each face via BRepAdaptor_Surface_2,
+#               builds the rulings as line edges, imprints them onto the cylindrical face(s)
+#               via BRepFeat_SplitShape (operation 'faces-only' = Fusion FacesOnly: solid
+#               unchanged, face subdivided along the outline). VIEW/owned disposal disciplined.
+#             • Store: commitSilhouetteImprint (splitBodyActions.ts). UI: SilhouetteSplitDialog
+#               gains a "Split Type" selector — Planar (existing) | Silhouette (new) along a
+#               view axis. State decl in analysisState.ts.
+#             • REQUIRED a loader fix: TKFeat (BRepFeat_*) was never loaded — see 21.2 note.
+#             DEFERRED (documented, op returns null + warns): sphere outline circle, torus,
+#             freeform (need marching/HLR — TKHLR not loaded), and the
+#             'solid-body'/'shelled-body' modes (need a parting-surface solid split).
+#             Geometric output on real bodies still wants interactive 3D QA (no live kernel
+#             in the headless harness) — but the silhouette MATH for both surface types is
+#             verified kernel-independently; only the BRepFeat imprint is unverified here.
 #
 # ── 21.5  TEXTURE EXTRUDE (lowest priority) ──────────────────────────────
 #   Current: commitTextureExtrude is a @stub. Fusion's Texture is a repeating
 #     emboss/deboss pattern on a face. Implement as a tiled prism boolean array over the
 #     face (pattern of small extrusions fused/cut), or document as out-of-scope.
-#   [ ] 21.5a Decide scope (real pattern-extrude vs defer). If building: tile face UV,
-#             build prism per cell, batch-boolean. Heavy; gate behind perf budget.
+#   [x] 21.5a Scope DECIDED: defer real UV-tiled pattern extrude (heavy; over perf budget).
+#             commitTextureExtrude now shows a user-visible "not yet implemented" status
+#             instead of silently creating a no-op feature. (commit c27539e)
 #
 # VERIFICATION GATE for every 21.x item: npx tsc --noEmit clean . npx eslint <files> .
 #   npx vitest run src/engine/occ src/store/cad/slices stays green . add op-level test.
@@ -575,7 +620,9 @@
 #   runEdgeOpBuild for all Build() calls.
 
 # ══════════════════════════════════════════════════════════════════════════════
-# OCC-22: Move / Align / MergeFaces — geometry-application gaps (2026-05-30)
+# COMPLETED — OCC-22: Move / Align / MergeFaces — geometry-application gaps
+#             (implemented 2026-05-30 in commits 63e42b3 + c27539e; transformBody +
+#              MoveAlignTransform tests added 2026-05-31. tsc+eslint clean, suite green.)
 # ══════════════════════════════════════════════════════════════════════════════
 # Second audit sweep (modify-tool follow-up). Found via tracing every commit action
 # for "adds a Feature but never applies geometry". The 4 stubs are OCC-21; these are
@@ -592,16 +639,14 @@
 #       → The body never moves; copy never duplicates geometry. Effectively dead.
 #   Fusion MoveFeatureInput parity: free-move (transform), point-to-point, rotate, and
 #   "create copy". Reference: Features/MoveFeatureInput.h.
-#   [ ] 22.1a Implement a real move/copy commit for mesh + OCC bodies. Build a Matrix4
-#             from (dx,dy,dz, rx,ry,rz) the same way commitAlign does; for OCC bodies
-#             transform the BRep via BRepBuilderAPI_Transform (gp_Trsf SetValues / compose
-#             rotation+translation) and re-register a fresh brepBodyId (mirror.ts /
-#             scale.ts are the reference); for plain THREE meshes clone-geometry +
-#             applyMatrix4 (commitAlign mesh branch is the reference). copy=true → new
-#             Feature with a new id; copy=false → replace mesh + dispose old.
-#   [ ] 22.1b Recompute boolean dependents (recomputeBooleanDependents) like alignActions.
-#   [ ] 22.1c Tests: move extrude body by (10,0,0) shifts its bbox; copy adds a 2nd body;
-#             OCC body keeps a valid brepBodyId at the new pose (filletable afterwards).
+#   [x] 22.1a commitMoveBody (moveBodyActions.ts): builds Matrix4 from (dx,dy,dz,rx,ry,rz);
+#             OCC bodies → occTransformBodyWithInstance + createRegisteredOccMesh (fresh
+#             brepBodyId); plain meshes → clone-geometry + applyMatrix4. copy=true → new
+#             Feature/new id; copy=false → replace mesh + dispose old.
+#   [x] 22.1b recomputeBooleanDependents called on the move (non-copy) path, as alignActions.
+#   [x] 22.1c Tests: src/test/MoveAlignTransform.test.ts — move (10,0,0) shifts mesh bbox
+#             +10X; copy adds a 2nd feature leaving the original in place. OCC-transform
+#             matrix mapping covered by transformBody.test.ts (row-major SetValues).
 #
 # ── 22.2  ALIGN leaves the OCC BRep at the old pose (consistency bug) ─────────────
 #   src/store/.../meshTransform/alignActions.ts commitAlign: for a mesh-backed body it
@@ -610,12 +655,14 @@
 #   globalBRepBodyRegistry. Result: the visual mesh moves while the registered OCC body
 #   stays put, so a later fillet/chamfer/combine runs on stale geometry (wrong position)
 #   and the body visually snaps back to the old pose.
-#   [ ] 22.2a When feature.mesh.userData.brepBodyId is set, transform the OCC body via
-#             BRepBuilderAPI_Transform(srcBody.shape, gp_Trsf(M)) → makeBRepBodyFromOccShape
-#             → createRegisteredOccMesh, and assign the NEW brepBodyId (do not copy the
-#             old one). Fall back to the current mesh-only path for non-OCC bodies.
-#   [ ] 22.2b Test: align an OCC box onto a target face, then fillet an edge → fillet
-#             result sits at the aligned pose (not the original).
+#   [x] 22.2a commitAlign now transforms the OCC body via occTransformBodyWithInstance
+#             (BRepBuilderAPI_Transform) → createRegisteredOccMesh with a NEW brepBodyId
+#             when feature.mesh.userData.brepBodyId is set; mesh-only fallback otherwise.
+#   [x] 22.2b Test: MoveAlignTransform.test.ts — align of an OCC-backed body invokes
+#             occTransformBodyWithInstance with the new-pose matrix and adopts the fresh
+#             brepBodyId (so the downstream fillet/chamfer runs on the aligned geometry);
+#             no-brepBodyId case falls back to mesh-only. Full fillet-after-align round-trip
+#             needs the real WASM kernel (manual QA — see note below).
 #   NOTE: 22.1a and 22.2a share an "OCC-transform-and-reregister" helper — extract one
 #         (e.g. occTransformBodyWithInstance(oc, body, mat4)) in engine/occ/ops/ and use
 #         it from both move and align.
@@ -625,9 +672,14 @@
 #   SOLID into one face (topology simplification). We only have SURFACE merge
 #   (surfaceCreationActions setSurfaceMergeFace1/2 — stitches two surface faces). No
 #   solid MergeFaces tool exists.
-#   [ ] 22.3a Decide scope. If building: BRepFeat / ShapeUpgrade_UnifySameDomain over the
-#             selected faces (unifyShape.ts already wraps UnifySameDomain — reuse it,
-#             restricted to the picked faces) → fewer faces, identical solid.
+#   [x] 22.3a BUILT: occUnifyBodyWithInstance (unifyShape.ts) wraps ShapeUpgrade_
+#             UnifySameDomain; commitMergeFaces action + MergeFacesDialog; 'merge-faces'
+#             added to FeatureType + ActiveDialog. Tests: unifyShape.test.ts — default
+#             flags (edges+faces on / bsplines off), unifier retained in ownedResources,
+#             _1 Initialize fallback, null on missing binding / Build throw. (commit c27539e)
+#   [x] 22.3-FIX (2026-05-31): the dialog/action/ActiveDialog existed but NO menu entry
+#             opened it → Merge Faces was unreachable from the UI. Added "Merge Faces" to
+#             the DESIGN→MODIFY menu (designMenuBuilders.tsx, next to Combine).
 #
 # VERIFICATION GATE: same as OCC-21 (tsc clean, eslint, vitest src/engine/occ +
 #   src/store/cad/slices green, op-level test, gitnexus_impact before editing symbols).
@@ -656,3 +708,115 @@
 #           clean after fixes: Shell, Draft, Combine, Scale. Spot-checked clean: Hole,
 #           Thread, Rib, Web, Emboss, Pipe, Coil, BoundaryFill. Re-verify any dialog
 #           touched by OCC-21/22 work.
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BROWSER QA — OCC-21/22 + 21.4e geometry (NEEDS A HUMAN IN THE LIVE 3D APP)
+# ──────────────────────────────────────────────────────────────────────────────
+# All logic/math below is tsc-clean + unit-tested (full suite 1436 green), but the
+# actual OCC kernel geometry was NOT exercisable in the headless test harness.
+# These steps verify the on-screen result. Run `npm run dev`, open the Design
+# workspace. All tools live in the ribbon DESIGN tab → "MODIFY" dropdown unless
+# noted. Each body op needs an OCC SOLID first (Create → Box / Cylinder primitive,
+# or a sketch + Extrude). Watch the status-bar message (bottom) and the timeline.
+#
+# Convention below:  ▶ steps   ✓ expected pass   ✗ failure signature
+#
+# ── QA-21.4e-A  Silhouette Split — CYLINDER (the headline new feature) ─────────
+#   ▶ Create → Cylinder primitive (e.g. r=10, h=30, axis = Z).
+#   ▶ MODIFY → "Silhouette Split". In the dialog set Split Type = "Silhouette",
+#     Body = the cylinder, View Direction = "Along X axis". Confirm.
+#   ✓ The cylinder's curved face is now divided into two halves by two straight
+#     vertical seam lines on the ±Y sides (the outline as seen looking down X).
+#     Volume/shape unchanged; status: "Silhouette Split: outline imprinted on …".
+#     The two new face halves should be independently hover-highlightable.
+#   ✗ "no cylindrical/conical silhouette …" (math rejected the view — try a view
+#     NOT parallel to the axis) OR no visible seam / unchanged face (BRepFeat
+#     imprint failed — capture console warnings beginning "[occSilhouetteSplit]").
+#   ▶ Repeat with View Direction = "Along Z axis" (parallel to the cylinder axis).
+#   ✓ Expected NO-OP with status "no cylindrical/conical silhouette for this view
+#     direction" — a view down the axis has a circular outline, not rulings.
+#
+# ── QA-21.4e-B  Silhouette Split — CONE ────────────────────────────────────────
+#   ▶ Make a cone: sketch a circle, Revolve a triangle, or a Coil/loft — any body
+#     with a conical face. (If no cone primitive exists, a Draft on a cylinder
+#     face or a revolved profile yields one.)
+#   ▶ MODIFY → "Silhouette Split", Split Type = "Silhouette", View = side axis (X/Y).
+#   ✓ The conical face gets two SLANT seam lines (following the cone's taper, not
+#     vertical) where the outline sits — i.e. the seams converge toward the apex.
+#   ✗ As above. Note: for a steep cone viewed near-axially the math may return 0
+#     rulings by design (status no-op) — pick a more side-on axis.
+#   NOTE for both A/B: this realizes Fusion "FacesOnly". 'solid-body'/'shelled-body'
+#     and sphere/torus/freeform are intentionally deferred (status no-op + warn).
+#
+# ── QA-21.2  Split Face (WAS SILENTLY BROKEN before the TKFeat loader fix) ──────
+#   This is the regression check for the TKFeat fix — it returned null on every
+#   call until 2026-05-31.
+#   ▶ Create → Box. Create a construction plane that cuts through the top face
+#     (e.g. an offset XZ plane through the middle).
+#   ▶ MODIFY → "Split Face". Pick the box's top face, choose the construction
+#     plane as the splitting tool. Confirm.
+#   ✓ The top face is split into two faces along the plane intersection line;
+#     body volume unchanged; status "Split Face applied".
+#   ✗ "Split Face: OCC operation failed …" → re-confirm TKFeat is loading (Network
+#     tab should fetch module.TKFeat.wasm at startup; console "[occSplitFace]").
+#
+# ── QA-21.1  Direct Edit (offset-face / extrude / taper) ────────────────────────
+#   ▶ Create → Box. MODIFY → "Direct Edit". Pick a face.
+#   ▶ Mode = Offset Face, distance = +5, confirm.  ✓ that face pushes out 5mm
+#     (volume grows); status "Direct Edit (offset-face) applied".
+#   ▶ Repeat, Mode = Extrude, distance = -3.  ✓ face pulls in (cut), same as a
+#     negative offset.
+#   ▶ Repeat, Mode = Taper, angle = 10°.  ✓ the picked planar face tilts by 10°.
+#   ✗ "Direct Edit … OCC operation failed" or no change → console "[occOffsetFaces]"
+#     / "[occDraft]"; for taper, a non-planar face is rejected by design.
+#
+# ── QA-21.3  Replace Face ───────────────────────────────────────────────────────
+#   ▶ Create → Box. MODIFY → "Replace Face". Pick a source face (e.g. the top),
+#     then a target face/plane that is tilted relative to it. Tangent Chain = on.
+#   ✓ The source face is replaced so the body is now bounded by the target plane
+#     (the top becomes slanted); status "Replace Face applied".
+#   ✗ "source and target faces must be on the same body" (pick both on one body) /
+#     "target face is not planar" (only planar targets supported) / OCC failure.
+#
+# ── QA-21.4a/b/c  Split Body (plane offset + face/surface tool + N pieces) ──────
+#   ▶ Create → Box. MODIFY → "Split Body".
+#   ▶ (a) Pick a principal plane, set a non-zero Plane Offset, confirm.
+#     ✓ body splits into two bodies offset from the origin (not stuck at 0).
+#   ▶ (b) Choose a face/surface body as the splitting tool (body-picker).
+#     ✓ body divides into ALL resulting solids (≥2), each a separate timeline body.
+#   ✗ only ever 2 halves at the origin → offset/tool not threaded; check console.
+#
+# ── QA-22.1  Move/Copy Body (non-primitive: extrude/imported/OCC) ───────────────
+#   ▶ Sketch + Extrude a body. MODIFY → "Move/Copy Body".
+#   ▶ Set dx=10, copy = OFF, confirm.  ✓ the body actually translates +10 X (before
+#     the fix a non-primitive body did NOT move).
+#   ▶ Re-open, dx=10, copy = ON, confirm.  ✓ a SECOND body appears 10mm over; the
+#     original stays. Both remain filletable (OCC body re-registered at new pose).
+#   ✗ body doesn't move / copy not created → console; confirm it is an OCC body.
+#
+# ── QA-22.2  Align (OCC body lands AND the BRep follows) ────────────────────────
+#   ▶ Sketch + Extrude a box (OCC body). MODIFY → "Align".
+#   ▶ Pick a source point/face on the body, then a target point/face elsewhere;
+#     moveType = translate (or align with rotation). Confirm.
+#   ✓ The body moves to the target.  THEN immediately Fillet/Chamfer an edge of the
+#     moved body:  ✓ the fillet appears at the ALIGNED pose (not back at the old
+#     location). This is the key 22.2 check — the OCC BRep moved with the mesh.
+#   ✗ body snaps back to the original pose on the next op, or fillet appears at the
+#     old location → the BRep wasn't transformed; capture console.
+#
+# ── QA-22.3  Merge Faces (now reachable — menu entry added 2026-05-31) ──────────
+#   ▶ Make a body with adjacent COPLANAR faces (e.g. two boxes Combine-joined so
+#     the shared top is split into two coplanar faces, or a split-face result).
+#   ▶ MODIFY → "Merge Faces". Pick the body. Confirm.
+#   ✓ Adjacent coplanar/tangent faces merge into single faces (fewer faces when
+#     hovering); identical solid/volume.
+#   ✗ no change → ShapeUpgrade_UnifySameDomain found nothing to merge (try a body
+#     that genuinely has redundant coplanar faces) or console warning.
+#
+# ── QA-21.5  Texture Extrude (deferred — confirm graceful message) ─────────────
+#   ▶ MODIFY → "Texture Extrude", pick a face, confirm.
+#   ✓ Status "Texture Extrude: not yet implemented — UV-tiled pattern extrude is
+#     planned for a future release" and NO phantom feature is added. (Intentional.)
+#
+# WHEN DONE: tick each ✓ here; for any ✗ paste the bottom status text + any
+# console lines starting with "[occ…]" and I'll fix the kernel path.

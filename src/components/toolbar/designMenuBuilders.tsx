@@ -136,6 +136,7 @@ export function buildDesignMenus({
     { icon: <ArrowUp size={MI} />, label: 'Draft', onClick: () => setActiveDialog('draft') },
     { icon: <Move size={MI} />, label: 'Scale', onClick: () => setActiveDialog('scale') },
     { icon: <Combine size={MI} />, label: 'Combine', onClick: () => setActiveDialog('combine') },
+    { icon: <Combine size={MI} />, label: 'Merge Faces', onClick: () => setActiveDialog('merge-faces') },
     { separator: true, icon: <Square size={MI} />, label: 'Offset Face', onClick: () => setActiveDialog('offset-face') },
     { icon: <Square size={MI} />, label: 'Replace Face', onClick: openReplaceFaceDialog },
     { icon: <Pencil size={MI} />, label: 'Direct Edit', onClick: openDirectEditDialog },
