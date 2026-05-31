@@ -710,7 +710,6 @@
 #           touched by OCC-21/22 work.
 
 # ══════════════════════════════════════════════════════════════════════════════
-<<<<<<< HEAD
 # SKETCH-1: Sketch tool / constraint / dimension parity vs Fusion 360 (2026-05-30)
 # ══════════════════════════════════════════════════════════════════════════════
 # Full audit of Cindr3D sketch against Fusion 360 SDK (Sketch/ headers).
@@ -1272,7 +1271,6 @@
 #           inference glyphs in the freehand line/arc commit handlers; have
 #           autoConstrainSketch (constraintAndViewActions.ts:10-106) call solveSketch()
 #           after adding so the auto constraints actually move geometry. (Pairs with A10.)
-=======
 # BROWSER QA — OCC-21/22 + 21.4e geometry (NEEDS A HUMAN IN THE LIVE 3D APP)
 # ──────────────────────────────────────────────────────────────────────────────
 # All logic/math below is tsc-clean + unit-tested (full suite 1436 green), but the
@@ -1383,4 +1381,3 @@
 #
 # WHEN DONE: tick each ✓ here; for any ✗ paste the bottom status text + any
 # console lines starting with "[occ…]" and I'll fix the kernel path.
->>>>>>> origin/master
