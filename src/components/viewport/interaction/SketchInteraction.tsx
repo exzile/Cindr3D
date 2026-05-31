@@ -17,7 +17,7 @@ const _tmpP1 = new THREE.Vector3();
 const _tmpSeg = new THREE.Vector3();
 
 export default function SketchInteraction() {
-  const { camera, gl, raycaster, scene } = useThree();
+  const { camera, gl, raycaster, scene, size: viewportSize } = useThree();
   const activeTool = useCADStore((s) => s.activeTool);
   const activeSketch = useCADStore((s) => s.activeSketch);
   const addSketchEntity = useCADStore((s) => s.addSketchEntity);
