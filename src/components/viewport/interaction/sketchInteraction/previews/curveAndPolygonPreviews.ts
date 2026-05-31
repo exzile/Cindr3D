@@ -63,6 +63,8 @@ export function renderCurveAndPolygonPreview(activeTool: string, h: SketchPrevie
       const d = mousePos.clone().sub(startV);
       const baseAngle = Math.atan2(d.dot(t2), d.dot(t1));
       const verts = polygonVertexPositions(startV, cursorDist, polygonSides, baseAngle, 'inscribed', t1, t2);
+      // Fusion draws the reference circle: for inscribed it passes through the vertices.
+      if (cursorDist > 0.01) addLine(circlePoints(startV, cursorDist));
       addLine(polygonLoop(verts));
       addLine([startV, mousePos]);
       return true;
@@ -74,6 +76,9 @@ export function renderCurveAndPolygonPreview(activeTool: string, h: SketchPrevie
       const d = mousePos.clone().sub(startV);
       const baseAngle = Math.atan2(d.dot(t2), d.dot(t1));
       const verts = polygonVertexPositions(startV, apothem, polygonSides, baseAngle, 'circumscribed', t1, t2);
+      // Fusion draws the reference circle: for circumscribed it is the INSCRIBED circle,
+      // tangent to every edge (radius = apothem). The vertices poke outside it.
+      if (apothem > 0.01) addLine(circlePoints(startV, apothem));
       addLine(polygonLoop(verts));
       addLine([startV, mousePos]);
       return true;
