@@ -393,6 +393,7 @@ interface OrientedEntity { entity: SketchEntity; reversed: boolean; }
 function orientedChainToShape(
   chain: OrientedEntity[],
   project: (p: SketchPoint) => { u: number; v: number },
+  autoClose = false,
 ): THREE.Shape | null {
   const shape = new THREE.Shape();
   let hasContent = false;
@@ -459,6 +460,9 @@ function orientedChainToShape(
     }
   }
 
+  // Snap a healed near-miss loop exactly shut so the resulting region is closed.
+  if (hasContent && autoClose) shape.closePath();
+
   return hasContent ? shape : null;
 }
 
@@ -500,6 +504,15 @@ export function entitiesToShapes(
     let chainEnd = chainable[seed].endpoints[1];
     used.add(seed);
 
+    // Track the chain's bounding box so the closing-gap heal tolerance can be
+    // proportional to the sketch's size (see the closure check below).
+    let minU = Math.min(chainStart.u, chainEnd.u), maxU = Math.max(chainStart.u, chainEnd.u);
+    let minV = Math.min(chainStart.v, chainEnd.v), maxV = Math.max(chainStart.v, chainEnd.v);
+    const grow = (p: { u: number; v: number }) => {
+      if (p.u < minU) minU = p.u; if (p.u > maxU) maxU = p.u;
+      if (p.v < minV) minV = p.v; if (p.v > maxV) maxV = p.v;
+    };
+
     let extended = true;
     while (extended) {
       extended = false;
@@ -511,30 +524,39 @@ export function entitiesToShapes(
         if (ptClose(chainEnd, e0)) {
           chain.push({ entity: chainable[i].entity, reversed: false });
           chainEnd = e1;
-          used.add(i);
-          extended = true;
+          used.add(i); extended = true; grow(e1);
         } else if (ptClose(chainEnd, e1)) {
           chain.push({ entity: chainable[i].entity, reversed: true });
           chainEnd = e0;
-          used.add(i);
-          extended = true;
+          used.add(i); extended = true; grow(e0);
         } else if (ptClose(chainStart, e1)) {
           chain.unshift({ entity: chainable[i].entity, reversed: false });
           chainStart = e0;
-          used.add(i);
-          extended = true;
+          used.add(i); extended = true; grow(e0);
         } else if (ptClose(chainStart, e0)) {
           chain.unshift({ entity: chainable[i].entity, reversed: true });
           chainStart = e1;
-          used.add(i);
-          extended = true;
+          used.add(i); extended = true; grow(e1);
         }
       }
     }
 
-    if (chain.length > 0 && ptClose(chainStart, chainEnd)) {
-      const shape = orientedChainToShape(chain, project);
-      if (shape) shapes.push(shape);
+    // Closure with gap-healing. A hand-drawn loop frequently ends a fraction of
+    // a millimetre short of its start (the closing snap just missed), leaving a
+    // gap far larger than `tolerance` (1µm) but tiny relative to the sketch. Such
+    // a near-miss is unambiguously meant to be closed, so we heal gaps up to ~1%
+    // of the sketch's diagonal (clamped to [0.05, 1.0] units). When healed we
+    // snap the path shut via closePath() so the region is exactly closed and the
+    // profile becomes solid-extrudable. Genuine open chains (gap well beyond the
+    // heal tolerance) are still left open → surface extrude, as before.
+    if (chain.length > 0) {
+      const gap = Math.hypot(chainStart.u - chainEnd.u, chainStart.v - chainEnd.v);
+      const extent = Math.hypot(maxU - minU, maxV - minV);
+      const healTol = Math.min(1.0, Math.max(0.05, 0.01 * extent));
+      if (gap <= healTol) {
+        const shape = orientedChainToShape(chain, project, /* autoClose */ gap > tolerance);
+        if (shape) shapes.push(shape);
+      }
     }
   }
 

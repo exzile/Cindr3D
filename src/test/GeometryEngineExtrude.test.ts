@@ -276,12 +276,17 @@ describe('chainSegments (T-junction handling)', () => {
     expect(shapes[0].curves.length).toBe(4);
   });
 
+  // NOTE: an 'XY' sketch in this app projects onto world X and −Z (getSketchAxes
+  // returns t1=(1,0,0), t2=(0,0,-1)). So test geometry must vary x AND z (y=0) to
+  // be non-degenerate — points that only vary x,y collapse onto a line.
+  const Q = (x: number, z: number) => mkPoint(x, 0, z);
+
   it('closes a loop whose segments were drawn in mixed orientations', () => {
     // Mimics drawing separate line segments and snapping endpoints together:
     // some segments end up "reversed" (their endpoints are stored end→start).
     // The corners still coincide, so the loop IS closed — the chainer must
     // honor each segment's direction rather than assuming a consistent winding.
-    const c0 = mkPoint(0, 0), c1 = mkPoint(2, 0), c2 = mkPoint(2, 1), c3 = mkPoint(0, 1);
+    const c0 = Q(0, 0), c1 = Q(20, 0), c2 = Q(20, 10), c3 = Q(0, 10);
     const entities: SketchEntity[] = [
       { id: `e${++eid}`, type: 'line', points: [c0, c1] }, // bottom  →
       { id: `e${++eid}`, type: 'line', points: [c2, c1] }, // right   ← (reversed)
@@ -294,6 +299,42 @@ describe('chainSegments (T-junction handling)', () => {
     expect(shapes[0].curves.length).toBe(4);
     // And it must be recognized as a closed (solid-extrudable) profile.
     expect(GeometryEngine.isSketchClosedProfile(sketch)).toBe(true);
+  });
+
+  it('heals a sub-millimetre closing gap so the loop extrudes as a solid', () => {
+    // Reproduces a real hand-drawn sketch: an ~60mm loop whose closing snap
+    // landed 0.36mm short of the start point. That gap is 360x the chaining
+    // tolerance, so the loop used to be rejected as open. It must now auto-heal
+    // (gap << 1% of the sketch size) and be treated as a closed profile.
+    const a = Q(-41, -38), b = Q(-19, -39), c = Q(-8, -26), d = Q(-19, -18),
+          e = Q(-4, -5), f = Q(-24, 10), g = Q(-52, -2), h = Q(-53, -23);
+    const nearStart = Q(-40.639, -38.016); // 0.36mm from `a`
+    const entities: SketchEntity[] = [
+      { id: `e${++eid}`, type: 'line', points: [a, b] },
+      { id: `e${++eid}`, type: 'line', points: [b, c] },
+      { id: `e${++eid}`, type: 'line', points: [c, d] },
+      { id: `e${++eid}`, type: 'line', points: [d, e] },
+      { id: `e${++eid}`, type: 'line', points: [e, f] },
+      { id: `e${++eid}`, type: 'line', points: [f, g] },
+      { id: `e${++eid}`, type: 'line', points: [g, h] },
+      { id: `e${++eid}`, type: 'line', points: [h, nearStart] },
+    ];
+    const sketch = mkSketch(entities);
+    expect(GeometryEngine.isSketchClosedProfile(sketch)).toBe(true);
+    expect(GeometryEngine.sketchToProfileShapesFlat(sketch)).toHaveLength(1);
+  });
+
+  it('does NOT heal a genuinely open chain (large gap stays a surface)', () => {
+    // Three sides of a 100mm square — a 100mm gap is nowhere near closed and
+    // must remain open (surface extrude), not be silently healed shut.
+    const p0 = Q(0, 0), p1 = Q(100, 0), p2 = Q(100, 100), p3 = Q(0, 100);
+    const entities: SketchEntity[] = [
+      { id: `e${++eid}`, type: 'line', points: [p0, p1] },
+      { id: `e${++eid}`, type: 'line', points: [p1, p2] },
+      { id: `e${++eid}`, type: 'line', points: [p2, p3] },
+    ];
+    const sketch = mkSketch(entities);
+    expect(GeometryEngine.isSketchClosedProfile(sketch)).toBe(false);
   });
 });
 
