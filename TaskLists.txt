@@ -885,7 +885,7 @@
 #     (248-253) as endpoint average; arcs get none, and the average would be wrong for an
 #     arc anyway. Fix: arc midpoint = point at (startAngle+endAngle)/2.
 #
-# [ ] SKETCH-2.A8  Endpoint snap leans on a per-mousemove brute-force scan of EVERY mesh
+# [x] SKETCH-2.A8  Endpoint snap leans on a per-mousemove brute-force scan of EVERY mesh
 #     vertex in the scene (310-331) — O(all verts) each move, dedup by string key,
 #     tessellation-dependent. Entity-level endpoint snap (241-247) only covers line
 #     endpoints; arc ends, spline knots, rect/polygon corners are not offered directly.
@@ -1195,7 +1195,7 @@
 #           for line/arc/circle/ellipse/spline, lowest priority above grid.
 #   [x] A6  Center branch (:268): include ellipse + elliptical-arc (center = points[0]).
 #   [x] A7  Midpoint: add arc midpoint = point at angle (startAngle+endAngle)/2.
-#   [ ] A8  Emit exact entity endpoints (arc ends, spline knots, rect/polygon corners);
+#   [x] A8  Emit exact entity endpoints (arc ends, spline knots, rect/polygon corners);
 #           reduce reliance on the per-move full-scene mesh-vertex scan (:310-331).
 #   [x] A9  Reconcile SnapType (types/cad/core.ts:151) with the runtime inline union
 #           (add 'perpendicular'/'tangent', drop or implement 'grid'/'nearest'); delete

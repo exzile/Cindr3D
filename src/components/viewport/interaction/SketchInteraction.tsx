@@ -360,28 +360,49 @@ export default function SketchInteraction() {
       }
     }
 
+    // A8: emit exact geometric endpoints from entity data instead of scanning all mesh vertices.
+    // This is O(entities) rather than O(all mesh verts) and is tessellation-independent.
     if (snapToEndpoint) {
-      const plane = getSketchPlane();
-      const worldVertex = new THREE.Vector3();
-      const seen = new Set<string>();
-
-      scene.traverse((obj) => {
-        const mesh = obj as THREE.Mesh;
-        if (!mesh.isMesh || !mesh.visible || !mesh.geometry) return;
-        const geometry = mesh.geometry as THREE.BufferGeometry;
-        const positions = geometry.getAttribute('position');
-        if (!positions) return;
-
-        for (let index = 0; index < positions.count; index += 1) {
-          worldVertex.fromBufferAttribute(positions, index).applyMatrix4(mesh.matrixWorld);
-          if (Math.abs(plane.distanceToPoint(worldVertex)) > SKETCH_PLANE_SNAP_TOLERANCE) continue;
-
-          const key = `${worldVertex.x.toFixed(3)},${worldVertex.y.toFixed(3)},${worldVertex.z.toFixed(3)}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          considerCandidate(worldVertex, 'endpoint');
+      for (const e of activeSketch!.entities) {
+        if (e.type === 'line' || e.type === 'construction-line' || e.type === 'centerline') {
+          // Already handled above in the per-entity loop — skip (endpoint/midpoint done there)
+          continue;
         }
-      });
+        if (e.type === 'arc' && e.points.length >= 1 && typeof e.startAngle === 'number' && typeof e.endAngle === 'number') {
+          // Arc endpoints: start point and end point on the arc
+          const { t1: sk_t1_ep, t2: sk_t2_ep } = GeometryEngine.getSketchAxes(activeSketch!);
+          const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
+          const r = e.radius ?? 0;
+          for (const angle of [e.startAngle, e.endAngle]) {
+            const pt = center.clone()
+              .addScaledVector(sk_t1_ep, Math.cos(angle) * r)
+              .addScaledVector(sk_t2_ep, Math.sin(angle) * r);
+            considerCandidate(pt, 'endpoint');
+          }
+        }
+        if ((e.type === 'spline' || e.type === 'spline-control') && e.points.length >= 2) {
+          // Spline knots: all control/fit points are endpoints
+          for (const pt of e.points) {
+            considerCandidate(new THREE.Vector3(pt.x, pt.y, pt.z), 'endpoint');
+          }
+        }
+        if (e.type === 'rectangle' && e.points.length >= 2) {
+          // Legacy rectangle: offer its 4 derived corners as endpoints
+          const { t1: sk_t1_r, t2: sk_t2_r } = GeometryEngine.getSketchAxes(activeSketch!);
+          const origin_r = activeSketch!.planeOrigin;
+          const p0 = e.points[0], p1 = e.points[1];
+          const d0 = new THREE.Vector3(p0.x - origin_r.x, p0.y - origin_r.y, p0.z - origin_r.z);
+          const d1 = new THREE.Vector3(p1.x - origin_r.x, p1.y - origin_r.y, p1.z - origin_r.z);
+          const u0 = d0.dot(sk_t1_r), v0 = d0.dot(sk_t2_r);
+          const u1 = d1.dot(sk_t1_r), v1 = d1.dot(sk_t2_r);
+          for (const [u, v] of [[u0,v0],[u1,v0],[u1,v1],[u0,v1]] as [number,number][]) {
+            considerCandidate(
+              origin_r.clone().addScaledVector(sk_t1_r, u).addScaledVector(sk_t2_r, v),
+              'endpoint',
+            );
+          }
+        }
+      }
     }
 
     // S8 / NAV-24 + A4: intersection snaps — line-line, line-circle, circle-circle
