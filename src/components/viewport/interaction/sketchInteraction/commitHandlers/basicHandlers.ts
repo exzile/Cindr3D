@@ -45,8 +45,6 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
     addSketchEntity, addSketchConstraint, setStatusMessage,
     polygonSides, conicRho,
   } = ctx;
-  void activeSketch;
-
   switch (activeTool) {
     case 'line':
     case 'construction-line':
@@ -133,12 +131,36 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
         setDrawingPoints([sketchPoint]);
         setStatusMessage('Rectangle corner placed — click to set opposite corner');
       } else {
-        addSketchEntity({
+        // B11.a: emit 4 individual line entities instead of a single 'rectangle' entity
+        // so edges are real solver DOFs that can receive perpendicular/equal/dimension constraints.
+        const p1 = drawingPoints[0];
+        const p2 = sketchPoint;
+        const origin = activeSketch?.planeOrigin ?? new THREE.Vector3(0, 0, 0);
+        const d1 = new THREE.Vector3(p1.x - origin.x, p1.y - origin.y, p1.z - origin.z);
+        const d2 = new THREE.Vector3(p2.x - origin.x, p2.y - origin.y, p2.z - origin.z);
+        const u1 = d1.dot(t1), v1 = d1.dot(t2);
+        const u2 = d2.dot(t1), v2 = d2.dot(t2);
+        const toWorld = (u: number, v: number): SketchPoint => ({
           id: crypto.randomUUID(),
-          type: 'rectangle',
-          points: [drawingPoints[0], sketchPoint],
-          closed: true,
+          x: origin.x + u * t1.x + v * t2.x,
+          y: origin.y + u * t1.y + v * t2.y,
+          z: origin.z + u * t1.z + v * t2.z,
         });
+        const corners = [toWorld(u1, v1), toWorld(u2, v1), toWorld(u2, v2), toWorld(u1, v2)];
+        const lineIds: string[] = [];
+        for (let i = 0; i < 4; i++) {
+          const eid = crypto.randomUUID();
+          lineIds.push(eid);
+          addSketchEntity({ id: eid, type: 'line', points: [corners[i], corners[(i + 1) % 4]] });
+        }
+        // Add coincident constraints connecting adjacent corner endpoints
+        for (let i = 0; i < 4; i++) {
+          addSketchConstraint({
+            id: crypto.randomUUID(), type: 'coincident',
+            entityIds: [lineIds[i], lineIds[(i + 1) % 4]],
+            pointIndices: [1, 0],
+          });
+        }
         setDrawingPoints([]);
         setStatusMessage('Rectangle added');
       }

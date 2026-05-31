@@ -1171,7 +1171,7 @@
 #   [x] B9.b  If the fixed entity has a radius DOF, also fix it.
 #
 # ── P3: B11 — Rectangles become 4 line entities; arc pick clamped ─────────────
-#   [ ] B11.a  At rectangle commit (basicHandlers.ts), store 4 'line' entities + the
+#   [x] B11.a  At rectangle commit (basicHandlers.ts), store 4 'line' entities + the
 #              coincident/perpendicular/equal auto-constraints (like polygons already do)
 #              instead of a single 2-point 'rectangle', so edges are real solver entities.
 #              Keep the rectangle renderer for the live preview only.
