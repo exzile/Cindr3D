@@ -10,6 +10,7 @@ import { occSplitFaceWithInstance } from '../../../../../engine/occ/ops/splitFac
 import { occReplaceFaceWithInstance } from '../../../../../engine/occ/ops/replaceFace';
 import { sketchPlaneFromFace } from '../../../../../engine/occ/geomSurface';
 import { createRegisteredOccMesh } from '../../../../../engine/occ/registeredMesh';
+import { BODY_MATERIAL } from '../../../../../components/viewport/scene/bodyMaterial';
 import { liveBodyMeshes } from '../../../../meshRegistry';
 import { errorMessage } from '../../../../../utils/errorHandling';
 import type { CADSliceContext } from '../../../sliceContext';
@@ -133,7 +134,7 @@ export function createFaceFeatureDialogActions({ set, get }: CADSliceContext): P
       const srcMesh = feature.mesh as THREE.Mesh | undefined;
       let newMesh: THREE.Mesh;
       try {
-        newMesh = createRegisteredOccMesh(occ.oc, result, srcMesh?.material ?? null, replaceFaceSourceFeatureId);
+        newMesh = createRegisteredOccMesh(occ.oc, result, srcMesh?.material ?? BODY_MATERIAL, replaceFaceSourceFeatureId);
       } catch (err) {
         get().setStatusMessage(`Replace Face failed: ${errorMessage(err, 'unknown')}`);
         setActiveDialog(null);
@@ -430,7 +431,7 @@ export function createFaceFeatureDialogActions({ set, get }: CADSliceContext): P
       const srcMesh = feature.mesh as THREE.Mesh | undefined;
       let newMesh: THREE.Mesh;
       try {
-        newMesh = createRegisteredOccMesh(occ.oc, result, srcMesh?.material ?? null, splitFaceFeatureId);
+        newMesh = createRegisteredOccMesh(occ.oc, result, srcMesh?.material ?? BODY_MATERIAL, splitFaceFeatureId);
       } catch (err) {
         get().setStatusMessage(`Split Face failed: ${errorMessage(err, 'unknown')}`);
         get().setActiveDialog(null);

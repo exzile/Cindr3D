@@ -1,8 +1,8 @@
 ## DesignCAD — Implementation Task List
 ## Status key: [x] done  [~] partial  [ ] not started  [>] in progress
 ## Last updated: 2026-05-30  Branch: FilletOptimization (fillet/chamfer live preview + cast/heal fixes)
-## SDK ref: C:\Users\joeyp\AppData\Local\Autodesk\webdeploy\production\
-##          4bca736941837d3e42bba21bb36b9891e34b2fce\CPP\include\Fusion\
+## SDK ref: local Fusion 360 webdeploy SDK headers (machine-specific path omitted)
+##          Resolve via the current developer's Autodesk install directory.
 ## SDK install: local Fusion 360 webdeploy SDK headers under the current user's
 ##              Autodesk install directory. Do not commit machine-specific paths.
 

@@ -16,14 +16,14 @@ export function ReleaseRoadmapTabs() {
         <div className="rrtabs__head">
           <div className="home-section-heading" style={{ margin: 0 }}>
             <p>{tab === 'next' ? 'Coming next' : 'Just shipped'}</p>
-            <h2 id="release-title">{tab === 'next' ? 'Next release' : 'v1.0.0 release'}</h2>
+            <h2 id="release-title">{tab === 'next' ? 'Next release' : 'v0.5.0 release'}</h2>
           </div>
           <div className="rrtabs__nav" role="tablist">
             <button role="tab" aria-selected={tab === 'next'} className={`rrtabs__tab${tab === 'next' ? ' rrtabs__tab--active' : ''}`} onClick={() => setTab('next')} onKeyDown={handleKey}>
               Next release
             </button>
             <button role="tab" aria-selected={tab === 'latest'} className={`rrtabs__tab${tab === 'latest' ? ' rrtabs__tab--active' : ''}`} onClick={() => setTab('latest')} onKeyDown={handleKey}>
-              v1.0.0 release
+              v0.5.0 release
             </button>
           </div>
         </div>

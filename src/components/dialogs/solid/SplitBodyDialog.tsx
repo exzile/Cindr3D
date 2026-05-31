@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { DialogShell } from '../common/DialogShell';
 import { liveBodyMeshes } from '../../../store/meshRegistry';

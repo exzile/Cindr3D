@@ -56,7 +56,7 @@ The project is evolving quickly. Some CAD and slicer features are experimental, 
 ## What's New
 
 > [!NOTE]
-> **v1.0.0 - 2026-05.** This release is the big DesignCAD/OCC milestone: Cindr3D moves from mostly mesh-derived modeling toward an OpenCascade-backed B-rep workflow, while also preparing the public site and documentation for a broader open-source release.
+> **v0.5.0 - 2026-05.** This release is the big DesignCAD/OCC milestone: Cindr3D moves from mostly mesh-derived modeling toward an OpenCascade-backed B-rep workflow, while also preparing the public site and documentation for a broader open-source release.
 
 **OCC-powered Design workspace**
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useCADStore } from '../../../store/cadStore';
 import { DialogShell } from '../common/DialogShell';
 
