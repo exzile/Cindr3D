@@ -489,21 +489,37 @@ function computeResiduals(
         const eA = entityMap.get(c.entityIds[0]);
         const eB = entityMap.get(c.entityIds[1]);
         if (!eA || !eB) break;
-        const line = eA.points.length >= 2 && (eA.type === 'line' || eA.type === 'construction-line' || eA.type === 'centerline') ? eA
-          : eB.points.length >= 2 && (eB.type === 'line' || eB.type === 'construction-line' || eB.type === 'centerline') ? eB
-            : null;
-        const curve = line === eA ? eB : eA;
-        if (!line || !(curve.type === 'circle' || curve.type === 'arc')) break;
-        const a0 = getPoint(line.id, 0, pointMap);
-        const a1 = getPoint(line.id, line.points.length - 1, pointMap);
-        const center = getPoint(curve.id, 0, pointMap);
-        const dx = a1.x - a0.x;
-        const dy = a1.y - a0.y;
-        const len = Math.hypot(dx, dy);
-        if (len < 1e-12) break;
-        const distance = Math.abs(dy * center.x - dx * center.y + a1.x * a0.y - a1.y * a0.x) / len;
-        // B1: read radius from solver params
-        residuals.push(distance - getScalarDof(curve.id, 'radius', pointMap, curve.radius ?? 0));
+        const isCurve = (e: SketchEntity) => e.type === 'circle' || e.type === 'arc';
+        const isLine  = (e: SketchEntity) => e.type === 'line' || e.type === 'construction-line' || e.type === 'centerline';
+
+        if (isCurve(eA) && isCurve(eB)) {
+          // B4.a: curve-curve tangency: dist(cA, cB) = rA ± rB.
+          // Choose external (rA+rB) or internal (|rA-rB|) based on current config.
+          const cA = getPoint(eA.id, 0, pointMap);
+          const cB = getPoint(eB.id, 0, pointMap);
+          const rA = getScalarDof(eA.id, 'radius', pointMap, eA.radius ?? 0);
+          const rB = getScalarDof(eB.id, 'radius', pointMap, eB.radius ?? 0);
+          const dist = Math.hypot(cB.x - cA.x, cB.y - cA.y);
+          // Pick external vs internal tangency by whichever target is closer to the current dist.
+          const external = rA + rB;
+          const internal = Math.abs(rA - rB);
+          const target = Math.abs(dist - external) <= Math.abs(dist - internal) ? external : internal;
+          residuals.push(dist - target);
+        } else {
+          // line-curve tangency
+          const line = isLine(eA) ? eA : isLine(eB) ? eB : null;
+          const curve = line === eA ? eB : eA;
+          if (!line || !isCurve(curve)) break;
+          const a0 = getPoint(line.id, 0, pointMap);
+          const a1 = getPoint(line.id, line.points.length - 1, pointMap);
+          const center = getPoint(curve.id, 0, pointMap);
+          const dx = a1.x - a0.x;
+          const dy = a1.y - a0.y;
+          const len = Math.hypot(dx, dy);
+          if (len < 1e-12) break;
+          const distance = Math.abs(dy * center.x - dx * center.y + a1.x * a0.y - a1.y * a0.x) / len;
+          residuals.push(distance - getScalarDof(curve.id, 'radius', pointMap, curve.radius ?? 0));
+        }
         break;
       }
       case 'symmetric': {

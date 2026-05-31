@@ -866,7 +866,7 @@
 #     endpoint/center > intersection > midpoint > on-curve > grid regardless of a hair's
 #     difference. Fix: priority-ordered pass, or weight bestDist by per-type priority.
 #
-# [ ] SKETCH-2.A4  Intersection snap is LINE-LINE only (BUG/GAP). snapToIntersection
+# [x] SKETCH-2.A4  Intersection snap is LINE-LINE only (BUG/GAP). snapToIntersection
 #     (334-381) iterates lineEntities only and solves a 2-line system. No line-arc,
 #     line-circle, arc-arc, or spline intersection. Fusion snaps any curve-curve
 #     intersection. Fix: add analytic line-circle / circle-circle + sampled spline path.
@@ -931,7 +931,7 @@
 #     constraint. Fix: hit-test nearest POINT (not entity) and record its index. (The
 #     polygon auto-constraints already do pointIndices:[1,0] correctly — copy that.)
 #
-# [ ] SKETCH-2.B4  Tangent: line-circle can't actually solve (needs B1), arc-arc / circle-
+# [x] SKETCH-2.B4  Tangent: line-circle can't actually solve (needs B1), arc-arc / circle-
 #     circle not handled at all (break), no internal/external side handling. ConstraintSolver
 #     .ts:415-435. Fix: add curve-curve branch dist(cA,cB)==|rA±rB|, make radius a DOF,
 #     pick ± by current config.
@@ -942,14 +942,14 @@
 #     across the wrong line. Fix: prompt "pick two entities, then the axis" and reorder to
 #     [axis,a,b] before dispatch.
 #
-# [ ] SKETCH-2.B6  fullyConstrained / DOF is never computed — always hard-coded false
+# [x] SKETCH-2.B6  fullyConstrained / DOF is never computed — always hard-coded false
 #     (BUG). constraintAndViewActions.ts:142 and every sketch-creation site hard-code
 #     fullyConstrained:false. The solver builds a full Jacobian (724-757) but discards it.
 #     No rank/DOF computation exists. Fusion turns geometry black when fully constrained.
 #     Fix: after solve compute rank(J) vs nParams → fully = rank>=nParams; return from
 #     SolverResult, store on the sketch. (Enables SKETCH-1.12 DOF coloring.)
 #
-# [ ] SKETCH-2.B7  Over-constrained detection = "residual didn't converge" (BUG/GAP).
+# [x] SKETCH-2.B7  Over-constrained detection = "residual didn't converge" (BUG/GAP).
 #     overConstraintCheck.ts:33-50 + constraintAndViewActions.ts:121-127 flag over-
 #     constrained purely when residual>=tol after 100 iters. This conflates genuine
 #     conflict, harmless redundancy, and merely-non-driveable residuals (every radial dim
@@ -962,7 +962,7 @@
 #     constraints on the same line pair (p1↔p0 vs p0↔p1) are wrongly deduped. Compounds
 #     B3. Fix: include pointIndices in the dedupe key.
 #
-# [ ] SKETCH-2.B9  "Fix" pins the WHOLE entity, never a single point; circle radius
+# [x] SKETCH-2.B9  "Fix" pins the WHOLE entity, never a single point; circle radius
 #     unfixable (BUG). ConstraintSolver.ts:771-773 marks all points of the entity fixed.
 #     Fusion can ground one endpoint or a whole curve incl. radius. Fix: honor pointIndices
 #     in fix; fix radius DOF when present (needs B1).
@@ -1065,50 +1065,50 @@
 #   Root cause: ConstraintSolver.buildParams() only emits point x/y, so any
 #   constraint/dimension that depends on radius or sweep angle cannot drive geometry.
 #   This unblocks B2, B4, B9, and SKETCH-1.10. File: src/engine/ConstraintSolver.ts.
-#   [ ] B1.a  Extend the param vector. In buildParams add, for each non-fixed entity
+#   [x] B1.a  Extend the param vector. In buildParams add, for each non-fixed entity
 #             that owns a radius (circle/arc) a `radius` DOF, and for arcs `startAngle`/
 #             `endAngle` DOFs. Extend paramIndex entries with a discriminated kind:
 #             { entityId, kind: 'x'|'y'|'radius'|'startAngle'|'endAngle', pointId? }.
-#   [ ] B1.b  applyParams: write the solved radius/angle back onto the entity (mutate a
+#   [x] B1.b  applyParams: write the solved radius/angle back onto the entity (mutate a
 #             working copy, not the store entity). Keep circle center as points[0].
-#   [ ] B1.c  Residual derivatives: the solver uses finite-difference Jacobian
+#   [x] B1.c  Residual derivatives: the solver uses finite-difference Jacobian
 #             (perturb each param by eps, re-evaluate residuals). Confirm radius/angle
 #             params are perturbed the same way — no analytic derivative needed, but
 #             verify eps scale is sensible for angles (radians) vs lengths (mm); use a
 #             per-param eps (e.g. 1e-4 for both is fine since values are O(1..100)).
-#   [ ] B1.d  Update every residual that reads a static radius (curve.radius at :433,
+#   [x] B1.d  Update every residual that reads a static radius (curve.radius at :433,
 #             entity.radius at :623, majorRadius, etc.) to read the PARAM value instead.
-#   [ ] B1.e  Tests (src/test/ConstraintSolverDimensions.test.ts): apply a radial
+#   [x] B1.e  Tests (src/test/ConstraintSolverDimensions.test.ts): apply a radial
 #             dimension of 10 to a circle drawn at r=5 -> solver resizes to r==10.
 #             Diameter dim of 20 -> r==10. Arc-length dim -> sweep angle changes.
 #
 # ── P1: B2 — Equal works for circle-circle; rejects type mismatch ─────────────
 #   Depends on B1. File: ConstraintSolver.ts:368-386 + useSketchConstraintTool.ts.
-#   [ ] B2.a  With radius now a DOF, add an equal-radius residual rA - rB == 0 for two
+#   [x] B2.a  With radius now a DOF, add an equal-radius residual rA - rB == 0 for two
 #             circles/arcs.
 #   [ ] B2.b  In the constraint tool, when the two picked entities are line+circle (or
 #             arc+line) reject with setStatusMessage('Equal: pick two of the same kind').
-#   [ ] B2.c  Test: two circles r=5 and r=9, add equal -> both converge to the same r.
+#   [x] B2.c  Test: two circles r=5 and r=9, add equal -> both converge to the same r.
 #
 # ── P1: B3 + B8 — Coincident captures the clicked endpoint (pointIndices) ──────
 #   Files: src/components/viewport/interaction/sketchInteraction/hooks/
 #   useSketchConstraintTool.ts (:71-105 picking, :165-172 dispatch),
 #   src/store/cad/slices/selectionAndSketchOps/constraintAndViewActions.ts (:158-161).
-#   [ ] B3.a  Add a nearest-POINT hit-test alongside findNearestEntity: return
+#   [x] B3.a  Add a nearest-POINT hit-test alongside findNearestEntity: return
 #             { entityId, pointIndex } for the closest entity endpoint within the pick
 #             radius (project to plane via getSketchAxes; compare in-plane distance).
-#   [ ] B3.b  For coincident/midpoint/concentric/symmetric, accumulate pointIndices in
+#   [x] B3.b  For coincident/midpoint/concentric/symmetric, accumulate pointIndices in
 #             parallel with entityIds and pass them in the addSketchConstraint payload.
-#   [ ] B3.c  B8: include pointIndices in the dedupe `exists` key in addSketchConstraint
+#   [x] B3.c  B8: include pointIndices in the dedupe `exists` key in addSketchConstraint
 #             (constraintAndViewActions.ts:158-161) so p0<->p1 and p1<->p0 are distinct.
 #   [ ] B3.d  Test: two lines; coincident between line A end (idx 1) and line B start
 #             (idx 0) -> solver moves A.p1 to B.p0 (not A.p0<->B.p0).
 #
 # ── P2: C1 — arc-3point picks the CCW side through the middle point ────────────
 #   File: tangentHandlers.ts:194-223. Renderer forces CCW (sketchRendering.ts:154).
-#   [ ] C1.a  After computing center + startAngle(p0) + endAngle(pEnd), compute
+#   [x] C1.a  After computing center + startAngle(p0) + endAngle(pEnd), compute
 #             midAngle = atan2 of drawingPoints[1] about center (in t1/t2 frame).
-#   [ ] C1.b  Normalize endFromStart and midFromStart into [0,2pi). If
+#   [x] C1.b  Normalize endFromStart and midFromStart into [0,2pi). If
 #             midFromStart > endFromStart, swap startAngle<->endAngle (mirror the test
 #             already in slot-3point-arc at curveHandlers.ts:268-279).
 #   [ ] C1.c  Test/QA: draw a 3-point arc whose middle click is below the chord ->
@@ -1116,19 +1116,19 @@
 #
 # ── P2: C2 — tangent-arc start tangent matches the connecting curve ───────────
 #   File: tangentHandlers.ts:282-360 and dragged variant sketchEventHelpers.ts:108-117.
-#   [ ] C2.a  After solving center, compute the CCW arc's start tangent vector:
+#   [x] C2.a  After solving center, compute the CCW arc's start tangent vector:
 #             T = -t1*sin(startAngle) + t2*cos(startAngle). Compare sign vs the incoming
 #             tangentDir (the direction of the curve being continued).
-#   [ ] C2.b  If T.dot(tangentDir) < 0, swap startAngle<->endAngle so the arc leaves the
+#   [x] C2.b  If T.dot(tangentDir) < 0, swap startAngle<->endAngle so the arc leaves the
 #             junction smoothly (no cusp).
 #   [ ] C2.c  QA: chain a tangent arc off the end of a line -> smooth (G1), no kink.
 #
 # ── P2: C3 — tangent circles honor sketch.planeOrigin ─────────────────────────
 #   File: tangentHandlers.ts (toUV :55, toUV3 :146, center reconstruction :99,:183).
-#   [ ] C3.a  In toUV/toUV3 subtract origin first:
+#   [x] C3.a  In toUV/toUV3 subtract origin first:
 #             d = new Vector3(pt.x-o.x, pt.y-o.y, pt.z-o.z); return {u:d.dot(t1), v:d.dot(t2)}
 #             where o = activeSketch.planeOrigin.
-#   [ ] C3.b  In the world-center reconstruction add origin back:
+#   [x] C3.b  In the world-center reconstruction add origin back:
 #             center = origin + t1*cu + t2*cv (mirror sketchProfiles.ts:41-58).
 #   [ ] C3.c  Test: 2-tangent + 3-tangent circle on an XZ/offset sketch -> center lands
 #             on the actual plane (compare to the same construction on XY shifted).
@@ -1137,67 +1137,67 @@
 #   The Jacobian J is already built (ConstraintSolver.ts:724-757) then discarded.
 #   Files: ConstraintSolver.ts (return rank), overConstraintCheck.ts,
 #   constraintAndViewActions.ts (:121-142 store fullyConstrained/overConstrained).
-#   [ ] B6.a  After the final solve, compute rank(J) via Gaussian elimination with a
+#   [x] B6.a  After the final solve, compute rank(J) via Gaussian elimination with a
 #             pivot tolerance (~1e-9). Return { rank, nParams } in SolverResult.
-#   [ ] B6.b  fullyConstrained = (rank >= nParams - groundDof); store on the sketch
+#   [x] B6.b  fullyConstrained = (rank >= nParams - groundDof); store on the sketch
 #             (replace the hard-coded false at constraintAndViewActions.ts:142 and the
 #             creation-site defaults). Under-constrained = rank < nParams.
 #   [ ] B7.a  Redundancy: when adding a constraint, if rank does NOT increase but the
 #             residual stays ~0, it's redundant -> warn, allow. If residual stays high
 #             AND rank didn't increase -> conflict -> reject with message.
-#   [ ] B7.b  Stop classifying "didn't converge in 100 iters" as over-constrained for
+#   [x] B7.b  Stop classifying "didn't converge in 100 iters" as over-constrained for
 #             driveable systems (this was a false positive for every radial dim pre-B1).
 #   [ ] B6.c  Wire SKETCH-1.12 DOF coloring off the returned per-point fixed status.
 #
 # ── P3: B4 — Tangent: arc-arc / circle-circle + side ──────────────────────────
 #   Depends on B1. File: ConstraintSolver.ts:415-435.
-#   [ ] B4.a  Add a curve-curve branch: residual = dist(cA,cB) - |rA ± rB|, choosing
+#   [x] B4.a  Add a curve-curve branch: residual = dist(cA,cB) - |rA ± rB|, choosing
 #             external (rA+rB) or internal (|rA-rB|) by which is closer to the current
 #             configuration at solve start.
-#   [ ] B4.b  Keep line-curve branch dist(center,line)==radius but now radius is a DOF.
-#   [ ] B4.c  Test: two circles overlapping; tangent -> they separate to external tangency.
+#   [x] B4.b  Keep line-curve branch dist(center,line)==radius but now radius is a DOF.
+#   [x] B4.c  Test: two circles overlapping; tangent -> they separate to external tangency.
 #
 # ── P3: B5 — Symmetric tool: two entities then axis ───────────────────────────
 #   File: useSketchConstraintTool.ts:19-30. Solver expects [axis, a, b] (:436).
-#   [ ] B5.a  Change the 3-click flow prompts: "pick entity 1", "pick entity 2",
+#   [x] B5.a  Change the 3-click flow prompts: "pick entity 1", "pick entity 2",
 #             "pick symmetry axis (a line/centerline)".
-#   [ ] B5.b  Reorder selection to [axisId, aId, bId] before dispatch.
+#   [x] B5.b  Reorder selection to [axisId, aId, bId] before dispatch.
 #   [ ] B5.c  Test: two points + a vertical centerline -> points become mirror images.
 #
 # ── P3: B9 — Fix honors a single point + radius ───────────────────────────────
 #   Depends on B1 for radius. File: ConstraintSolver.ts:771-773, buildParams:100.
-#   [ ] B9.a  If a fix constraint carries pointIndices, mark only those point DOFs fixed
+#   [x] B9.a  If a fix constraint carries pointIndices, mark only those point DOFs fixed
 #             (not all entity points).
-#   [ ] B9.b  If the fixed entity has a radius DOF, also fix it.
+#   [x] B9.b  If the fixed entity has a radius DOF, also fix it.
 #
 # ── P3: B11 — Rectangles become 4 line entities; arc pick clamped ─────────────
 #   [ ] B11.a  At rectangle commit (basicHandlers.ts), store 4 'line' entities + the
 #              coincident/perpendicular/equal auto-constraints (like polygons already do)
 #              instead of a single 2-point 'rectangle', so edges are real solver entities.
 #              Keep the rectangle renderer for the live preview only.
-#   [ ] B11.b  Arc pick in useSketchConstraintTool.ts:105 — clamp the |dist-radius| test
+#   [x] B11.b  Arc pick in useSketchConstraintTool.ts:105 — clamp the |dist-radius| test
 #              to the arc's [startAngle,endAngle] sweep so you can't pick the undrawn side.
 #
 # ── P4: SNAPS ─────────────────────────────────────────────────────────────────
 #   All in src/components/viewport/interaction/SketchInteraction.tsx unless noted.
-#   [ ] A1  snapToGrid (:197): snap to the rendered grid spacing, not gridSize/10; read
+#   [x] A1  snapToGrid (:197): snap to the rendered grid spacing, not gridSize/10; read
 #           the per-sketch override (activeSketch grid size ?? sketchGridSize ?? gridSize).
 #   [ ] A2  Convert SNAP_RADIUS and the pick radii to SCREEN space: project candidate +
 #           cursor through the camera, compare in pixels (~8px), so snap feel is zoom-
 #           independent. Also replace the world-space 0.5/0.1 tolerances in the
 #           intersection solver (:375) with the same screen-space test.
-#   [ ] A3  Add per-type priority weighting in considerCandidate (:220-229): endpoint/
+#   [x] A3  Add per-type priority weighting in considerCandidate (:220-229): endpoint/
 #           center (1) > intersection (2) > midpoint (3) > nearest (4) > grid (5). A
 #           higher-priority hit within radius wins even if a lower one is slightly closer.
-#   [ ] A4  Intersection (:334-381): add line-circle and circle-circle analytic
+#   [x] A4  Intersection (:334-381): add line-circle and circle-circle analytic
 #           intersection; sampled fallback for ellipse/spline. (= SKETCH-1.15.)
 #   [ ] A5  Add a 'nearest' on-curve branch: closest-point-on-curve (param projection)
 #           for line/arc/circle/ellipse/spline, lowest priority above grid.
-#   [ ] A6  Center branch (:268): include ellipse + elliptical-arc (center = points[0]).
-#   [ ] A7  Midpoint: add arc midpoint = point at angle (startAngle+endAngle)/2.
+#   [x] A6  Center branch (:268): include ellipse + elliptical-arc (center = points[0]).
+#   [x] A7  Midpoint: add arc midpoint = point at angle (startAngle+endAngle)/2.
 #   [ ] A8  Emit exact entity endpoints (arc ends, spline knots, rect/polygon corners);
 #           reduce reliance on the per-move full-scene mesh-vertex scan (:310-331).
-#   [ ] A9  Reconcile SnapType (types/cad/core.ts:151) with the runtime inline union
+#   [x] A9  Reconcile SnapType (types/cad/core.ts:151) with the runtime inline union
 #           (add 'perpendicular'/'tangent', drop or implement 'grid'/'nearest'); delete
 #           the dead SnapPoint (misc.ts:16) or wire it through.
 #   [ ] A10 Inference/alignment guides (also B10): on mousemove test cursor alignment
@@ -1206,9 +1206,9 @@
 #           constraint on commit. New module: sketchInference.ts. (Largest snap item.)
 #
 # ── P4: REMAINING DRAWING + INFERENCE ─────────────────────────────────────────
-#   [ ] C4  slot / slot-center caps (curveHandlers.ts:13-103): anchor BOTH end-cap arcs
+#   [x] C4  slot / slot-center caps (curveHandlers.ts:13-103): anchor BOTH end-cap arcs
 #           to axisAngle±pi/2 / +3pi/2 (copy slot-center-point) so caps bulge outward.
-#   [ ] C5  slot-3point-arc / slot-center-arc caps (:288-294,:336-339): derive cap
+#   [x] C5  slot-3point-arc / slot-center-arc caps (:288-294,:336-339): derive cap
 #           orientation from the radial direction at each end + signed sweep, not ±pi/2.
 #   [ ] C6  spline-control: build a real B-spline/Bezier over the control hull (de Boor
 #           / de Casteljau) in sketchEventHelpers.ts:27-40 instead of CatmullRom, so the

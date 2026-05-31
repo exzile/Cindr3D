@@ -359,8 +359,74 @@ export default function SketchInteraction() {
       });
     }
 
-    // S8 / NAV-24: brute-force line-line intersection snap
+    // S8 / NAV-24 + A4: intersection snaps — line-line, line-circle, circle-circle
     if (snapToIntersection) {
+      // Helpers for line-circle and circle-circle (plane-aware via t1/t2)
+      const { t1: sk_t1_ix, t2: sk_t2_ix } = GeometryEngine.getSketchAxes(activeSketch!);
+      const circleEntities = activeSketch!.entities.filter(
+        (e) => (e.type === 'circle' || e.type === 'arc') && e.points.length >= 1 && (e.radius ?? 0) > 0
+      );
+
+      // A4a: line-circle intersections (analytic)
+      for (const line of lineEntities) {
+        const L0 = new THREE.Vector3(line.points[0].x, line.points[0].y, line.points[0].z);
+        const L1 = new THREE.Vector3(line.points[line.points.length - 1].x, line.points[line.points.length - 1].y, line.points[line.points.length - 1].z);
+        const Ld = L1.clone().sub(L0);
+        const lLen = Ld.length();
+        if (lLen < 1e-6) continue;
+        for (const circ of circleEntities) {
+          const C = new THREE.Vector3(circ.points[0].x, circ.points[0].y, circ.points[0].z);
+          const r = circ.radius ?? 0;
+          // Parametric line: P = L0 + t * Ld; quadratic in t: |P-C|^2 = r^2
+          const oc = L0.clone().sub(C);
+          const a2 = Ld.dot(Ld);
+          const b2 = 2 * oc.dot(Ld);
+          const c2 = oc.dot(oc) - r * r;
+          const disc = b2 * b2 - 4 * a2 * c2;
+          if (disc < 0) continue;
+          const sqrtDisc = Math.sqrt(disc);
+          for (const sign of [-1, 1]) {
+            const t = (-b2 + sign * sqrtDisc) / (2 * a2);
+            if (t < -0.05 || t > 1.05) continue; // outside segment (with tolerance)
+            const pt = L0.clone().addScaledVector(Ld, t);
+            considerCandidate(pt, 'intersection');
+          }
+        }
+      }
+
+      // A4b: circle-circle intersections (analytic)
+      for (let i = 0; i < circleEntities.length; i++) {
+        const eA = circleEntities[i];
+        const cA = new THREE.Vector3(eA.points[0].x, eA.points[0].y, eA.points[0].z);
+        const rA = eA.radius ?? 0;
+        for (let j = i + 1; j < circleEntities.length; j++) {
+          const eB = circleEntities[j];
+          const cB = new THREE.Vector3(eB.points[0].x, eB.points[0].y, eB.points[0].z);
+          const rB = eB.radius ?? 0;
+          const d = cA.distanceTo(cB);
+          if (d < 1e-6 || d > rA + rB + 1e-4 || d < Math.abs(rA - rB) - 1e-4) continue;
+          // Project onto sketch plane to solve 2D intersection
+          const oA = cA.clone().sub(activeSketch!.planeOrigin);
+          const oB = cB.clone().sub(activeSketch!.planeOrigin);
+          const uA = oA.dot(sk_t1_ix), vA = oA.dot(sk_t2_ix);
+          const uB = oB.dot(sk_t1_ix), vB = oB.dot(sk_t2_ix);
+          const du = uB - uA, dv = vB - vA;
+          const a3 = (rA * rA - rB * rB + du * du + dv * dv) / (2 * d * d);
+          const midU = uA + a3 * du, midV = vA + a3 * dv;
+          const h2 = rA * rA / (d * d) - a3 * a3;
+          if (h2 < 0) continue;
+          const h = Math.sqrt(h2);
+          const px = h * dv, py = -h * du;
+          for (const s of [-1, 1]) {
+            const iu = midU + s * px, iv = midV + s * py;
+            const ip = activeSketch!.planeOrigin.clone()
+              .addScaledVector(sk_t1_ix, iu)
+              .addScaledVector(sk_t2_ix, iv);
+            considerCandidate(ip, 'intersection');
+          }
+        }
+      }
+
       for (let i = 0; i < lineEntities.length; i++) {
         const a = lineEntities[i];
         const A0 = new THREE.Vector3(a.points[0].x, a.points[0].y, a.points[0].z);
