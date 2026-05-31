@@ -29,6 +29,10 @@ export interface SolverResult {
   /** B1: solved scalar DOFs (radius/startAngle/endAngle). Keys: "entityId::radius" etc. */
   updatedScalars: Map<string, number>;
   residual: number;
+  /** B6: Jacobian rank at final solution. rank >= nParams → fully/over-constrained. */
+  rank: number;
+  /** B6: total number of free parameters. */
+  nParams: number;
 }
 
 // ─── Internal helpers ──────────────────────────────────────────────────────
@@ -51,6 +55,33 @@ function gaussianElimination(A: number[][], b: number[]): number[] {
     }
   }
   return M.map((row, i) => row[n] / (row[i] !== 0 ? row[i] : 1));
+}
+
+/** B6: Compute the numerical rank of matrix A (m×n) via Gaussian elimination. */
+function rankOfMatrix(A: number[][], pivotTol = 1e-9): number {
+  const m = A.length;
+  const n = m > 0 ? A[0].length : 0;
+  if (m === 0 || n === 0) return 0;
+  const M = A.map((row) => [...row]);
+  let rank = 0;
+  let col = 0;
+  for (let row = 0; row < m && col < n; col++) {
+    // Find pivot
+    let maxRow = row;
+    for (let r = row + 1; r < m; r++) {
+      if (Math.abs(M[r][col]) > Math.abs(M[maxRow][col])) maxRow = r;
+    }
+    if (Math.abs(M[maxRow][col]) < pivotTol) continue; // skip — linearly dependent
+    [M[row], M[maxRow]] = [M[maxRow], M[row]];
+    // Eliminate below
+    for (let r = row + 1; r < m; r++) {
+      const factor = M[r][col] / M[row][col];
+      for (let c = col; c < n; c++) M[r][c] -= factor * M[row][c];
+    }
+    rank++;
+    row++;
+  }
+  return rank;
 }
 
 /** Solve overdetermined/underdetermined system via normal equations: (JᵀJ)Δp = -Jᵀf */
@@ -92,7 +123,9 @@ function solveNormalEquations(J: number[][], f: number[]): number[] {
  */
 function buildParams(
   entities: SketchEntity[],
-  fixedEntityIds: Set<string>
+  fixedEntityIds: Set<string>,
+  /** B9: per-entity point-index sets for partial fixing (fix with pointIndices). */
+  fixedPoints?: Map<string, Set<number>>
 ): {
   params: number[];
   pointMap: Map<string, SolverPoint>;
@@ -103,27 +136,34 @@ function buildParams(
   const params: number[] = [];
 
   for (const entity of entities) {
-    const fixed = fixedEntityIds.has(entity.id);
+    const entityFullyFixed = fixedEntityIds.has(entity.id);
+    const partialSet = fixedPoints?.get(entity.id);
+
     for (let pi = 0; pi < entity.points.length; pi++) {
       const pt = entity.points[pi];
       const id = `${entity.id}-p${pi}`;
       if (pointMap.has(id)) continue;
-      pointMap.set(id, { id, x: pt.x, y: pt.y, fixed });
+      // B9.a: if the fix constraint specified pointIndices, only those are fixed
+      const pointFixed = entityFullyFixed || (partialSet?.has(pi) ?? false);
+      pointMap.set(id, { id, x: pt.x, y: pt.y, fixed: pointFixed });
     }
     // B1: add radius as a solver DOF for circles and arcs.
     if ((entity.type === 'circle' || entity.type === 'arc') && typeof entity.radius === 'number') {
       const rid = `${entity.id}::radius`;
-      if (!pointMap.has(rid)) pointMap.set(rid, { id: rid, x: entity.radius, y: 0, fixed });
+      if (!pointMap.has(rid)) {
+        // B9.b: fix radius only when the whole entity is fixed (not for partial fix)
+        pointMap.set(rid, { id: rid, x: entity.radius, y: 0, fixed: entityFullyFixed });
+      }
     }
     // B1: add startAngle / endAngle as solver DOFs for arcs.
     if (entity.type === 'arc') {
       if (typeof entity.startAngle === 'number') {
         const sid = `${entity.id}::startAngle`;
-        if (!pointMap.has(sid)) pointMap.set(sid, { id: sid, x: entity.startAngle, y: 0, fixed });
+        if (!pointMap.has(sid)) pointMap.set(sid, { id: sid, x: entity.startAngle, y: 0, fixed: entityFullyFixed });
       }
       if (typeof entity.endAngle === 'number') {
         const eid = `${entity.id}::endAngle`;
-        if (!pointMap.has(eid)) pointMap.set(eid, { id: eid, x: entity.endAngle, y: 0, fixed });
+        if (!pointMap.has(eid)) pointMap.set(eid, { id: eid, x: entity.endAngle, y: 0, fixed: entityFullyFixed });
       }
     }
   }
@@ -802,14 +842,24 @@ export function solveConstraints(
   const tolerance = options?.tolerance ?? 1e-6;
   const stepSize = options?.stepSize ?? 1.0;
 
-  // Collect entity ids that should be fixed
-  const fixedEntityIds = new Set<string>(
-    constraints.filter((c) => c.type === 'fix').flatMap((c) => c.entityIds)
-  );
+  // B9: separate whole-entity fix from pointIndices-based partial fix.
+  const fixedEntityIds = new Set<string>();
+  const fixedPoints = new Map<string, Set<number>>();
+  for (const c of constraints) {
+    if (c.type !== 'fix') continue;
+    for (const entityId of c.entityIds) {
+      if (c.pointIndices && c.pointIndices.length > 0) {
+        if (!fixedPoints.has(entityId)) fixedPoints.set(entityId, new Set());
+        for (const pi of c.pointIndices) fixedPoints.get(entityId)!.add(pi);
+      } else {
+        fixedEntityIds.add(entityId);
+      }
+    }
+  }
 
   const entityMap = new Map<string, SketchEntity>(entities.map((e) => [e.id, e]));
 
-  const { params: initialParams, pointMap, paramIndex } = buildParams(entities, fixedEntityIds);
+  const { params: initialParams, pointMap, paramIndex } = buildParams(entities, fixedEntityIds, fixedPoints);
 
   // Nothing can move; still evaluate residuals so fixed, inconsistent geometry is blocked.
   if (initialParams.length === 0 || constraints.length === 0) {
@@ -821,7 +871,7 @@ export function solveConstraints(
       if (id.includes('::')) updatedScalarsEarly.set(id, sp.x);
       else updatedPoints.set(id, { x: sp.x, y: sp.y });
     }
-    return { solved: residual < tolerance, iterations: 0, updatedPoints, updatedScalars: updatedScalarsEarly, residual };
+    return { solved: residual < tolerance, iterations: 0, updatedPoints, updatedScalars: updatedScalarsEarly, residual, rank: 0, nParams: 0 };
   }
 
   let params = [...initialParams];
@@ -855,6 +905,11 @@ export function solveConstraints(
   // Final apply
   applyParams(params, paramIndex, pointMap);
 
+  // B6: compute Jacobian rank at the final solution for DOF/over-constraint detection.
+  const finalJ = computeJacobian(params, paramIndex, constraints, entityMap, pointMap);
+  const finalRank = rankOfMatrix(finalJ);
+  const nParams = params.length;
+
   const updatedPoints = new Map<string, { x: number; y: number }>();
   const updatedScalars = new Map<string, number>();
   for (const [id, sp] of pointMap) {
@@ -872,5 +927,7 @@ export function solveConstraints(
     updatedPoints,
     updatedScalars,
     residual: finalResidual,
+    rank: finalRank,
+    nParams,
   };
 }

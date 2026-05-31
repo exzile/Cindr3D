@@ -118,12 +118,18 @@ export function createConstraintAndViewActions({ set, get }: CADSliceContext): P
       // the exact same assembly — prediction must match reality.
       const { entities: projectedEntities, constraints } = buildSketchSolveInputs(activeSketch);
       const result = solveConstraints(projectedEntities, constraints);
+      // B6/B7: distinguish genuine over-constraint (rank >= nParams AND residual high → conflict)
+      // from under-constrained non-convergence (rank < nParams → solver just couldn't find it).
       if (!result.solved) {
-        set((s) => ({
-          activeSketch: s.activeSketch ? { ...s.activeSketch, overConstrained: true } : null,
-          statusMessage: `Over-constrained sketch (residual ${result.residual.toFixed(3)}) after ${result.iterations} iterations`,
-        }));
-        return;
+        const isGenuineConflict = result.nParams > 0 && result.rank >= result.nParams;
+        if (isGenuineConflict) {
+          set((s) => ({
+            activeSketch: s.activeSketch ? { ...s.activeSketch, overConstrained: true } : null,
+            statusMessage: `Over-constrained sketch (conflicting constraints, residual ${result.residual.toFixed(3)})`,
+          }));
+          return;
+        }
+        // Under-constrained or non-convergent: still apply best-effort geometry, clear over-constrained flag
       }
       const updatedEntities = activeSketch.entities.map((e) => {
         const updatedPoints = e.points.map((pt, pi) => {
@@ -146,8 +152,12 @@ export function createConstraintAndViewActions({ set, get }: CADSliceContext): P
         if (newEA !== undefined) updated = { ...updated, endAngle: newEA };
         return updated;
       });
+      // B6.b: fullyConstrained = rank >= nParams (Jacobian is full-rank relative to DOFs)
+      const fullyConstrained = result.nParams > 0 && result.rank >= result.nParams;
       set((s) => ({
-        activeSketch: s.activeSketch ? { ...s.activeSketch, entities: updatedEntities, overConstrained: false } : null,
+        activeSketch: s.activeSketch
+          ? { ...s.activeSketch, entities: updatedEntities, overConstrained: false, fullyConstrained }
+          : null,
         statusMessage: `Constraints solved (${result.iterations} iteration${result.iterations === 1 ? '' : 's'})`,
       }));
     },
