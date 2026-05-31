@@ -196,5 +196,70 @@ export function createPolygonEditActions({ set, get }: CADSliceContext): Partial
         statusMessage: `Rectangle updated to ${width.toFixed(2)} × ${height.toFixed(2)}`,
       });
     },
+
+    regenerateSlot: (constraintId, lengthRaw, widthRaw) => {
+      const { activeSketch, sketches } = get();
+      if (!activeSketch) return;
+      const con = activeSketch.constraints.find((c) => c.id === constraintId && c.type === 'slot');
+      if (!con || !con.slotMeta) return;
+
+      const length = Math.max(0.001, lengthRaw);
+      const width = Math.max(0.001, widthRaw);
+      const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+      const m = con.slotMeta;
+      const center = new THREE.Vector3(m.center.x, m.center.y, m.center.z);
+      const rotation = m.rotation;
+
+      const axisDir = t1.clone().multiplyScalar(Math.cos(rotation)).add(t2.clone().multiplyScalar(Math.sin(rotation)));
+      const perpDir = t1.clone().multiplyScalar(-Math.sin(rotation)).add(t2.clone().multiplyScalar(Math.cos(rotation)));
+      const halfWidth = width / 2;
+      const c1 = center.clone().addScaledVector(axisDir, -length / 2); // back cap centre
+      const c2 = center.clone().addScaledVector(axisDir, length / 2);  // front cap centre
+      const axisAngle = Math.atan2(axisDir.dot(t2), axisDir.dot(t1));
+
+      const sp = (v: THREE.Vector3): SketchPoint => ({ id: crypto.randomUUID(), x: v.x, y: v.y, z: v.z });
+      const sideA1 = c1.clone().addScaledVector(perpDir, halfWidth);
+      const sideA2 = c2.clone().addScaledVector(perpDir, halfWidth);
+      const sideB1 = c1.clone().addScaledVector(perpDir, -halfWidth);
+      const sideB2 = c2.clone().addScaledVector(perpDir, -halfWidth);
+
+      const lineA = crypto.randomUUID();
+      const lineB = crypto.randomUUID();
+      const arc1 = crypto.randomUUID();
+      const arc2 = crypto.randomUUID();
+      const newEntities: SketchEntity[] = [
+        { id: lineA, type: 'line', points: [sp(sideA1), sp(sideA2)] },
+        { id: lineB, type: 'line', points: [sp(sideB1), sp(sideB2)] },
+        // Cap arcs anchored to the axis so they bulge outward (C4 convention).
+        { id: arc1, type: 'arc', points: [sp(c1)], radius: halfWidth, startAngle: axisAngle + Math.PI / 2, endAngle: axisAngle + (3 * Math.PI) / 2 },
+        { id: arc2, type: 'arc', points: [sp(c2)], radius: halfWidth, startAngle: axisAngle - Math.PI / 2, endAngle: axisAngle + Math.PI / 2 },
+      ];
+      const newIds = [lineA, lineB, arc1, arc2];
+
+      const memberIdSet = new Set(con.entityIds);
+      const remainingEntities = activeSketch.entities.filter((e) => !memberIdSet.has(e.id));
+      const remainingConstraints = activeSketch.constraints.filter(
+        (c) => c.id !== constraintId && c.entityIds.every((id) => !memberIdSet.has(id)),
+      );
+
+      const newSlotConstraintId = crypto.randomUUID();
+      const slotConstraint: SketchConstraint = {
+        id: newSlotConstraintId, type: 'slot', entityIds: newIds,
+        slotMeta: { center: { x: center.x, y: center.y, z: center.z }, length, width, rotation },
+      };
+
+      get().pushUndo();
+      const nextSketch = {
+        ...activeSketch,
+        entities: [...remainingEntities, ...newEntities],
+        constraints: [...remainingConstraints, slotConstraint],
+      };
+      set({
+        activeSketch: nextSketch,
+        sketches: upsertSketch(sketches, nextSketch),
+        editingPolygonConstraintId: newSlotConstraintId,
+        statusMessage: `Slot updated to ${length.toFixed(2)} × ${width.toFixed(2)}`,
+      });
+    },
   };
 }

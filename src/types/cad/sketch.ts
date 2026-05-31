@@ -30,6 +30,7 @@ export type ConstraintType =
   | 'distance-surface'
   | 'polygon'
   | 'rectangle'
+  | 'slot'
   | 'line-parallel-surface';
 
 export interface SketchConstraint {
@@ -64,6 +65,18 @@ export interface SketchConstraint {
     center: { x: number; y: number; z: number };
     width: number;
     height: number;
+    rotation: number;
+  };
+  /**
+   * For 'slot' grouping constraints (straight slots): editable parameters so the
+   * center glyph + editor can rebuild it. `length` is the distance between the
+   * two cap-arc centers; `width` is the full slot width (2 × arc radius);
+   * `rotation` is the in-plane angle of the slot axis.
+   */
+  slotMeta?: {
+    center: { x: number; y: number; z: number };
+    length: number;
+    width: number;
     rotation: number;
   };
 }

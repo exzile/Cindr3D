@@ -217,6 +217,9 @@ export interface CADCoreState {
   /** Regenerate a rectangle with a new width/height, keeping its center and
    *  rotation. */
   regenerateRectangle: (constraintId: string, width: number, height: number) => void;
+  /** Regenerate a straight slot with a new length/width, keeping its center and
+   *  rotation. */
+  regenerateSlot: (constraintId: string, length: number, width: number) => void;
   sketchFilletRadius: number;
   setSketchFilletRadius: (r: number) => void;
   sketchSlotWidth: number;

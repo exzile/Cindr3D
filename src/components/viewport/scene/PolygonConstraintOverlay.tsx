@@ -1,14 +1,14 @@
 import { Html } from '@react-three/drei';
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { Hexagon, Square, X, Trash2 } from 'lucide-react';
+import { Hexagon, Square, RectangleHorizontal, X, Trash2 } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import { useThemeStore } from '../../../store/themeStore';
 import type { Sketch, SketchConstraint } from '../../../types/cad';
 
 /** Center of a shape constraint, from its metadata or the member-line vertices. */
 function shapeCenter(con: SketchConstraint, sketch: Sketch): THREE.Vector3 | null {
-  const meta = con.polygonMeta ?? con.rectangleMeta;
+  const meta = con.polygonMeta ?? con.rectangleMeta ?? con.slotMeta;
   if (meta) return new THREE.Vector3(meta.center.x, meta.center.y, meta.center.z);
   const verts = con.entityIds
     .map((id) => sketch.entities.find((e) => e.id === id))
@@ -139,27 +139,32 @@ function PolygonEditor({
   );
 }
 
-/** Inline editor for a rectangle constraint: width + height. */
-function RectangleEditor({
+/** Inline two-field editor (rectangle width×height / slot length×width). */
+function BoxEditor({
   constraintId,
-  width,
-  height,
+  icon,
+  valA,
+  valB,
+  deleteTitle,
+  onApply,
   onClose,
 }: {
   constraintId: string;
-  width: number;
-  height: number;
+  icon: React.ReactNode;
+  valA: number;
+  valB: number;
+  deleteTitle: string;
+  onApply: (id: string, a: number, b: number) => void;
   onClose: () => void;
 }) {
   const colors = useThemeStore((s) => s.colors);
-  const regenerateRectangle = useCADStore((s) => s.regenerateRectangle);
   const replaceSketchEntities = useCADStore((s) => s.replaceSketchEntities);
-  const wRef = useRef<HTMLInputElement>(null);
-  const hRef = useRef<HTMLInputElement>(null);
+  const aRef = useRef<HTMLInputElement>(null);
+  const bRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const id = window.setTimeout(() => { wRef.current?.focus(); wRef.current?.select(); }, 0);
+    const id = window.setTimeout(() => { aRef.current?.focus(); aRef.current?.select(); }, 0);
     return () => window.clearTimeout(id);
   }, []);
 
@@ -172,12 +177,12 @@ function RectangleEditor({
   }, [onClose]);
 
   const apply = () => {
-    const w = Number(wRef.current?.value);
-    const h = Number(hRef.current?.value);
-    if (!Number.isNaN(w) && !Number.isNaN(h)) regenerateRectangle(constraintId, w, h);
+    const a = Number(aRef.current?.value);
+    const b = Number(bRef.current?.value);
+    if (!Number.isNaN(a) && !Number.isNaN(b)) onApply(constraintId, a, b);
   };
 
-  const deleteRect = () => {
+  const deleteShape = () => {
     const sketch = useCADStore.getState().activeSketch;
     if (!sketch) return;
     const con = sketch.constraints.find((c) => c.id === constraintId);
@@ -206,13 +211,13 @@ function RectangleEditor({
         whiteSpace: 'nowrap', pointerEvents: 'auto',
       }}
     >
-      <Square size={13} style={{ color: colors.accent }} />
-      <input ref={wRef} type="number" min={0.01} step={1} defaultValue={width.toFixed(2)}
+      {icon}
+      <input ref={aRef} type="number" min={0.01} step={1} defaultValue={valA.toFixed(2)}
         onChange={apply} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') onClose(); }} style={inputStyle} />
       <span style={{ color: colors.textSecondary }}>×</span>
-      <input ref={hRef} type="number" min={0.01} step={1} defaultValue={height.toFixed(2)}
+      <input ref={bRef} type="number" min={0.01} step={1} defaultValue={valB.toFixed(2)}
         onChange={apply} onKeyDown={(e) => { e.stopPropagation(); if (e.key === 'Enter') onClose(); }} style={inputStyle} />
-      <button title="Delete rectangle" onClick={deleteRect}
+      <button title={deleteTitle} onClick={deleteShape}
         style={{ display: 'flex', background: 'transparent', border: 'none', cursor: 'pointer', color: colors.textMuted, padding: 0 }}>
         <Trash2 size={13} />
       </button>
@@ -231,19 +236,23 @@ const glyphButtonStyle = (colors: { bgPanel: string; border: string; accent: str
 });
 
 /**
- * Fusion-style shape affordance: a small glyph at each regular polygon's or
- * rectangle's center. Clicking it opens an inline editor to change the side
- * count (polygon) or width/height (rectangle), or delete the shape. The polygon
- * editor also auto-opens right after a polygon is drawn.
+ * Fusion-style shape affordance: a small glyph at each regular polygon /
+ * rectangle / slot center. Clicking it opens an inline editor — side count
+ * (polygon), width×height (rectangle), or length×width (slot) — and a delete
+ * button. The polygon editor also auto-opens right after a polygon is drawn.
  */
 export default function PolygonConstraintOverlay() {
   const activeSketch = useCADStore((s) => s.activeSketch);
   const editingId = useCADStore((s) => s.editingPolygonConstraintId);
   const setEditingId = useCADStore((s) => s.setEditingPolygonConstraintId);
+  const regenerateRectangle = useCADStore((s) => s.regenerateRectangle);
+  const regenerateSlot = useCADStore((s) => s.regenerateSlot);
   const colors = useThemeStore((s) => s.colors);
 
   if (!activeSketch) return null;
-  const shapeConstraints = activeSketch.constraints.filter((c) => c.type === 'polygon' || c.type === 'rectangle');
+  const shapeConstraints = activeSketch.constraints.filter(
+    (c) => c.type === 'polygon' || c.type === 'rectangle' || c.type === 'slot',
+  );
   if (shapeConstraints.length === 0) return null;
 
   const badgeStyle: React.CSSProperties = {
@@ -258,27 +267,45 @@ export default function PolygonConstraintOverlay() {
         const center = shapeCenter(con, activeSketch);
         if (!center) return null;
         const isEditing = editingId === con.id;
-        const isRect = con.type === 'rectangle';
-        const rm = con.rectangleMeta;
+        const close = () => setEditingId(null);
+
+        let editor: React.ReactNode = null;
+        let glyphIcon: React.ReactNode = null;
+        let glyphTitle = '';
+        let badge: number | null = null;
+
+        if (con.type === 'polygon') {
+          editor = <PolygonEditor constraintId={con.id} sides={con.entityIds.length} onClose={close} />;
+          glyphIcon = <Hexagon size={13} />;
+          glyphTitle = `Regular polygon (${con.entityIds.length} sides) — click to edit`;
+          badge = con.entityIds.length;
+        } else if (con.type === 'rectangle') {
+          const rm = con.rectangleMeta;
+          editor = <BoxEditor constraintId={con.id} icon={<Square size={13} style={{ color: colors.accent }} />}
+            valA={rm?.width ?? 0} valB={rm?.height ?? 0} deleteTitle="Delete rectangle"
+            onApply={regenerateRectangle} onClose={close} />;
+          glyphIcon = <Square size={13} />;
+          glyphTitle = `Rectangle (${(rm?.width ?? 0).toFixed(1)} × ${(rm?.height ?? 0).toFixed(1)}) — click to edit`;
+        } else {
+          const sm = con.slotMeta;
+          editor = <BoxEditor constraintId={con.id} icon={<RectangleHorizontal size={13} style={{ color: colors.accent }} />}
+            valA={sm?.length ?? 0} valB={sm?.width ?? 0} deleteTitle="Delete slot"
+            onApply={regenerateSlot} onClose={close} />;
+          glyphIcon = <RectangleHorizontal size={13} />;
+          glyphTitle = `Slot (${(sm?.length ?? 0).toFixed(1)} × ${(sm?.width ?? 0).toFixed(1)}) — click to edit`;
+        }
+
         return (
           <Html key={con.id} position={center} center zIndexRange={[210, 0]} style={{ pointerEvents: 'none' }}>
-            {isEditing ? (
-              isRect ? (
-                <RectangleEditor constraintId={con.id} width={rm?.width ?? 0} height={rm?.height ?? 0} onClose={() => setEditingId(null)} />
-              ) : (
-                <PolygonEditor constraintId={con.id} sides={con.entityIds.length} onClose={() => setEditingId(null)} />
-              )
-            ) : (
+            {isEditing ? editor : (
               <button
-                title={isRect
-                  ? `Rectangle (${(rm?.width ?? 0).toFixed(1)} × ${(rm?.height ?? 0).toFixed(1)}) — click to edit`
-                  : `Regular polygon (${con.entityIds.length} sides) — click to edit`}
+                title={glyphTitle}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => { e.stopPropagation(); setEditingId(con.id); }}
                 style={glyphButtonStyle(colors)}
               >
-                {isRect ? <Square size={13} /> : <Hexagon size={13} />}
-                {!isRect && <span style={badgeStyle}>{con.entityIds.length}</span>}
+                {glyphIcon}
+                {badge !== null && <span style={badgeStyle}>{badge}</span>}
               </button>
             )}
           </Html>

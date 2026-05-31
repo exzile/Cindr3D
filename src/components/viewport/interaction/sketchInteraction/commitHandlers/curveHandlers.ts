@@ -6,8 +6,24 @@ import type { SketchCommitHandler } from './types';
 export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
   const {
     activeTool, sketchPoint, drawingPoints, setDrawingPoints,
-    t1, t2, addSketchEntity, setStatusMessage,
+    t1, t2, addSketchEntity, addSketchConstraint, setStatusMessage,
   } = ctx;
+
+  // Group a straight slot's 2 lines + 2 cap arcs under a 'slot' constraint
+  // carrying its editable params, so a center glyph + length/width editor can
+  // rebuild it.
+  const groupSlot = (
+    entityIds: string[],
+    center: { x: number; y: number; z: number },
+    length: number,
+    width: number,
+    rotation: number,
+  ) => {
+    addSketchConstraint({
+      id: crypto.randomUUID(), type: 'slot', entityIds,
+      slotMeta: { center, length, width, rotation },
+    });
+  };
 
   switch (activeTool) {
     case 'slot':
@@ -52,36 +68,21 @@ export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
         const sideA2 = a(c2, 1);
         const sideB1 = a(c1, -1);
         const sideB2 = a(c2, -1);
-        // Two straight sides
-        addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [sideA1, sideA2] });
-        addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [sideB1, sideB2] });
-        // Two end arcs — angles are plane-local (via t1/t2), perpDir
-        // always points in +t2 relative to axisDir so start = +π/2, end = -π/2
-        // for the end cap at c1 (swept the long way) and opposite at c2.
-        // C4: both caps anchored to axisAngle — perpAngle is no longer used.
-        const axisAngle = Math.atan2(axisDir.dot(t2), axisDir.dot(t1));
-        // Arc at c1: from +perpDir (perpAngle) sweeping opposite to axis
-        // through -perpDir. For Fusion-like rendering, we just emit a
-        // half-turn of radius = halfWidth at each centre.
         // C4: both caps anchored to axisAngle so they face outward from the slot ends.
-        // c1 is the "back" end (axis goes from c1→c2), so its cap faces axisAngle+π.
-        // c2 is the "front" end, cap faces axisAngle (same as slot-overall / slot-center-point).
-        addSketchEntity({
-          id: crypto.randomUUID(),
-          type: 'arc',
-          points: [c1],
-          radius: halfWidth,
-          startAngle: axisAngle + Math.PI / 2,
-          endAngle: axisAngle + (3 * Math.PI) / 2,
-        });
-        addSketchEntity({
-          id: crypto.randomUUID(),
-          type: 'arc',
-          points: [c2],
-          radius: halfWidth,
-          startAngle: axisAngle - Math.PI / 2,
-          endAngle: axisAngle + Math.PI / 2,
-        });
+        const axisAngle = Math.atan2(axisDir.dot(t2), axisDir.dot(t1));
+        const lineAId = crypto.randomUUID();
+        const lineBId = crypto.randomUUID();
+        const arc1Id = crypto.randomUUID();
+        const arc2Id = crypto.randomUUID();
+        addSketchEntity({ id: lineAId, type: 'line', points: [sideA1, sideA2] });
+        addSketchEntity({ id: lineBId, type: 'line', points: [sideB1, sideB2] });
+        addSketchEntity({ id: arc1Id, type: 'arc', points: [c1], radius: halfWidth, startAngle: axisAngle + Math.PI / 2, endAngle: axisAngle + (3 * Math.PI) / 2 });
+        addSketchEntity({ id: arc2Id, type: 'arc', points: [c2], radius: halfWidth, startAngle: axisAngle - Math.PI / 2, endAngle: axisAngle + Math.PI / 2 });
+        groupSlot(
+          [lineAId, lineBId, arc1Id, arc2Id],
+          { x: (c1.x + c2.x) / 2, y: (c1.y + c2.y) / 2, z: (c1.z + c2.z) / 2 },
+          axisLen, halfWidth * 2, axisAngle,
+        );
         setStatusMessage(`Slot added (${axisLen.toFixed(2)} × ${(halfWidth * 2).toFixed(2)})`);
         setDrawingPoints([]);
       }
@@ -136,26 +137,22 @@ export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
           y: p.y + perpDir.y * sign * halfWidth,
           z: p.z + perpDir.z * sign * halfWidth,
         });
-        addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [offset(c1, 1), offset(c2, 1)] });
-        addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [offset(c1, -1), offset(c2, -1)] });
         const axisLocal = new THREE.Vector3(axisDir.dot(t1), axisDir.dot(t2), 0);
         const axisAngle = Math.atan2(axisLocal.y, axisLocal.x);
-        addSketchEntity({
-          id: crypto.randomUUID(),
-          type: 'arc',
-          points: [c1],
-          radius: halfWidth,
-          startAngle: axisAngle + Math.PI / 2,
-          endAngle: axisAngle + (3 * Math.PI) / 2,
-        });
-        addSketchEntity({
-          id: crypto.randomUUID(),
-          type: 'arc',
-          points: [c2],
-          radius: halfWidth,
-          startAngle: axisAngle - Math.PI / 2,
-          endAngle: axisAngle + Math.PI / 2,
-        });
+        const lineAId = crypto.randomUUID();
+        const lineBId = crypto.randomUUID();
+        const arc1Id = crypto.randomUUID();
+        const arc2Id = crypto.randomUUID();
+        addSketchEntity({ id: lineAId, type: 'line', points: [offset(c1, 1), offset(c2, 1)] });
+        addSketchEntity({ id: lineBId, type: 'line', points: [offset(c1, -1), offset(c2, -1)] });
+        addSketchEntity({ id: arc1Id, type: 'arc', points: [c1], radius: halfWidth, startAngle: axisAngle + Math.PI / 2, endAngle: axisAngle + (3 * Math.PI) / 2 });
+        addSketchEntity({ id: arc2Id, type: 'arc', points: [c2], radius: halfWidth, startAngle: axisAngle - Math.PI / 2, endAngle: axisAngle + Math.PI / 2 });
+        // length = distance between cap centres (overall − width)
+        groupSlot(
+          [lineAId, lineBId, arc1Id, arc2Id],
+          { x: (c1.x + c2.x) / 2, y: (c1.y + c2.y) / 2, z: (c1.z + c2.z) / 2 },
+          overallLen - halfWidth * 2, halfWidth * 2, axisAngle,
+        );
         setStatusMessage(`Overall Slot added (${overallLen.toFixed(2)} × ${(halfWidth * 2).toFixed(2)})`);
         setDrawingPoints([]);
       }
@@ -196,18 +193,22 @@ export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
           y: p.y + perpDir.y * sign * halfWidth,
           z: p.z + perpDir.z * sign * halfWidth,
         });
-        addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [off(c1, 1), off(c2, 1)] });
-        addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [off(c1, -1), off(c2, -1)] });
         const axisLocal = new THREE.Vector3(axisDir.dot(t1), axisDir.dot(t2), 0);
         const axisAngle = Math.atan2(axisLocal.y, axisLocal.x);
-        addSketchEntity({
-          id: crypto.randomUUID(), type: 'arc', points: [c1], radius: halfWidth,
-          startAngle: axisAngle - Math.PI / 2, endAngle: axisAngle + Math.PI / 2,
-        });
-        addSketchEntity({
-          id: crypto.randomUUID(), type: 'arc', points: [c2], radius: halfWidth,
-          startAngle: axisAngle + Math.PI / 2, endAngle: axisAngle + (3 * Math.PI) / 2,
-        });
+        const lineAId = crypto.randomUUID();
+        const lineBId = crypto.randomUUID();
+        const arc1Id = crypto.randomUUID();
+        const arc2Id = crypto.randomUUID();
+        addSketchEntity({ id: lineAId, type: 'line', points: [off(c1, 1), off(c2, 1)] });
+        addSketchEntity({ id: lineBId, type: 'line', points: [off(c1, -1), off(c2, -1)] });
+        // c1 = endPt is the "front" (+axisDir) cap; c2 is the "back".
+        addSketchEntity({ id: arc1Id, type: 'arc', points: [c1], radius: halfWidth, startAngle: axisAngle - Math.PI / 2, endAngle: axisAngle + Math.PI / 2 });
+        addSketchEntity({ id: arc2Id, type: 'arc', points: [c2], radius: halfWidth, startAngle: axisAngle + Math.PI / 2, endAngle: axisAngle + (3 * Math.PI) / 2 });
+        groupSlot(
+          [lineAId, lineBId, arc1Id, arc2Id],
+          { x: mid.x, y: mid.y, z: mid.z },
+          halfLen * 2, halfWidth * 2, axisAngle,
+        );
         setStatusMessage(`Center Slot added (${(halfLen * 2).toFixed(2)} × ${(halfWidth * 2).toFixed(2)})`);
         setDrawingPoints([]);
       }
