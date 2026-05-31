@@ -846,7 +846,7 @@
 # All snap logic is in ONE file: SketchInteraction.tsx (findSnapCandidate 214-384,
 # snapToGrid 192-207). No separate engine, no inference/alignment guides.
 #
-# [ ] SKETCH-2.A1  Grid snap increment is gridSize/10 (BUG). SketchInteraction.tsx:197
+# [x] SKETCH-2.A1  Grid snap increment is gridSize/10 (BUG). SketchInteraction.tsx:197
 #     `const snap = gridSize / 10` → with default gridSize 10 the snap step is 1 unit,
 #     so points snap 10x finer than the VISIBLE grid and never land on grid lines.
 #     Also ignores the per-sketch `sketchGridSize` override (coreState.ts:187). Fusion
@@ -860,7 +860,7 @@
 #     radius. Fix: project candidate + cursor to screen space and compare in pixels
 #     (or scale SNAP_RADIUS by world-units-per-pixel at cursor depth).
 #
-# [ ] SKETCH-2.A3  No snap-type priority — closest-distance-wins (BUG). considerCandidate
+# [x] SKETCH-2.A3  No snap-type priority — closest-distance-wins (BUG). considerCandidate
 #     (220-229) keeps whichever candidate is nearest in world distance across ALL types,
 #     so a midpoint 1.9mm away beats an endpoint 2.0mm away. Fusion ranks
 #     endpoint/center > intersection > midpoint > on-curve > grid regardless of a hair's
@@ -877,11 +877,11 @@
 #     only, 255-266) — not nearest-point-on-arbitrary-curve. Fix: add closest-point-on-
 #     curve projection for line/arc/circle/ellipse/spline.
 #
-# [ ] SKETCH-2.A6  Center snap skips ellipse / elliptical-arc (GAP). Gated on
+# [x] SKETCH-2.A6  Center snap skips ellipse / elliptical-arc (GAP). Gated on
 #     type==='circle'||'arc' (line 268). Ellipses store center in points[0] but get no
 #     center snap. Fix: include ellipse/elliptical-arc.
 #
-# [ ] SKETCH-2.A7  Midpoint snap skips arcs (GAP). Midpoint computed only for line types
+# [x] SKETCH-2.A7  Midpoint snap skips arcs (GAP). Midpoint computed only for line types
 #     (248-253) as endpoint average; arcs get none, and the average would be wrong for an
 #     arc anyway. Fix: arc midpoint = point at (startAngle+endAngle)/2.
 #
@@ -924,7 +924,7 @@
 #     guard. Fix: make radius a DOF (B1) so circle-circle equal works; reject line/circle
 #     pairs in the tool with a message.
 #
-# [ ] SKETCH-2.B3  Constraint tool never captures pointIndices (BUG). useSketchConstraint
+# [x] SKETCH-2.B3  Constraint tool never captures pointIndices (BUG). useSketchConstraint
 #     Tool.ts:165-168 dispatches `{type, entityIds: nextSelection}` with no pointIndices,
 #     so the solver defaults p0↔p0 (ConstraintSolver.ts:319) — clicking the END of line A
 #     and START of line B always bonds the WRONG endpoints. Coincident is the most-used
@@ -936,7 +936,7 @@
 #     .ts:415-435. Fix: add curve-curve branch dist(cA,cB)==|rA±rB|, make radius a DOF,
 #     pick ± by current config.
 #
-# [ ] SKETCH-2.B5  Symmetric tool axis ordering is ambiguous/wrong (BUG). useSketchConstraint
+# [x] SKETCH-2.B5  Symmetric tool axis ordering is ambiguous/wrong (BUG). useSketchConstraint
 #     Tool.ts:19-30 takes 3 clicks in click order, but solver expects [axis, a, b]
 #     (ConstraintSolver.ts:436). Whatever the user clicks FIRST becomes the axis → mirrors
 #     across the wrong line. Fix: prompt "pick two entities, then the axis" and reorder to
@@ -957,7 +957,7 @@
 #     constraints aren't flagged at all. Fix: redundancy via Jacobian rank deficiency;
 #     conflict via inconsistent post-solve residual.
 #
-# [ ] SKETCH-2.B8  addSketchConstraint dedupe ignores pointIndices (BUG). constraintAnd
+# [x] SKETCH-2.B8  addSketchConstraint dedupe ignores pointIndices (BUG). constraintAnd
 #     ViewActions.ts:158-161 keys on type+entityIds only, so two different coincident
 #     constraints on the same line pair (p1↔p0 vs p0↔p1) are wrongly deduped. Compounds
 #     B3. Fix: include pointIndices in the dedupe key.
@@ -986,20 +986,20 @@
 # CCW (if endAngle<=startAngle add 2pi). Any handler computing angles must guarantee the
 # intended arc is the CCW one or it renders the complementary (wrong-side) arc.
 #
-# [ ] SKETCH-2.C1  arc-3point renders the wrong-side arc (BUG, very visible). tangentHandlers
+# [x] SKETCH-2.C1  arc-3point renders the wrong-side arc (BUG, very visible). tangentHandlers
 #     .ts:194-223 computes circumcircle center + start/end atan2 but never checks the
 #     through-point lies on the CCW arc. When the middle point is on the CW side, the arc
 #     bulges opposite to what the user drew. Fix: if CCW sweep start→end doesn't contain
 #     the mid angle, swap start/end (slot-3point-arc curveHandlers.ts:268-279 already does
 #     this midFromStart<endFromStart test — reuse it).
 #
-# [ ] SKETCH-2.C2  tangent-arc can render a cusp / wrong arc (BUG). tangentHandlers.ts:282-360
+# [x] SKETCH-2.C2  tangent-arc can render a cusp / wrong arc (BUG). tangentHandlers.ts:282-360
 #     center solve is correct but emits raw atan2 angles with no orientation guard vs the
 #     CCW renderer, so the start tangent may point opposite the connecting curve (cusp
 #     instead of smooth). Same in dragged variant sketchEventHelpers.ts:108-117. Fix: check
 #     the CCW arc start tangent matches tangentDir; swap start/end if not.
 #
-# [ ] SKETCH-2.C3  circle-2tangent / circle-3tangent ignore sketch.planeOrigin (BUG —
+# [x] SKETCH-2.C3  circle-2tangent / circle-3tangent ignore sketch.planeOrigin (BUG —
 #     silently wrong on offset planes). tangentHandlers.ts:55 toUV / :146 toUV3 project as
 #     dot(t1)/dot(t2) WITHOUT subtracting planeOrigin, and reconstruct center as t1*cu+t2*cv
 #     WITHOUT adding it back (:99,:183). On any plane not through the world origin (offset
@@ -1009,14 +1009,14 @@
 #     sketchProfiles.ts:41-58). 3-point circle/arc are already correct (circumcenter2D
 #     projects relative to p1).
 #
-# [ ] SKETCH-2.C4  slot / slot-center end-cap arcs use inconsistent angle conventions →
+# [x] SKETCH-2.C4  slot / slot-center end-cap arcs use inconsistent angle conventions →
 #     cap on wrong side / overlap (BUG). curveHandlers.ts:13-103: cap at c1 uses
 #     [perpAngle, perpAngle+pi] (anchored to perpDir) while cap at c2 uses
 #     [axisAngle-pi/2, axisAngle+pi/2] (anchored to axisDir). With the CCW renderer this
 #     frequently caps the wrong side. slot-overall / slot-center-point do it consistently
 #     and are correct. Fix: anchor both caps to axisAngle±pi/2 / +3pi/2 like slot-center-point.
 #
-# [ ] SKETCH-2.C5  slot-3point-arc / slot-center-arc caps use a fixed ±pi/2 that ignores
+# [x] SKETCH-2.C5  slot-3point-arc / slot-center-arc caps use a fixed ±pi/2 that ignores
 #     sweep direction (BUG). curveHandlers.ts:288-294,:336-339. When the arc sweep flips
 #     (arcSA/arcEA swap at :277-279) the caps point tangentially along the slot arc instead
 #     of capping the ends → slot left open. Fix: derive cap orientation from the radial

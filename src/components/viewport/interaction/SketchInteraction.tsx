@@ -194,7 +194,8 @@ export default function SketchInteraction() {
     if (!snapEnabled && !sketchSnapEnabled) return point;
     if (!activeSketch) return point;
 
-    const snap = gridSize / 10;
+    // A1: snap to the displayed grid spacing, not gridSize/10; honor per-sketch override.
+    const snap = (activeSketch as { gridSize?: number }).gridSize ?? gridSize;
     const origin = activeSketch.planeOrigin ?? new THREE.Vector3(0, 0, 0);
     const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
     const fromOrigin = point.clone().sub(origin);
@@ -216,14 +217,28 @@ export default function SketchInteraction() {
     // NAV-24: master object-snap gate
     if (!objectSnapEnabled) return null;
     let bestDist = SNAP_RADIUS;
+    let bestPriority = 99;
     let best: { worldPos: THREE.Vector3; type: 'endpoint' | 'midpoint' | 'center' | 'intersection' | 'perpendicular' | 'tangent' } | null = null;
+    // A3: priority order (lower = higher priority). A higher-priority snap within
+    // SNAP_RADIUS beats a lower-priority snap that is geometrically closer.
+    const SNAP_PRIORITY: Record<string, number> = {
+      endpoint: 1, center: 1,
+      intersection: 2,
+      midpoint: 3, perpendicular: 3, tangent: 3,
+      nearest: 4,
+      grid: 5,
+    };
     const considerCandidate = (
       worldPos: THREE.Vector3,
       type: 'endpoint' | 'midpoint' | 'center' | 'intersection' | 'perpendicular' | 'tangent',
     ) => {
       const d = worldPt.distanceTo(worldPos);
-      if (d < bestDist) {
+      if (d > SNAP_RADIUS) return; // outside grab radius — ignore
+      const priority = SNAP_PRIORITY[type] ?? 4;
+      // A higher-priority type wins even if slightly farther; same priority → closest wins
+      if (priority < bestPriority || (priority === bestPriority && d < bestDist)) {
         bestDist = d;
+        bestPriority = priority;
         best = { worldPos: worldPos.clone(), type };
       }
     };
@@ -265,11 +280,24 @@ export default function SketchInteraction() {
             }
           }
         }
-      } else if ((e.type === 'circle' || e.type === 'arc') && e.points.length >= 1) {
-        // Center snap
+      } else if ((e.type === 'circle' || e.type === 'arc' || e.type === 'ellipse' || e.type === 'elliptical-arc') && e.points.length >= 1) {
+        // Center snap — A6: include ellipse / elliptical-arc (center = points[0])
         if (snapToCenter) {
           const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
           considerCandidate(center, 'center');
+        }
+        // A7: arc midpoint = point at (startAngle + endAngle) / 2 on the arc
+        if (snapToMidpoint && (e.type === 'arc') && e.points.length >= 1 && typeof e.startAngle === 'number' && typeof e.endAngle === 'number') {
+          const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
+          const r = e.radius ?? 0;
+          const { t1: sk_t1, t2: sk_t2 } = GeometryEngine.getSketchAxes(activeSketch!);
+          let ea = e.endAngle;
+          if (ea <= e.startAngle) ea += 2 * Math.PI;
+          const midA = (e.startAngle + ea) / 2;
+          const midPt = center.clone()
+            .addScaledVector(sk_t1, Math.cos(midA) * r)
+            .addScaledVector(sk_t2, Math.sin(midA) * r);
+          considerCandidate(midPt, 'midpoint');
         }
         // Tangent snap: when drawing a line (drawStart set), find tangent point on circle
         // where the line from drawStart to that point is tangent to the circle.

@@ -80,21 +80,24 @@ export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
         // Arc at c1: from +perpDir (perpAngle) sweeping opposite to axis
         // through -perpDir. For Fusion-like rendering, we just emit a
         // half-turn of radius = halfWidth at each centre.
+        // C4: both caps anchored to axisAngle so they face outward from the slot ends.
+        // c1 is the "back" end (axis goes from c1→c2), so its cap faces axisAngle+π.
+        // c2 is the "front" end, cap faces axisAngle (same as slot-overall / slot-center-point).
         addSketchEntity({
           id: crypto.randomUUID(),
           type: 'arc',
           points: [c1],
           radius: halfWidth,
-          startAngle: perpAngle,
-          endAngle: perpAngle + Math.PI,
+          startAngle: axisAngle + Math.PI / 2,
+          endAngle: axisAngle + (3 * Math.PI) / 2,
         });
         addSketchEntity({
           id: crypto.randomUUID(),
           type: 'arc',
           points: [c2],
           radius: halfWidth,
-          startAngle: axisAngle - Math.PI / 2, // -perpDir side
-          endAngle: axisAngle + Math.PI / 2,   // +perpDir side
+          startAngle: axisAngle - Math.PI / 2,
+          endAngle: axisAngle + Math.PI / 2,
         });
         setStatusMessage(`Slot added (${axisLen.toFixed(2)} × ${(halfWidth * 2).toFixed(2)})`);
         setDrawingPoints([]);
@@ -282,16 +285,26 @@ export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
         const rInner = Math.max(0.001, R - halfWidth);
         addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [{ id: crypto.randomUUID(), x: C.x, y: C.y, z: C.z }], radius: rOuter, startAngle: arcSA, endAngle: arcEA });
         addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [{ id: crypto.randomUUID(), x: C.x, y: C.y, z: C.z }], radius: rInner, startAngle: arcSA, endAngle: arcEA });
-        // Cap arcs at P0 and P2 ends (semicircles perpendicular to the slot arc)
+        // Cap arcs at P0 and P2 ends.
+        // C5: derive cap orientation from the actual radial direction of each endpoint,
+        // independent of the arcSA/arcEA swap above.  When p0 is the arc START the cap
+        // faces "backward" (from p0Radial−π to p0Radial); when p0 is the arc END (after
+        // swap) it faces "forward" (from p0Radial to p0Radial+π).
         const capCenter0: SketchPoint = { id: crypto.randomUUID(), x: p0.x, y: p0.y, z: p0.z };
         const capCenter2: SketchPoint = { id: crypto.randomUUID(), x: p2.x, y: p2.y, z: p2.z };
-        // Tangent at arc endpoint = perpendicular to radial direction in plane
-        const radialAngle0 = arcSA;
-        const capAngle0 = radialAngle0 + Math.PI / 2;
-        const radialAngle2 = arcEA;
-        const capAngle2 = radialAngle2 - Math.PI / 2;
-        addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [capCenter0], radius: halfWidth, startAngle: capAngle0, endAngle: capAngle0 + Math.PI });
-        addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [capCenter2], radius: halfWidth, startAngle: capAngle2, endAngle: capAngle2 + Math.PI });
+        const toP0vec = new THREE.Vector3(p0.x - C.x, p0.y - C.y, p0.z - C.z);
+        const toP2vec = new THREE.Vector3(p2.x - C.x, p2.y - C.y, p2.z - C.z);
+        const p0RadialAngle = Math.atan2(toP0vec.dot(t2), toP0vec.dot(t1));
+        const p2RadialAngle = Math.atan2(toP2vec.dot(t2), toP2vec.dot(t1));
+        const p0IsStart = midFromStart < endFromStart; // true = arc was NOT swapped
+        const [cap0SA, cap0EA] = p0IsStart
+          ? [p0RadialAngle - Math.PI, p0RadialAngle]
+          : [p0RadialAngle, p0RadialAngle + Math.PI];
+        const [cap2SA, cap2EA] = p0IsStart
+          ? [p2RadialAngle, p2RadialAngle + Math.PI]
+          : [p2RadialAngle - Math.PI, p2RadialAngle];
+        addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [capCenter0], radius: halfWidth, startAngle: cap0SA, endAngle: cap0EA });
+        addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [capCenter2], radius: halfWidth, startAngle: cap2SA, endAngle: cap2EA });
         setStatusMessage(`Arc Slot added (R=${R.toFixed(2)}, w=${(halfWidth * 2).toFixed(2)})`);
         setDrawingPoints([]);
       }
@@ -331,12 +344,12 @@ export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
         const cPt: SketchPoint = { id: crypto.randomUUID(), x: C.x, y: C.y, z: C.z };
         addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [{ ...cPt, id: crypto.randomUUID() }], radius: rOuter, startAngle, endAngle });
         addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [{ ...cPt, id: crypto.randomUUID() }], radius: rInner, startAngle, endAngle });
+        // C5: cap at p0 faces backward from arc start (startAngle−π → startAngle);
+        // cap at p2 faces forward from arc end (endAngle → endAngle+π).
         const capCenter0: SketchPoint = { id: crypto.randomUUID(), x: p0.x, y: p0.y, z: p0.z };
         const capCenter2: SketchPoint = { id: crypto.randomUUID(), x: p2.x, y: p2.y, z: p2.z };
-        const capAngle0 = startAngle + Math.PI / 2;
-        const capAngle2 = endAngle - Math.PI / 2;
-        addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [capCenter0], radius: halfWidth, startAngle: capAngle0, endAngle: capAngle0 + Math.PI });
-        addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [capCenter2], radius: halfWidth, startAngle: capAngle2, endAngle: capAngle2 + Math.PI });
+        addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [capCenter0], radius: halfWidth, startAngle: startAngle - Math.PI, endAngle: startAngle });
+        addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [capCenter2], radius: halfWidth, startAngle: endAngle, endAngle: endAngle + Math.PI });
         setStatusMessage(`Center Arc Slot added (R=${R.toFixed(2)}, w=${(halfWidth * 2).toFixed(2)})`);
         setDrawingPoints([]);
       }

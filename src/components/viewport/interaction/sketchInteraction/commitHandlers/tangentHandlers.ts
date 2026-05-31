@@ -51,8 +51,12 @@ export const handleTangentSketchCommit: SketchCommitHandler = (ctx) => {
         break;
       }
 
-      // Project both lines into sketch-plane 2D (u, v)
-      const toUV = (pt: { x: number; y: number; z: number }) => ({ u: new THREE.Vector3(pt.x, pt.y, pt.z).dot(t1), v: new THREE.Vector3(pt.x, pt.y, pt.z).dot(t2) });
+      // Project both lines into sketch-plane 2D (u, v) — subtract planeOrigin first (C3)
+      const o2 = activeSketch.planeOrigin;
+      const toUV = (pt: { x: number; y: number; z: number }) => {
+        const d = new THREE.Vector3(pt.x - o2.x, pt.y - o2.y, pt.z - o2.z);
+        return { u: d.dot(t1), v: d.dot(t2) };
+      };
       const a0 = toUV(bestLine0.points[0]), b0 = toUV(bestLine0.points[1]);
       const a1 = toUV(bestLine1.points[0]), b1 = toUV(bestLine1.points[1]);
       // Line equation form: au·x + av·y + c = 0, normalized
@@ -95,8 +99,8 @@ export const handleTangentSketchCommit: SketchCommitHandler = (ctx) => {
         return d < acc.d ? { d, c } : acc;
       }, { d: Infinity, c: candidates[0] }).c;
 
-      // Convert back to world coords
-      const worldCenter = t1.clone().multiplyScalar(best.cu).add(t2.clone().multiplyScalar(best.cv));
+      // Convert back to world coords — add planeOrigin back (C3)
+      const worldCenter = o2.clone().add(t1.clone().multiplyScalar(best.cu)).add(t2.clone().multiplyScalar(best.cv));
       addSketchEntity({
         id: crypto.randomUUID(), type: 'circle',
         points: [{ id: crypto.randomUUID(), x: worldCenter.x, y: worldCenter.y, z: worldCenter.z }],
@@ -143,7 +147,12 @@ export const handleTangentSketchCommit: SketchCommitHandler = (ctx) => {
 
       if (selectedLines.length < 3) { setStatusMessage('3-Tangent Circle: need 3 distinct lines'); setDrawingPoints([]); break; }
 
-      const toUV3 = (pt: { x: number; y: number; z: number }) => ({ u: new THREE.Vector3(pt.x, pt.y, pt.z).dot(t1), v: new THREE.Vector3(pt.x, pt.y, pt.z).dot(t2) });
+      // Project into sketch-plane 2D — subtract planeOrigin first (C3)
+      const o3 = activeSketch.planeOrigin;
+      const toUV3 = (pt: { x: number; y: number; z: number }) => {
+        const d = new THREE.Vector3(pt.x - o3.x, pt.y - o3.y, pt.z - o3.z);
+        return { u: d.dot(t1), v: d.dot(t2) };
+      };
       const lineEq3 = (a: {u:number;v:number}, b: {u:number;v:number}) => {
         const du = b.u - a.u, dv = b.v - a.v;
         const len = Math.sqrt(du*du + dv*dv);
@@ -180,7 +189,8 @@ export const handleTangentSketchCommit: SketchCommitHandler = (ctx) => {
       }
 
       if (!bestCenter) { setStatusMessage('3-Tangent Circle: could not solve incircle'); setDrawingPoints([]); break; }
-      const wc3 = t1.clone().multiplyScalar(bestCenter.cu).add(t2.clone().multiplyScalar(bestCenter.cv));
+      // Add planeOrigin back when converting to world coords (C3)
+      const wc3 = o3.clone().add(t1.clone().multiplyScalar(bestCenter.cu)).add(t2.clone().multiplyScalar(bestCenter.cv));
       addSketchEntity({
         id: crypto.randomUUID(), type: 'circle',
         points: [{ id: crypto.randomUUID(), x: wc3.x, y: wc3.y, z: wc3.z }],
@@ -208,13 +218,24 @@ export const handleTangentSketchCommit: SketchCommitHandler = (ctx) => {
         );
         if (cc) {
           const { u: u1, v: v1 } = projectToPlane(drawingPoints[0], { id:'', x: cc.center.x, y: cc.center.y, z: cc.center.z });
+          const { u: u2, v: v2 } = projectToPlane(drawingPoints[1], { id:'', x: cc.center.x, y: cc.center.y, z: cc.center.z });
           const { u: u3, v: v3 } = projectToPlane(sketchPoint, { id:'', x: cc.center.x, y: cc.center.y, z: cc.center.z });
+          let startAngle = Math.atan2(v1, u1);
+          const midAngle  = Math.atan2(v2, u2);
+          let endAngle   = Math.atan2(v3, u3);
+          // C1: ensure the through-point lies on the CCW arc start→end.
+          // Normalize midAngle and endAngle into [0, 2π) relative to startAngle.
+          const norm2pi = (a: number, from: number) => { let r = a - from; while (r < 0) r += 2 * Math.PI; return r; };
+          if (norm2pi(midAngle, startAngle) > norm2pi(endAngle, startAngle)) {
+            // Mid is on the CW side — flip so the CCW arc contains the through-point
+            [startAngle, endAngle] = [endAngle, startAngle];
+          }
           addSketchEntity({
             id: crypto.randomUUID(), type: 'arc',
             points: [{ id: crypto.randomUUID(), ...cc.center }],
             radius: cc.radius,
-            startAngle: Math.atan2(v1, u1),
-            endAngle: Math.atan2(v3, u3),
+            startAngle,
+            endAngle,
           });
           setStatusMessage(`3-Point Arc added (r=${cc.radius.toFixed(2)})`);
         } else { setStatusMessage('Points are collinear — cannot form an arc'); }
@@ -345,8 +366,15 @@ export const handleTangentSketchCommit: SketchCommitHandler = (ctx) => {
       // Compute plane-local start/end angles
       const toStart = new THREE.Vector3(startPt.x - cx, startPt.y - cy, startPt.z - cz);
       const toEnd = new THREE.Vector3(endPt.x - cx, endPt.y - cy, endPt.z - cz);
-      const startAngle = Math.atan2(toStart.dot(t2), toStart.dot(t1));
-      const endAngle = Math.atan2(toEnd.dot(t2), toEnd.dot(t1));
+      let startAngle = Math.atan2(toStart.dot(t2), toStart.dot(t1));
+      let endAngle = Math.atan2(toEnd.dot(t2), toEnd.dot(t1));
+      // C2: CCW arc start tangent must match the incoming tangentDir (no cusp).
+      // Tangent of the CCW arc at angle θ is: T = -t1*sin(θ) + t2*cos(θ).
+      const arcStartTangent = t1.clone().multiplyScalar(-Math.sin(startAngle))
+        .add(t2.clone().multiplyScalar(Math.cos(startAngle)));
+      if (arcStartTangent.dot(tangentDir) < 0) {
+        [startAngle, endAngle] = [endAngle, startAngle];
+      }
       addSketchEntity({
         id: crypto.randomUUID(),
         type: 'arc',

@@ -155,8 +155,10 @@ export function createConstraintAndViewActions({ set, get }: CADSliceContext): P
     addSketchConstraint: (constraint) => {
       const { activeSketch } = get();
       if (!activeSketch) return;
+      // B8: include pointIndices in the dedupe key so p0↔p1 and p1↔p0 are distinct.
+      const constraintKey = `${constraint.type}|${constraint.entityIds.join(',')}|${(constraint.pointIndices ?? []).join(',')}`;
       const exists = (activeSketch.constraints ?? []).some(
-        (c) => c.type === constraint.type && c.entityIds.join(',') === constraint.entityIds.join(','),
+        (c) => `${c.type}|${c.entityIds.join(',')}|${(c.pointIndices ?? []).join(',')}` === constraintKey,
       );
       if (exists) return;
       get().pushUndo();
