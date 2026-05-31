@@ -29,8 +29,6 @@ export type ConstraintType =
   | 'line-on-surface'
   | 'distance-surface'
   | 'polygon'
-  | 'rectangle'
-  | 'slot'
   | 'line-parallel-surface';
 
 export interface SketchConstraint {
@@ -55,29 +53,6 @@ export interface SketchConstraint {
     radius: number;
     baseAngle: number;
     kind?: 'inscribed' | 'circumscribed';
-  };
-  /**
-   * For 'rectangle' grouping constraints: the parameters captured at creation so
-   * the rectangle can be regenerated with a new width/height (the center glyph +
-   * editor read/write this). `rotation` is the in-plane angle of the width axis.
-   */
-  rectangleMeta?: {
-    center: { x: number; y: number; z: number };
-    width: number;
-    height: number;
-    rotation: number;
-  };
-  /**
-   * For 'slot' grouping constraints (straight slots): editable parameters so the
-   * center glyph + editor can rebuild it. `length` is the distance between the
-   * two cap-arc centers; `width` is the full slot width (2 × arc radius);
-   * `rotation` is the in-plane angle of the slot axis.
-   */
-  slotMeta?: {
-    center: { x: number; y: number; z: number };
-    length: number;
-    width: number;
-    rotation: number;
   };
 }
 

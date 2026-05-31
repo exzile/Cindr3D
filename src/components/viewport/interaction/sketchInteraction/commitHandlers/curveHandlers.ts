@@ -6,24 +6,8 @@ import type { SketchCommitHandler } from './types';
 export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
   const {
     activeTool, sketchPoint, drawingPoints, setDrawingPoints,
-    t1, t2, addSketchEntity, addSketchConstraint, setStatusMessage,
+    t1, t2, addSketchEntity, setStatusMessage,
   } = ctx;
-
-  // Group a straight slot's 2 lines + 2 cap arcs under a 'slot' constraint
-  // carrying its editable params, so a center glyph + length/width editor can
-  // rebuild it.
-  const groupSlot = (
-    entityIds: string[],
-    center: { x: number; y: number; z: number },
-    length: number,
-    width: number,
-    rotation: number,
-  ) => {
-    addSketchConstraint({
-      id: crypto.randomUUID(), type: 'slot', entityIds,
-      slotMeta: { center, length, width, rotation },
-    });
-  };
 
   switch (activeTool) {
     case 'slot':
@@ -78,11 +62,6 @@ export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
         addSketchEntity({ id: lineBId, type: 'line', points: [sideB1, sideB2] });
         addSketchEntity({ id: arc1Id, type: 'arc', points: [c1], radius: halfWidth, startAngle: axisAngle + Math.PI / 2, endAngle: axisAngle + (3 * Math.PI) / 2 });
         addSketchEntity({ id: arc2Id, type: 'arc', points: [c2], radius: halfWidth, startAngle: axisAngle - Math.PI / 2, endAngle: axisAngle + Math.PI / 2 });
-        groupSlot(
-          [lineAId, lineBId, arc1Id, arc2Id],
-          { x: (c1.x + c2.x) / 2, y: (c1.y + c2.y) / 2, z: (c1.z + c2.z) / 2 },
-          axisLen, halfWidth * 2, axisAngle,
-        );
         setStatusMessage(`Slot added (${axisLen.toFixed(2)} × ${(halfWidth * 2).toFixed(2)})`);
         setDrawingPoints([]);
       }
@@ -147,12 +126,6 @@ export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
         addSketchEntity({ id: lineBId, type: 'line', points: [offset(c1, -1), offset(c2, -1)] });
         addSketchEntity({ id: arc1Id, type: 'arc', points: [c1], radius: halfWidth, startAngle: axisAngle + Math.PI / 2, endAngle: axisAngle + (3 * Math.PI) / 2 });
         addSketchEntity({ id: arc2Id, type: 'arc', points: [c2], radius: halfWidth, startAngle: axisAngle - Math.PI / 2, endAngle: axisAngle + Math.PI / 2 });
-        // length = distance between cap centres (overall − width)
-        groupSlot(
-          [lineAId, lineBId, arc1Id, arc2Id],
-          { x: (c1.x + c2.x) / 2, y: (c1.y + c2.y) / 2, z: (c1.z + c2.z) / 2 },
-          overallLen - halfWidth * 2, halfWidth * 2, axisAngle,
-        );
         setStatusMessage(`Overall Slot added (${overallLen.toFixed(2)} × ${(halfWidth * 2).toFixed(2)})`);
         setDrawingPoints([]);
       }
@@ -204,11 +177,6 @@ export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
         // c1 = endPt is the "front" (+axisDir) cap; c2 is the "back".
         addSketchEntity({ id: arc1Id, type: 'arc', points: [c1], radius: halfWidth, startAngle: axisAngle - Math.PI / 2, endAngle: axisAngle + Math.PI / 2 });
         addSketchEntity({ id: arc2Id, type: 'arc', points: [c2], radius: halfWidth, startAngle: axisAngle + Math.PI / 2, endAngle: axisAngle + (3 * Math.PI) / 2 });
-        groupSlot(
-          [lineAId, lineBId, arc1Id, arc2Id],
-          { x: mid.x, y: mid.y, z: mid.z },
-          halfLen * 2, halfWidth * 2, axisAngle,
-        );
         setStatusMessage(`Center Slot added (${(halfLen * 2).toFixed(2)} × ${(halfWidth * 2).toFixed(2)})`);
         setDrawingPoints([]);
       }

@@ -295,17 +295,6 @@ export const handleTangentSketchCommit: SketchCommitHandler = (ctx) => {
         for (let i = 0; i < 4; i++) {
           addSketchConstraint({ id: crypto.randomUUID(), type: 'coincident', entityIds: [lineIds[i], lineIds[(i + 1) % 4]], pointIndices: [1, 0] });
         }
-        // Group under a rectangle constraint (rotated by the base-edge angle).
-        const cx = (p1.x + p2.x) / 2 + hx / 2, cy = (p1.y + p2.y) / 2 + hy / 2, cz = (p1.z + p2.z) / 2 + hz / 2;
-        addSketchConstraint({
-          id: crypto.randomUUID(), type: 'rectangle', entityIds: lineIds,
-          rectangleMeta: {
-            center: { x: cx, y: cy, z: cz },
-            width: edgeLen,
-            height: Math.abs(height),
-            rotation: Math.atan2(edgeDir.dot(t2), edgeDir.dot(t1)),
-          },
-        });
         setStatusMessage(`3-Point Rectangle added (${edgeLen.toFixed(2)} × ${Math.abs(height).toFixed(2)})`);
         setDrawingPoints([]);
       }

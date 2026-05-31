@@ -420,10 +420,8 @@ export default function SketchConstraintOverlay() {
           break;
         }
         case 'polygon':
-        case 'rectangle':
-        case 'slot':
-          // Shape grouping constraints render their own interactive center glyph
-          // in PolygonConstraintOverlay — no dot here.
+          // Polygon constraints render their own interactive center glyph in
+          // PolygonConstraintOverlay; rectangles/slots use dimensions instead.
           break;
         default: {
           // Unknown type — place a small dot at first entity
