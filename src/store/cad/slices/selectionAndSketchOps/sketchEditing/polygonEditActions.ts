@@ -109,5 +109,92 @@ export function createPolygonEditActions({ set, get }: CADSliceContext): Partial
         statusMessage: `Polygon updated to ${sides} sides`,
       });
     },
+
+    regenerateRectangle: (constraintId, widthRaw, heightRaw) => {
+      const { activeSketch, sketches } = get();
+      if (!activeSketch) return;
+      const con = activeSketch.constraints.find((c) => c.id === constraintId && c.type === 'rectangle');
+      if (!con) return;
+
+      const width = Math.max(0.001, widthRaw);
+      const height = Math.max(0.001, heightRaw);
+      const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+
+      // Resolve center / rotation from metadata, else derive from the member-line
+      // corner vertices (axis-aligned fallback).
+      let center: THREE.Vector3;
+      let rotation: number;
+      if (con.rectangleMeta) {
+        const m = con.rectangleMeta;
+        center = new THREE.Vector3(m.center.x, m.center.y, m.center.z);
+        rotation = m.rotation;
+      } else {
+        const corners = con.entityIds
+          .map((id) => activeSketch.entities.find((e) => e.id === id))
+          .filter((e): e is SketchEntity => !!e && e.points.length >= 1)
+          .map((l) => new THREE.Vector3(l.points[0].x, l.points[0].y, l.points[0].z));
+        if (corners.length < 4) return;
+        center = new THREE.Vector3();
+        for (const v of corners) center.add(v);
+        center.divideScalar(corners.length);
+        const d0 = corners[0].clone().sub(center);
+        rotation = Math.atan2(d0.dot(t2), d0.dot(t1));
+      }
+
+      const baseDir = t1.clone().multiplyScalar(Math.cos(rotation)).add(t2.clone().multiplyScalar(Math.sin(rotation)));
+      const perpDir = t1.clone().multiplyScalar(-Math.sin(rotation)).add(t2.clone().multiplyScalar(Math.cos(rotation)));
+      const hw = width / 2;
+      const hh = height / 2;
+      const corners = [
+        center.clone().addScaledVector(baseDir, -hw).addScaledVector(perpDir, -hh),
+        center.clone().addScaledVector(baseDir, hw).addScaledVector(perpDir, -hh),
+        center.clone().addScaledVector(baseDir, hw).addScaledVector(perpDir, hh),
+        center.clone().addScaledVector(baseDir, -hw).addScaledVector(perpDir, hh),
+      ];
+
+      const newLineIds: string[] = [];
+      const newLines: SketchEntity[] = [];
+      for (let i = 0; i < 4; i++) {
+        const a = corners[i];
+        const b = corners[(i + 1) % 4];
+        const id = crypto.randomUUID();
+        newLineIds.push(id);
+        const p1: SketchPoint = { id: crypto.randomUUID(), x: a.x, y: a.y, z: a.z };
+        const p2: SketchPoint = { id: crypto.randomUUID(), x: b.x, y: b.y, z: b.z };
+        newLines.push({ id, type: 'line', points: [p1, p2] });
+      }
+
+      const memberIdSet = new Set(con.entityIds);
+      const remainingEntities = activeSketch.entities.filter((e) => !memberIdSet.has(e.id));
+      const remainingConstraints = activeSketch.constraints.filter(
+        (c) => c.id !== constraintId && c.entityIds.every((id) => !memberIdSet.has(id)),
+      );
+
+      const newConstraints: SketchConstraint[] = [];
+      for (let i = 0; i < 4; i++) {
+        newConstraints.push({
+          id: crypto.randomUUID(), type: 'coincident',
+          entityIds: [newLineIds[i], newLineIds[(i + 1) % 4]], pointIndices: [1, 0],
+        });
+      }
+      const newRectConstraintId = crypto.randomUUID();
+      newConstraints.push({
+        id: newRectConstraintId, type: 'rectangle', entityIds: newLineIds,
+        rectangleMeta: { center: { x: center.x, y: center.y, z: center.z }, width, height, rotation },
+      });
+
+      get().pushUndo();
+      const nextSketch = {
+        ...activeSketch,
+        entities: [...remainingEntities, ...newLines],
+        constraints: [...remainingConstraints, ...newConstraints],
+      };
+      set({
+        activeSketch: nextSketch,
+        sketches: upsertSketch(sketches, nextSketch),
+        editingPolygonConstraintId: newRectConstraintId,
+        statusMessage: `Rectangle updated to ${width.toFixed(2)} × ${height.toFixed(2)}`,
+      });
+    },
   };
 }

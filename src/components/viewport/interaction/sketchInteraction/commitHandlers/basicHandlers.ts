@@ -65,6 +65,18 @@ function applyPolygonConstraints(
   return polygonConstraintId;
 }
 
+/** Group a rectangle's 4 edge lines under a 'rectangle' constraint carrying its
+ *  editable parameters, so a center glyph + width/height editor can rebuild it. */
+function applyRectangleGroup(
+  lineIds: string[],
+  addSketchConstraint: (c: SketchConstraint) => void,
+  rectangleMeta: { center: { x: number; y: number; z: number }; width: number; height: number; rotation: number },
+): string {
+  const id = crypto.randomUUID();
+  addSketchConstraint({ id, type: 'rectangle', entityIds: lineIds, rectangleMeta });
+  return id;
+}
+
 /** Circumradius + first-vertex angle for the polygon metadata, from generated verts. */
 function polygonMetaFrom(
   center: THREE.Vector3,
@@ -205,6 +217,14 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
             pointIndices: [1, 0],
           });
         }
+        // Group under a rectangle constraint (axis-aligned in t1/t2) for editing.
+        const cu = (u1 + u2) / 2, cv = (v1 + v2) / 2;
+        applyRectangleGroup(lineIds, addSketchConstraint, {
+          center: { x: origin.x + cu * t1.x + cv * t2.x, y: origin.y + cu * t1.y + cv * t2.y, z: origin.z + cu * t1.z + cv * t2.z },
+          width: Math.abs(u2 - u1),
+          height: Math.abs(v2 - v1),
+          rotation: 0,
+        });
         setDrawingPoints([]);
         setStatusMessage('Rectangle added');
       }
@@ -359,12 +379,22 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
           y: center.y + t1.y * u + t2.y * v,
           z: center.z + t1.z * u + t2.z * v,
         });
-        const corners = [
-          corner(-du, -dv), corner(du, -dv), corner(du, dv), corner(-du, dv), corner(-du, -dv),
-        ];
+        const corners = [corner(-du, -dv), corner(du, -dv), corner(du, dv), corner(-du, dv)];
+        const lineIds: string[] = [];
         for (let i = 0; i < 4; i++) {
-          addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [corners[i], corners[i + 1]] });
+          const eid = crypto.randomUUID();
+          lineIds.push(eid);
+          addSketchEntity({ id: eid, type: 'line', points: [corners[i], corners[(i + 1) % 4]] });
         }
+        for (let i = 0; i < 4; i++) {
+          addSketchConstraint({ id: crypto.randomUUID(), type: 'coincident', entityIds: [lineIds[i], lineIds[(i + 1) % 4]], pointIndices: [1, 0] });
+        }
+        applyRectangleGroup(lineIds, addSketchConstraint, {
+          center: { x: center.x, y: center.y, z: center.z },
+          width: Math.abs(du) * 2,
+          height: Math.abs(dv) * 2,
+          rotation: 0,
+        });
         setDrawingPoints([]);
         setStatusMessage('Center rectangle added');
       }

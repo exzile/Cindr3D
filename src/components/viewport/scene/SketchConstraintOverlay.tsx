@@ -414,6 +414,11 @@ export default function SketchConstraintOverlay() {
           objs.push(makeHArrow(mid, t1, t2, SIZE, c(COLOR_OFFSET)));
           break;
         }
+        case 'polygon':
+        case 'rectangle':
+          // Shape grouping constraints render their own interactive center glyph
+          // in PolygonConstraintOverlay — no dot here.
+          break;
         default: {
           // Unknown type — place a small dot at first entity
           const entity = entities[0];

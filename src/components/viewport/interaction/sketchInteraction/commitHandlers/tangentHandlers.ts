@@ -8,7 +8,7 @@ import type { SketchCommitHandler } from './types';
 export const handleTangentSketchCommit: SketchCommitHandler = (ctx) => {
   const {
     activeTool, activeSketch, sketchPoint, drawingPoints, setDrawingPoints,
-    t1, t2, projectToPlane, addSketchEntity, setStatusMessage, tangentCircleRadius,
+    t1, t2, projectToPlane, addSketchEntity, addSketchConstraint, setStatusMessage, tangentCircleRadius,
   } = ctx;
 
   switch (activeTool) {
@@ -285,16 +285,27 @@ export const handleTangentSketchCommit: SketchCommitHandler = (ctx) => {
           x: base.x + dx, y: base.y + dy, z: base.z + dz,
         });
         const hx = perpDir.x * height, hy = perpDir.y * height, hz = perpDir.z * height;
-        const corners = [
-          p1,
-          p2,
-          v(p2, hx, hy, hz),
-          v(p1, hx, hy, hz),
-          p1,
-        ];
+        const corners = [p1, p2, v(p2, hx, hy, hz), v(p1, hx, hy, hz)];
+        const lineIds: string[] = [];
         for (let i = 0; i < 4; i++) {
-          addSketchEntity({ id: crypto.randomUUID(), type: 'line', points: [corners[i], corners[i + 1]] });
+          const eid = crypto.randomUUID();
+          lineIds.push(eid);
+          addSketchEntity({ id: eid, type: 'line', points: [corners[i], corners[(i + 1) % 4]] });
         }
+        for (let i = 0; i < 4; i++) {
+          addSketchConstraint({ id: crypto.randomUUID(), type: 'coincident', entityIds: [lineIds[i], lineIds[(i + 1) % 4]], pointIndices: [1, 0] });
+        }
+        // Group under a rectangle constraint (rotated by the base-edge angle).
+        const cx = (p1.x + p2.x) / 2 + hx / 2, cy = (p1.y + p2.y) / 2 + hy / 2, cz = (p1.z + p2.z) / 2 + hz / 2;
+        addSketchConstraint({
+          id: crypto.randomUUID(), type: 'rectangle', entityIds: lineIds,
+          rectangleMeta: {
+            center: { x: cx, y: cy, z: cz },
+            width: edgeLen,
+            height: Math.abs(height),
+            rotation: Math.atan2(edgeDir.dot(t2), edgeDir.dot(t1)),
+          },
+        });
         setStatusMessage(`3-Point Rectangle added (${edgeLen.toFixed(2)} × ${Math.abs(height).toFixed(2)})`);
         setDrawingPoints([]);
       }

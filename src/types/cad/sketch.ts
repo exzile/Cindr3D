@@ -29,6 +29,7 @@ export type ConstraintType =
   | 'line-on-surface'
   | 'distance-surface'
   | 'polygon'
+  | 'rectangle'
   | 'line-parallel-surface';
 
 export interface SketchConstraint {
@@ -53,6 +54,17 @@ export interface SketchConstraint {
     radius: number;
     baseAngle: number;
     kind?: 'inscribed' | 'circumscribed';
+  };
+  /**
+   * For 'rectangle' grouping constraints: the parameters captured at creation so
+   * the rectangle can be regenerated with a new width/height (the center glyph +
+   * editor read/write this). `rotation` is the in-plane angle of the width axis.
+   */
+  rectangleMeta?: {
+    center: { x: number; y: number; z: number };
+    width: number;
+    height: number;
+    rotation: number;
   };
 }
 
