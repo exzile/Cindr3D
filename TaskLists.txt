@@ -3,8 +3,8 @@
 ## Last updated: 2026-05-31  Branch: claude/sketchoptimization-branch-A3tk4
 ##   (OCC-21/22/23 verified complete — implemented in commits 63e42b3 + c27539e;
 ##    missing op-level + commit-level tests added; OCC-21.4e REAL silhouette split
-##    implemented for the analytic/cylindrical case; TKFeat loader gap fixed
-##    (Split Face was silently dead at runtime). Full suite 1430 green.)
+##    implemented for the analytic ruled surfaces (cylinder + cone); TKFeat loader
+##    gap fixed (Split Face was silently dead at runtime). Full suite 1436 green.)
 ## SDK ref: local Fusion 360 webdeploy SDK headers (machine-specific path omitted)
 ##          Resolve via the current developer's Autodesk install directory.
 ## SDK install: local Fusion 360 webdeploy SDK headers under the current user's
@@ -580,12 +580,16 @@
 #   [x] 21.4d Misnomer removed: SilhouetteSplitDialog retitled "Planar Split"; status
 #             messages updated (it performs a halfspace cut, not a silhouette projection).
 #             Function name kept (too many callers). (commit 63e42b3)
-#   [~] 21.4e REAL silhouette split — IMPLEMENTED for the analytic (cylindrical) case
-#             (2026-05-31). engine/occ/ops/silhouetteSplit.ts:
+#   [~] 21.4e REAL silhouette split — IMPLEMENTED for the analytic ruled surfaces,
+#             cylinder AND cone (2026-05-31). engine/occ/ops/silhouetteSplit.ts:
 #             • cylinderSilhouetteRulings() — PURE, closed-form: a cylinder's outline
 #               along viewDir is the two axial rulings at azimuth ±normalize(axis×view)
-#               (surface normal ⊥ view = tangency). Fully unit-tested with real geometry
+#               (surface normal ⊥ view = tangency). Unit-tested with real geometry
 #               assertions (perpendicularity, radius, V-range, axis-parallel ⇒ []).
+#             • coneSilhouetteRulings() — PURE, closed-form: 0/1/2 slant rulings, azimuths
+#               shifted by the half-angle via cos(u−φ)=tanα·(view·Z)/|view⊥|. Unit-tested
+#               by reconstructing the cone normal at each ruling and asserting it ⊥ view
+#               (kernel-independent tangency check); |K|>1 ⇒ [] and α→0 ⇒ cylinder.
 #             • occSilhouetteSplitWithInstance() — reads each face via BRepAdaptor_Surface_2,
 #               builds the rulings as line edges, imprints them onto the cylindrical face(s)
 #               via BRepFeat_SplitShape (operation 'faces-only' = Fusion FacesOnly: solid
@@ -594,11 +598,12 @@
 #               gains a "Split Type" selector — Planar (existing) | Silhouette (new) along a
 #               view axis. State decl in analysisState.ts.
 #             • REQUIRED a loader fix: TKFeat (BRepFeat_*) was never loaded — see 21.2 note.
-#             DEFERRED (documented, op returns null + warns): cone slant rulings, sphere
-#             outline circle, freeform (need marching/HLR — TKHLR not loaded), and the
+#             DEFERRED (documented, op returns null + warns): sphere outline circle, torus,
+#             freeform (need marching/HLR — TKHLR not loaded), and the
 #             'solid-body'/'shelled-body' modes (need a parting-surface solid split).
 #             Geometric output on real bodies still wants interactive 3D QA (no live kernel
-#             in the headless harness) — orchestration + math are tested.
+#             in the headless harness) — but the silhouette MATH for both surface types is
+#             verified kernel-independently; only the BRepFeat imprint is unverified here.
 #
 # ── 21.5  TEXTURE EXTRUDE (lowest priority) ──────────────────────────────
 #   Current: commitTextureExtrude is a @stub. Fusion's Texture is a repeating

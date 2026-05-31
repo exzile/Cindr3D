@@ -27,8 +27,8 @@ vi.mock('../adjacency', () => ({
   runEdgeOpBuild: (_oc: unknown, maker: { Build: () => void }) => maker.Build(),
 }));
 
-import { cylinderSilhouetteRulings, occSilhouetteSplitWithInstance } from '../silhouetteSplit';
-import type { CylinderSilhouetteParams } from '../silhouetteSplit';
+import { cylinderSilhouetteRulings, coneSilhouetteRulings, occSilhouetteSplitWithInstance } from '../silhouetteSplit';
+import type { CylinderSilhouetteParams, ConeSilhouetteParams } from '../silhouetteSplit';
 
 // ── Part 1: pure math ─────────────────────────────────────────────────────────
 
@@ -99,9 +99,68 @@ describe('cylinderSilhouetteRulings (pure)', () => {
   });
 });
 
+describe('coneSilhouetteRulings (pure)', () => {
+  // Z-axis cone, apex region toward -Z; refRadius 5 at v=0, half-angle 30°,
+  // slant range v ∈ [0, 8], reference frame at the origin with X = +X.
+  const cone: ConeSilhouetteParams = {
+    location: [0, 0, 0], xDir: [1, 0, 0], axisDir: [0, 0, 1],
+    refRadius: 5, semiAngle: Math.PI / 6, vMin: 0, vMax: 8,
+  };
+
+  // The cone's outward normal at azimuth u: cosα·radial(u) − sinα·Z.
+  // For each returned ruling we recover u from the start point and assert the
+  // normal there is perpendicular to the view — the defining tangency property.
+  function assertTangent(seg: { start: [number, number, number] }, view: [number, number, number], p: ConeSilhouetteParams) {
+    const [sx, sy] = seg.start;
+    // radial azimuth from the X/Y projection of (start − location).
+    const u = Math.atan2(sy - p.location[1], sx - p.location[0]);
+    const cosA = Math.cos(p.semiAngle), sinA = Math.sin(p.semiAngle);
+    // normal = cosA·(cos u, sin u, 0) − sinA·(0,0,1)   [axis = +Z, X = +X]
+    const n = [cosA * Math.cos(u), cosA * Math.sin(u), -sinA];
+    const vlen = Math.hypot(...view);
+    const dot = (n[0] * view[0] + n[1] * view[1] + n[2] * view[2]) / vlen;
+    expect(dot).toBeCloseTo(0, 5);
+  }
+
+  it('produces two rulings whose surface normals are ⊥ to a side view', () => {
+    const view: [number, number, number] = [1, 0, 0];
+    const segs = coneSilhouetteRulings(cone, view);
+    expect(segs).toHaveLength(2);
+    for (const s of segs) assertTangent(s, view, cone);
+  });
+
+  it('produces tangent rulings for an oblique view', () => {
+    const view: [number, number, number] = [1, 0.4, 0.3];
+    const segs = coneSilhouetteRulings(cone, view);
+    expect(segs.length).toBeGreaterThanOrEqual(1);
+    for (const s of segs) assertTangent(s, view, cone);
+  });
+
+  it('returns [] when the view is too axial for the cone taper (|K| > 1)', () => {
+    // Nearly along the axis with a tiny perpendicular part → tan(30°)·vz/|vp| > 1.
+    const segs = coneSilhouetteRulings(cone, [0.01, 0, 1]);
+    expect(segs).toEqual([]);
+  });
+
+  it('returns [] for a view exactly along the axis', () => {
+    expect(coneSilhouetteRulings(cone, [0, 0, 1])).toEqual([]);
+  });
+
+  it('reduces to the cylinder case as the half-angle → 0', () => {
+    const flat: ConeSilhouetteParams = { ...cone, semiAngle: 1e-9 };
+    const segs = coneSilhouetteRulings(flat, [1, 0, 0]);
+    // Same as a cylinder viewed along +X: rulings on the ±Y side, x ≈ 0.
+    const ys = segs.map((s) => s.start[1]).sort((a, b) => a - b);
+    expect(ys[0]).toBeCloseTo(-5, 4);
+    expect(ys[1]).toBeCloseTo(5, 4);
+    for (const s of segs) expect(s.start[0]).toBeCloseTo(0, 4);
+  });
+});
+
 // ── Part 2: orchestration ──────────────────────────────────────────────────────
 
 const ENUM_CYL = 'CYL';
+const ENUM_CONE = 'CONE';
 const ENUM_PLANE = 'PLANE';
 
 interface FakeFace { type: string; }
@@ -114,12 +173,14 @@ function makeFakeOcc(opts: { hasFeat?: boolean; splitDone?: boolean } = {}) {
   log = [];
   const occ: Record<string, unknown> = {
     TopoDS_Shape: undefined,
-    GeomAbs_SurfaceType: { GeomAbs_Cylinder: ENUM_CYL },
+    GeomAbs_SurfaceType: { GeomAbs_Cylinder: ENUM_CYL, GeomAbs_Cone: ENUM_CONE },
     TopoDS: { Face_1: (deref: { __faceDeref?: number }) => ({ __faceDeref: deref.__faceDeref }) },
     BRepAdaptor_Surface_2: class {
       private face: FakeFace;
       constructor(face: FakeFace) { this.face = face; }
-      GetType() { return this.face.type === 'cyl' ? ENUM_CYL : ENUM_PLANE; }
+      GetType() {
+        return this.face.type === 'cyl' ? ENUM_CYL : this.face.type === 'cone' ? ENUM_CONE : ENUM_PLANE;
+      }
       FirstVParameter() { return 0; }
       LastVParameter() { return 10; }
       Cylinder() {
@@ -130,6 +191,19 @@ function makeFakeOcc(opts: { hasFeat?: boolean; splitDone?: boolean } = {}) {
             delete() {},
           }),
           Radius: () => 5,
+          delete() {},
+        };
+      }
+      Cone() {
+        return {
+          Position: () => ({
+            Location: () => ({ X: () => 0, Y: () => 0, Z: () => 0, delete() {} }),
+            XDirection: () => ({ X: () => 1, Y: () => 0, Z: () => 0, delete() {} }),
+            Direction: () => ({ X: () => 0, Y: () => 0, Z: () => 1, delete() {} }),
+            delete() {},
+          }),
+          RefRadius: () => 5,
+          SemiAngle: () => Math.PI / 6,
           delete() {},
         };
       }
@@ -163,7 +237,7 @@ function makeFakeOcc(opts: { hasFeat?: boolean; splitDone?: boolean } = {}) {
 
 // faceId handle carries __faceId so the mocked occDeref tags it; the adaptor is
 // fed the cast face whose `type` we control via the handle's `kind`.
-function bodyWithFaces(kinds: Array<'cyl' | 'plane'>) {
+function bodyWithFaces(kinds: Array<'cyl' | 'cone' | 'plane'>) {
   const faceIds = new Map<number, unknown>();
   kinds.forEach((kind, i) => faceIds.set(i + 1, { __faceId: i + 1, kind }));
   return { id: 'b', shape: { ptr: 1 }, faceIds, edgeIds: new Map(), vertexIds: new Map() };
@@ -174,7 +248,7 @@ describe('occSilhouetteSplitWithInstance (orchestration)', () => {
 
   // The fake adaptor reads `.type` off the face it's constructed with; wire the
   // cast face's type from the handle kind via the Face_1 mock.
-  function occFor(kinds: Array<'cyl' | 'plane'>, opts?: { hasFeat?: boolean; splitDone?: boolean }) {
+  function occFor(kinds: Array<'cyl' | 'cone' | 'plane'>, opts?: { hasFeat?: boolean; splitDone?: boolean }) {
     const occ = makeFakeOcc(opts);
     const body = bodyWithFaces(kinds);
     // Map the cast face deref id back to its kind so the adaptor sees the type.
@@ -183,7 +257,7 @@ describe('occSilhouetteSplitWithInstance (orchestration)', () => {
     // Adaptor is constructed with the cast face object {__faceDeref:id}; translate to {type}.
     const OrigAdaptor = occ.BRepAdaptor_Surface_2 as new (f: { type: string }) => unknown;
     occ.BRepAdaptor_Surface_2 = class {
-      private inner: { GetType(): unknown; FirstVParameter(): number; LastVParameter(): number; Cylinder(): unknown; delete(): void };
+      private inner: { GetType(): unknown; FirstVParameter(): number; LastVParameter(): number; Cylinder(): unknown; Cone(): unknown; delete(): void };
       constructor(castFace: { __faceDeref?: number }) {
         const kind = kindById.get(castFace.__faceDeref ?? -1) ?? 'plane';
         this.inner = new OrigAdaptor({ type: kind }) as never;
@@ -192,6 +266,7 @@ describe('occSilhouetteSplitWithInstance (orchestration)', () => {
       FirstVParameter() { return this.inner.FirstVParameter(); }
       LastVParameter() { return this.inner.LastVParameter(); }
       Cylinder() { return this.inner.Cylinder(); }
+      Cone() { return this.inner.Cone(); }
       delete() { this.inner.delete(); }
     } as never;
     return { occ, body };
@@ -204,6 +279,14 @@ describe('occSilhouetteSplitWithInstance (orchestration)', () => {
     expect(r).not.toBeNull();
     expect(splitterAdds).toHaveLength(2); // two outline rulings
     expect((madeFromShape as { __view: string }).__view).toBe('splitResult');
+  });
+
+  it('imprints rulings on a conical face too', () => {
+    const { occ, body } = occFor(['cone']);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const r = occSilhouetteSplitWithInstance(occ as any, body as any, [1, 0, 0]);
+    expect(r).not.toBeNull();
+    expect(splitterAdds.length).toBeGreaterThanOrEqual(1);
   });
 
   it('skips planar faces (no silhouette) and returns null when none qualify', () => {

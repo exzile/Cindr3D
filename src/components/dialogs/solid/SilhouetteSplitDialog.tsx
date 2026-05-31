@@ -107,7 +107,7 @@ export function SilhouetteSplitDialog({ onClose }: { onClose: () => void }) {
       )}
       <p className="dialog-hint">
         {isSilhouette
-          ? 'Imprints the body’s silhouette (outline) curves as seen along the chosen axis onto its cylindrical faces. The solid is unchanged; the face is subdivided along the outline.'
+          ? 'Imprints the body’s silhouette (outline) curves as seen along the chosen axis onto its cylindrical/conical faces. The solid is unchanged; the face is subdivided along the outline.'
           : 'Splits the body into two halves along the chosen plane. Both halves are kept as separate bodies.'}
       </p>
     </DialogShell>

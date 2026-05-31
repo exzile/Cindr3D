@@ -319,7 +319,7 @@ export function createSplitBodyActions({ set, get }: CADSliceContext): Partial<C
       const occ = brepBodyId ? getOccSync() : null;
       const srcBody = occ && brepBodyId ? globalBRepBodyRegistry.get(brepBodyId) : null;
       if (!occ || !srcBody) {
-        get().setStatusMessage('Silhouette Split: requires an OCC solid (cylindrical faces) — create one first');
+        get().setStatusMessage('Silhouette Split: requires an OCC solid (cylindrical/conical faces) — create one first');
         return;
       }
 
@@ -337,7 +337,7 @@ export function createSplitBodyActions({ set, get }: CADSliceContext): Partial<C
       }
 
       if (!result) {
-        get().setStatusMessage('Silhouette Split: no cylindrical silhouette for this view direction');
+        get().setStatusMessage('Silhouette Split: no cylindrical/conical silhouette for this view direction');
         return;
       }
 

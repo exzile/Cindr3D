@@ -9,18 +9,19 @@
  * split curve depends on the view direction and the surface curvature.
  *
  * SCOPE (this spike):
- *   - SUPPORTED: cylindrical faces. A cylinder's silhouette along a view
- *     direction is the two axial rulings at azimuth ±normalize(axis × view).
- *     This is the canonical case (a cylinder's two outline lines) and is
- *     derived in closed form — see `cylinderSilhouetteRulings` (pure, tested).
+ *   - SUPPORTED: cylindrical AND conical faces (the ruled analytic surfaces).
+ *     Both outlines are derived in closed form from the tangency condition
+ *     (surface normal ⊥ view) — see `cylinderSilhouetteRulings` (two rulings at
+ *     azimuth ±normalize(axis × view)) and `coneSilhouetteRulings` (0/1/2 slant
+ *     rulings, azimuths shifted by the half-angle). Both are pure + unit-tested.
  *   - operation 'faces-only' (Fusion FacesOnly): imprint the rulings onto the
- *     cylindrical face(s) via BRepFeat_SplitShape. The body's volume and solid
- *     topology are unchanged; the cylindrical face is subdivided along the
- *     outline. This is what this op realizes.
- *   - DEFERRED (documented, returns the faces-only result with a warning):
- *     'solid-body' / 'shelled-body' modes (need a parting-surface solid split),
- *     and non-cylindrical surfaces (sphere → outline circle; cone → slant
- *     rulings; freeform → marching / HLR). Tracked as follow-up.
+ *     ruled face(s) via BRepFeat_SplitShape. The body's volume and solid
+ *     topology are unchanged; the face is subdivided along the outline. This is
+ *     what this op realizes.
+ *   - DEFERRED (documented, returns null + warns): non-ruled surfaces
+ *     (sphere → outline circle; torus; freeform → marching / HLR — TKHLR not
+ *     loaded), and the 'solid-body' / 'shelled-body' modes (need a
+ *     parting-surface solid split). Tracked as follow-up.
  *
  * Requires TKFeat (BRepFeat_SplitShape) — added to the loader alongside this op.
  *
@@ -95,7 +96,92 @@ export function cylinderSilhouetteRulings(
   return segs;
 }
 
-// ── OCC API surface ───────────────────────────────────────────────────────────
+export interface ConeSilhouetteParams {
+  /** Cone reference frame location (gp_Ax3 Location — the surface's v=0 point). */
+  location: [number, number, number];
+  /** Cone reference X direction (gp_Ax3 XDirection). */
+  xDir: [number, number, number];
+  /** Cone axis direction (gp_Ax3 Direction). */
+  axisDir: [number, number, number];
+  /** Radius at the reference location (v = 0). */
+  refRadius: number;
+  /** Half-angle in radians (signed, as OCC reports it). */
+  semiAngle: number;
+  /** Face's slant parameter range (BRepAdaptor First/Last V parameter). */
+  vMin: number;
+  vMax: number;
+}
+
+/**
+ * The silhouette rulings of a cone seen along `viewDir`.
+ *
+ * A cone is ruled, so its outline is again a set of slant rulings — but unlike
+ * the cylinder the azimuths are shifted by the half-angle. The surface normal at
+ * azimuth u is n(u) = cos α·radial(u) − sin α·Z (α = half-angle, Z = axis). The
+ * silhouette condition n·view = 0 reduces to
+ *
+ *     cos(u − φ) = tan α · (view·Z) / |view⊥|       (φ = azimuth of view⊥)
+ *
+ * which yields 0, 1, or 2 rulings:
+ *   - |K| > 1  → none (the view is too axial for the cone's taper),
+ *   - |K| = 1  → one (the two rulings coincide),
+ *   - |K| < 1  → two, at u = φ ± acos(K).
+ *
+ * Each ruling is the slant line P(u,v) = loc + (refR + v·sin α)·radial(u)
+ * + (v·cos α)·Z over the face's [vMin, vMax]. As α→0 this collapses to the
+ * cylinder case (rulings ⊥ view⊥, i.e. ±normalize(axis × view)).
+ */
+export function coneSilhouetteRulings(
+  p: ConeSilhouetteParams,
+  viewDir: [number, number, number],
+): RulingSegment[] {
+  const Z = new THREE.Vector3(...p.axisDir);
+  if (Z.lengthSq() < 1e-12) return [];
+  Z.normalize();
+  // Orthonormalize X against Z, then Y = Z × X.
+  const X = new THREE.Vector3(...p.xDir);
+  X.addScaledVector(Z, -X.dot(Z));
+  if (X.lengthSq() < 1e-12) return [];
+  X.normalize();
+  const Y = new THREE.Vector3().crossVectors(Z, X);
+
+  const view = new THREE.Vector3(...viewDir);
+  if (view.lengthSq() < 1e-12) return [];
+  view.normalize();
+
+  const vx = view.dot(X);
+  const vy = view.dot(Y);
+  const vz = view.dot(Z);
+  const vPerp = Math.hypot(vx, vy);
+  if (vPerp < 1e-9) return []; // view ∥ axis ⇒ outline is a circle/apex, not rulings
+
+  const K = (Math.tan(p.semiAngle) * vz) / vPerp;
+  if (Math.abs(K) > 1 + 1e-9) return [];
+  const Kc = Math.max(-1, Math.min(1, K));
+  const d = Math.acos(Kc);
+  const phi = Math.atan2(vy, vx);
+
+  const azimuths = Math.sin(d) < 1e-7 ? [phi] : [phi + d, phi - d];
+
+  const loc = new THREE.Vector3(...p.location);
+  const sinA = Math.sin(p.semiAngle);
+  const cosA = Math.cos(p.semiAngle);
+
+  const pointAt = (u: number, v: number): THREE.Vector3 => {
+    const radial = X.clone().multiplyScalar(Math.cos(u)).addScaledVector(Y, Math.sin(u));
+    return loc.clone()
+      .addScaledVector(radial, p.refRadius + v * sinA)
+      .addScaledVector(Z, v * cosA);
+  };
+
+  const segs: RulingSegment[] = [];
+  for (const u of azimuths) {
+    const s = pointAt(u, p.vMin);
+    const e = pointAt(u, p.vMax);
+    segs.push({ start: [s.x, s.y, s.z], end: [e.x, e.y, e.z] });
+  }
+  return segs;
+}
 
 interface GpScalarObj { delete?(): void }
 interface GpXyzObj { X(): number; Y(): number; Z(): number; delete?(): void }
@@ -110,9 +196,20 @@ type OccSilhouetteApi = OcctRaw & {
       Radius(): number;
       delete?(): void;
     };
+    Cone(): {
+      Position(): {
+        Location(): GpXyzObj;
+        XDirection(): GpXyzObj;
+        Direction(): GpXyzObj;
+        delete?(): void;
+      };
+      RefRadius(): number;
+      SemiAngle(): number;
+      delete?(): void;
+    };
     delete(): void;
   };
-  GeomAbs_SurfaceType: { GeomAbs_Cylinder?: unknown };
+  GeomAbs_SurfaceType: { GeomAbs_Cylinder?: unknown; GeomAbs_Cone?: unknown };
   gp_Pnt_3: new (x: number, y: number, z: number) => GpScalarObj;
   BRepBuilderAPI_MakeEdge_3: new (p1: unknown, p2: unknown) => {
     IsDone(): boolean;
@@ -165,37 +262,65 @@ export async function occSilhouetteSplit(
 // ── Sync implementation ─────────────────────────────────────────────────────────
 
 /**
- * Read a cylindrical face's parameters into plain numbers, disposing all OCC
- * temporaries before returning. Returns null for non-cylindrical faces.
+ * Compute the silhouette rulings of a single face along `viewDir`, reading the
+ * face's analytic surface via BRepAdaptor_Surface and disposing all OCC
+ * temporaries before returning. Returns [] for non-cylindrical/conical faces or
+ * when this view direction produces no ruling silhouette.
  */
-function readCylinderFace(occ: OccSilhouetteApi, rawFace: unknown): CylinderSilhouetteParams | null {
+function faceSilhouetteRulings(
+  occ: OccSilhouetteApi,
+  rawFace: unknown,
+  viewDir: [number, number, number],
+): RulingSegment[] {
   let adaptor: InstanceType<OccSilhouetteApi['BRepAdaptor_Surface_2']> | null = null;
   try {
     adaptor = new occ.BRepAdaptor_Surface_2(rawFace, true);
-    if (!enumEq(adaptor.GetType(), occ.GeomAbs_SurfaceType?.GeomAbs_Cylinder)) return null;
+    const type = adaptor.GetType();
     const vMin = adaptor.FirstVParameter();
     const vMax = adaptor.LastVParameter();
-    const cyl = adaptor.Cylinder();
-    const ax = cyl.Axis();
-    const loc = ax.Location();
-    const dir = ax.Direction();
-    try {
-      const radius = cyl.Radius();
-      return {
-        axisLoc: [loc.X(), loc.Y(), loc.Z()],
-        axisDir: [dir.X(), dir.Y(), dir.Z()],
-        radius,
-        vMin,
-        vMax,
-      };
-    } finally {
-      loc.delete?.();
-      dir.delete?.();
-      ax.delete?.();
-      cyl.delete?.();
+
+    if (enumEq(type, occ.GeomAbs_SurfaceType?.GeomAbs_Cylinder)) {
+      const cyl = adaptor.Cylinder();
+      const ax = cyl.Axis();
+      const loc = ax.Location();
+      const dir = ax.Direction();
+      try {
+        return cylinderSilhouetteRulings({
+          axisLoc: [loc.X(), loc.Y(), loc.Z()],
+          axisDir: [dir.X(), dir.Y(), dir.Z()],
+          radius: cyl.Radius(),
+          vMin,
+          vMax,
+        }, viewDir);
+      } finally {
+        loc.delete?.(); dir.delete?.(); ax.delete?.(); cyl.delete?.();
+      }
     }
+
+    if (enumEq(type, occ.GeomAbs_SurfaceType?.GeomAbs_Cone)) {
+      const cone = adaptor.Cone();
+      const pos = cone.Position();
+      const loc = pos.Location();
+      const xd = pos.XDirection();
+      const zd = pos.Direction();
+      try {
+        return coneSilhouetteRulings({
+          location: [loc.X(), loc.Y(), loc.Z()],
+          xDir: [xd.X(), xd.Y(), xd.Z()],
+          axisDir: [zd.X(), zd.Y(), zd.Z()],
+          refRadius: cone.RefRadius(),
+          semiAngle: cone.SemiAngle(),
+          vMin,
+          vMax,
+        }, viewDir);
+      } finally {
+        loc.delete?.(); xd.delete?.(); zd.delete?.(); pos.delete?.(); cone.delete?.();
+      }
+    }
+
+    return [];
   } catch {
-    return null;
+    return [];
   } finally {
     adaptor?.delete();
   }
@@ -228,10 +353,7 @@ export function occSilhouetteSplitWithInstance(
     for (const [, handle] of body.faceIds) {
       // rawFace is a VIEW — never delete.
       const rawFace = occ.TopoDS.Face_1(occDeref(oc, handle, oc.TopoDS_Shape));
-      const params = readCylinderFace(occ, rawFace);
-      if (!params) continue;
-
-      const rulings = cylinderSilhouetteRulings(params, viewDir);
+      const rulings = faceSilhouetteRulings(occ, rawFace, viewDir);
       if (rulings.length === 0) continue;
 
       const wires: unknown[] = [];
@@ -255,7 +377,7 @@ export function occSilhouetteSplitWithInstance(
     }
 
     if (splitPlan.length === 0) {
-      console.warn('[occSilhouetteSplit] no cylindrical silhouette found for this view direction');
+      console.warn('[occSilhouetteSplit] no cylindrical/conical silhouette found for this view direction');
       return null;
     }
 
