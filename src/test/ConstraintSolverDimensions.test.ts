@@ -71,17 +71,51 @@ describe('dimension constraints in ConstraintSolver', () => {
     expect(dimensionsToSolverConstraints(dimensions)).toEqual([]);
   });
 
-  it('solves line-to-circle tangent constraints', () => {
+  it('solves line-to-circle tangent with pinned radius', () => {
+    // B1: radius is now a solver DOF. Without a radial dimension, the solver is free to
+    // change both center position and radius. Pin radius=3 so only the center moves.
     const result = solveConstraints([
       line('line-a', -10, 5, 10, 5),
       circle('circle-a', 0, 0, 3),
     ], [
       { type: 'fix', entityIds: ['line-a'] },
       { type: 'tangent', entityIds: ['line-a', 'circle-a'] },
+      { type: 'dimension-radial', entityIds: ['circle-a'], value: 3 },
     ]);
 
     expect(result.solved).toBe(true);
     const center = result.updatedPoints.get('circle-a-p0')!;
     expect(Math.abs(center.y - 5)).toBeCloseTo(3, 3);
+  });
+
+  // ── B1.e: radius / angle DOFs ──────────────────────────────────────────────
+  it('B1: radial dimension resizes a circle', () => {
+    const result = solveConstraints([circle('c', 0, 0, 5)], [
+      { type: 'dimension-radial', entityIds: ['c'], value: 10 },
+    ]);
+    expect(result.solved).toBe(true);
+    expect(result.updatedScalars.get('c::radius')).toBeCloseTo(10, 3);
+  });
+
+  it('B1: diameter dimension resizes a circle', () => {
+    const result = solveConstraints([circle('c', 0, 0, 5)], [
+      { type: 'dimension-diameter', entityIds: ['c'], value: 20 },
+    ]);
+    expect(result.solved).toBe(true);
+    expect(result.updatedScalars.get('c::radius')).toBeCloseTo(10, 3);
+  });
+
+  it('B1: equal constraint equalises two circle radii', () => {
+    const entities: SketchEntity[] = [
+      circle('c1', 0, 0, 5),
+      circle('c2', 20, 0, 9),
+    ];
+    const result = solveConstraints(entities, [
+      { type: 'equal', entityIds: ['c1', 'c2'] },
+    ]);
+    expect(result.solved).toBe(true);
+    const r1 = result.updatedScalars.get('c1::radius')!;
+    const r2 = result.updatedScalars.get('c2::radius')!;
+    expect(Math.abs(r1 - r2)).toBeCloseTo(0, 3);
   });
 });

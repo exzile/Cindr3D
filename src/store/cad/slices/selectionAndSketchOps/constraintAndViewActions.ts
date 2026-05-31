@@ -125,9 +125,8 @@ export function createConstraintAndViewActions({ set, get }: CADSliceContext): P
         }));
         return;
       }
-      const updatedEntities = activeSketch.entities.map((e) => ({
-        ...e,
-        points: e.points.map((pt, pi) => {
+      const updatedEntities = activeSketch.entities.map((e) => {
+        const updatedPoints = e.points.map((pt, pi) => {
           const solvedPt = result.updatedPoints.get(`${e.id}-p${pi}`);
           if (!solvedPt) return pt;
           return {
@@ -136,8 +135,17 @@ export function createConstraintAndViewActions({ set, get }: CADSliceContext): P
             y: origin.y + solvedPt.x * t1.y + solvedPt.y * t2.y,
             z: origin.z + solvedPt.x * t1.z + solvedPt.y * t2.z,
           };
-        }),
-      }));
+        });
+        // B1: apply solved scalar DOFs (radius / startAngle / endAngle) back to the entity.
+        let updated: typeof e = { ...e, points: updatedPoints };
+        const newRadius = result.updatedScalars.get(`${e.id}::radius`);
+        if (newRadius !== undefined && newRadius > 0) updated = { ...updated, radius: newRadius };
+        const newSA = result.updatedScalars.get(`${e.id}::startAngle`);
+        if (newSA !== undefined) updated = { ...updated, startAngle: newSA };
+        const newEA = result.updatedScalars.get(`${e.id}::endAngle`);
+        if (newEA !== undefined) updated = { ...updated, endAngle: newEA };
+        return updated;
+      });
       set((s) => ({
         activeSketch: s.activeSketch ? { ...s.activeSketch, entities: updatedEntities, overConstrained: false } : null,
         statusMessage: `Constraints solved (${result.iterations} iteration${result.iterations === 1 ? '' : 's'})`,

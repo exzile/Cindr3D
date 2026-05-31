@@ -910,7 +910,7 @@
 # .ts:31-48 t1/t2, un-project constraintAndViewActions.ts:135-137) is CORRECT. The bugs
 # are about missing DOFs, entity ordering, and pointIndices.
 #
-# [ ] SKETCH-2.B1  radius / startAngle / endAngle / majorRadius are NOT solver parameters
+# [x] SKETCH-2.B1  radius / startAngle / endAngle / majorRadius are NOT solver parameters
 #     (BUG — biggest gap). buildParams (ConstraintSolver.ts:99-122) emits only point x/y.
 #     Consequence: radial, diameter, arc-length, ellipse-major/minor dimensions and the
 #     tangent + concentric-gap + equal-circle constraints CANNOT move geometry — they only
@@ -918,7 +918,7 @@
 #     NOT resize the circle (Fusion does). Fix: add radius/angle as DOFs in buildParams/
 #     applyParams with correct residual derivatives. Unblocks B2/B4 and SKETCH-1.10.
 #
-# [ ] SKETCH-2.B2  "Equal" is a no-op for circle-circle and nonsensical for line-vs-circle
+# [x] SKETCH-2.B2  "Equal" is a no-op for circle-circle and nonsensical for line-vs-circle
 #     (BUG). ConstraintSolver.ts:368-386 break with no residual for two circles ("radius
 #     not a DOF"); line-vs-circle compares line LENGTH to circle RADIUS with no type
 #     guard. Fix: make radius a DOF (B1) so circle-circle equal works; reject line/circle
