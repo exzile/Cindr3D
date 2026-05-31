@@ -193,32 +193,57 @@ export function renderBasicShapePreview(activeTool: string, h: SketchPreviewHelp
     }
 
     case 'arc-3point': {
-      const lastPt = drawingPoints[drawingPoints.length - 1];
-      const lastV = new THREE.Vector3(lastPt.x, lastPt.y, lastPt.z);
-      addLine([lastV, mousePos]);
+      // Step 1 (start placed, cursor → end): rubber-band LINE + a gentle bow arc so the
+      // user can see they're drawing an arc.  Through-point defaults to the perpendicular
+      // midpoint (quarter-chord offset) giving a natural-looking preview.
+      if (drawingPoints.length === 1) {
+        const chord = mousePos.clone().sub(startV);
+        const chordLen = chord.length();
+        addLine([startV, mousePos]);
+        if (chordLen > 0.1) {
+          // Perpendicular to chord in the sketch plane: rotate chord 90° via t1/t2.
+          const du = chord.dot(t1);
+          const dv = chord.dot(t2);
+          const perpWorld = t1.clone().multiplyScalar(-dv).add(t2.clone().multiplyScalar(du)).normalize();
+          const midPt = startV.clone().add(mousePos).multiplyScalar(0.5);
+          const throughPt = midPt.clone().addScaledVector(perpWorld, chordLen * 0.25);
+          const cc = circumcenter2D(
+            { x: startV.x, y: startV.y, z: startV.z },
+            { x: throughPt.x, y: throughPt.y, z: throughPt.z },
+            { x: mousePos.x, y: mousePos.y, z: mousePos.z },
+            t1, t2,
+          );
+          if (cc) {
+            const center = new THREE.Vector3(cc.center.x, cc.center.y, cc.center.z);
+            const d1 = startV.clone().sub(center);
+            const dMid = throughPt.clone().sub(center);
+            const d3 = mousePos.clone().sub(center);
+            const { startAngle, endAngle } = ccwArcThrough(
+              Math.atan2(d1.dot(t2), d1.dot(t1)),
+              Math.atan2(dMid.dot(t2), dMid.dot(t1)),
+              Math.atan2(d3.dot(t2), d3.dot(t1)),
+            );
+            addLine(sampleCcwArc(center, cc.radius, startAngle, endAngle, t1, t2));
+          }
+        }
+      }
+      // Step 2 (start + end placed, cursor → through-point / curvature control):
+      // show live arc with cursor as the through-point — matches the commit handler.
       if (drawingPoints.length === 2) {
+        const endPt = drawingPoints[1];
+        const endV  = new THREE.Vector3(endPt.x, endPt.y, endPt.z);
+        addLine([endV, mousePos]);
         const cc = circumcenter2D(
           { x: drawingPoints[0].x, y: drawingPoints[0].y, z: drawingPoints[0].z },
-          { x: drawingPoints[1].x, y: drawingPoints[1].y, z: drawingPoints[1].z },
-          { x: mousePos.x, y: mousePos.y, z: mousePos.z },
-          t1,
-          t2,
+          { x: mousePos.x, y: mousePos.y, z: mousePos.z },            // cursor = through-point
+          { x: endPt.x, y: endPt.y, z: endPt.z },
+          t1, t2,
         );
         if (cc) {
           const center = new THREE.Vector3(cc.center.x, cc.center.y, cc.center.z);
-          const d1 = new THREE.Vector3(
-            drawingPoints[0].x - cc.center.x,
-            drawingPoints[0].y - cc.center.y,
-            drawingPoints[0].z - cc.center.z,
-          );
-          const dMid = new THREE.Vector3(
-            drawingPoints[1].x - cc.center.x,
-            drawingPoints[1].y - cc.center.y,
-            drawingPoints[1].z - cc.center.z,
-          );
-          const d3 = mousePos.clone().sub(center);
-          // Match the 3-point commit: pick the CCW arc that passes through the
-          // middle (through) point so the preview matches the committed arc.
+          const d1   = new THREE.Vector3(drawingPoints[0].x - cc.center.x, drawingPoints[0].y - cc.center.y, drawingPoints[0].z - cc.center.z);
+          const dMid = mousePos.clone().sub(center);                   // through-point = cursor
+          const d3   = endV.clone().sub(center);
           const { startAngle, endAngle } = ccwArcThrough(
             Math.atan2(d1.dot(t2), d1.dot(t1)),
             Math.atan2(dMid.dot(t2), dMid.dot(t1)),

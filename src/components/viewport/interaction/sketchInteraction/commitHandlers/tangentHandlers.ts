@@ -203,25 +203,30 @@ export const handleTangentSketchCommit: SketchCommitHandler = (ctx) => {
     }
 
     case 'arc-3point': {
-      // Click start, point on arc, end
+      // Fusion 360 interaction order: start → end → through-point (controls curvature).
+      // This matches addByThreePoints(start, through, end) in the SDK — the through-point
+      // is clicked last so the user can see the arc bending in real time before committing.
       if (drawingPoints.length === 0) {
         setDrawingPoints([sketchPoint]);
-        setStatusMessage('3-Point Arc: start point placed');
+        setStatusMessage('3-Point Arc: start placed — click end point');
       } else if (drawingPoints.length === 1) {
         setDrawingPoints([...drawingPoints, sketchPoint]);
-        setStatusMessage('3-Point Arc: through-point placed — click end point');
+        setStatusMessage('3-Point Arc: end placed — click a point on the arc to set curvature');
       } else {
+        // drawingPoints[0] = start, drawingPoints[1] = end, sketchPoint = through-point
+        const start = drawingPoints[0];
+        const end   = drawingPoints[1];
         const cc = circumcenter2D(
-          { x: drawingPoints[0].x, y: drawingPoints[0].y, z: drawingPoints[0].z },
-          { x: drawingPoints[1].x, y: drawingPoints[1].y, z: drawingPoints[1].z },
-          { x: sketchPoint.x, y: sketchPoint.y, z: sketchPoint.z },
+          { x: start.x, y: start.y, z: start.z },
+          { x: sketchPoint.x, y: sketchPoint.y, z: sketchPoint.z }, // through-point
+          { x: end.x, y: end.y, z: end.z },
           t1, t2
         );
         if (cc) {
-          const { u: u1, v: v1 } = projectToPlane(drawingPoints[0], { id:'', x: cc.center.x, y: cc.center.y, z: cc.center.z });
-          const { u: u2, v: v2 } = projectToPlane(drawingPoints[1], { id:'', x: cc.center.x, y: cc.center.y, z: cc.center.z });
-          const { u: u3, v: v3 } = projectToPlane(sketchPoint, { id:'', x: cc.center.x, y: cc.center.y, z: cc.center.z });
-          // C1: pick the CCW arc that passes through the middle (through) point.
+          const { u: u1, v: v1 } = projectToPlane(start,      { id:'', x: cc.center.x, y: cc.center.y, z: cc.center.z });
+          const { u: u2, v: v2 } = projectToPlane(sketchPoint, { id:'', x: cc.center.x, y: cc.center.y, z: cc.center.z });
+          const { u: u3, v: v3 } = projectToPlane(end,        { id:'', x: cc.center.x, y: cc.center.y, z: cc.center.z });
+          // C1: pick the CCW arc that passes through the through-point (u2, v2).
           const { startAngle, endAngle } = ccwArcThrough(
             Math.atan2(v1, u1), Math.atan2(v2, u2), Math.atan2(v3, u3),
           );
