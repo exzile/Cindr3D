@@ -16,6 +16,7 @@ import VisualStyleEffect from './scene/VisualStyleEffect';
 import SliceEffect from './scene/SliceEffect';
 import SketchRenderer from './scene/SketchRenderer';
 import SketchConstraintOverlay from './scene/SketchConstraintOverlay';
+import PolygonConstraintOverlay from './scene/PolygonConstraintOverlay';
 import SketchDimensionAnnotations from './scene/SketchDimensionAnnotations';
 import SketchDimensionPreview from './scene/SketchDimensionPreview';
 import SketchSplineHandles from './scene/SketchSplineHandles';
@@ -249,6 +250,7 @@ export default function Viewport() {
           <>
             <SketchRenderer />
             <SketchConstraintOverlay />
+            <PolygonConstraintOverlay />
             <SketchDimensionAnnotations />
             <SketchDimensionPreview />
             <SketchSplineHandles />

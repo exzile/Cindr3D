@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { useCADStore } from '../../../../../store/cadStore';
 import type { SketchPoint, SketchEntity, SketchConstraint } from '../../../../../types/cad';
 import { circumcenter2D } from '../helpers';
 import { ccwArcToCursor } from '../arcAngles';
@@ -31,9 +32,10 @@ function emitPolygonLines(
 function applyPolygonConstraints(
   lineIds: string[],
   addSketchConstraint: (c: SketchConstraint) => void,
-) {
+  polygonMeta?: { center: { x: number; y: number; z: number }; radius: number; baseAngle: number },
+): string | undefined {
   const n = lineIds.length;
-  if (n < 3) return;
+  if (n < 3) return undefined;
   // coincident: end of line[i] shares position with start of line[(i+1)%n]
   for (let i = 0; i < n; i++) {
     addSketchConstraint({
@@ -51,12 +53,31 @@ function applyPolygonConstraints(
       entityIds: [lineIds[0], lineIds[i]],
     });
   }
-  // polygon constraint carrying all side entityIds for solver
+  // polygon constraint carrying all side entityIds for the solver + the
+  // regular-polygon metadata so the center glyph / inline editor can rebuild it.
+  const polygonConstraintId = crypto.randomUUID();
   addSketchConstraint({
-    id: crypto.randomUUID(),
+    id: polygonConstraintId,
     type: 'polygon',
     entityIds: lineIds,
+    ...(polygonMeta ? { polygonMeta } : {}),
   });
+  return polygonConstraintId;
+}
+
+/** Circumradius + first-vertex angle for the polygon metadata, from generated verts. */
+function polygonMetaFrom(
+  center: THREE.Vector3,
+  firstVertex: THREE.Vector3,
+  t1: THREE.Vector3,
+  t2: THREE.Vector3,
+): { center: { x: number; y: number; z: number }; radius: number; baseAngle: number } {
+  const d0 = firstVertex.clone().sub(center);
+  return {
+    center: { x: center.x, y: center.y, z: center.z },
+    radius: d0.length(),
+    baseAngle: Math.atan2(d0.dot(t2), d0.dot(t1)),
+  };
 }
 
 export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
@@ -238,7 +259,8 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
           const baseAngle = Math.atan2(d.dot(t2), d.dot(t1));
           const verts = polygonVertexPositions(centerV, radius, sides, baseAngle, 'inscribed', t1, t2);
           const lineIds = emitPolygonLines(verts, addSketchEntity);
-          applyPolygonConstraints(lineIds, addSketchConstraint);
+          const polyId = applyPolygonConstraints(lineIds, addSketchConstraint, polygonMetaFrom(centerV, verts[0], t1, t2));
+          if (polyId) useCADStore.getState().setEditingPolygonConstraintId(polyId);
           setStatusMessage(`${sides}-gon (inscribed) added (vertex r=${radius.toFixed(2)})`);
         } else { setStatusMessage('Polygon too small — try again'); }
         setDrawingPoints([]);
@@ -261,7 +283,8 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
           const baseAngle = Math.atan2(d.dot(t2), d.dot(t1));
           const verts = polygonVertexPositions(centerV, apothem, sides, baseAngle, 'circumscribed', t1, t2);
           const lineIds = emitPolygonLines(verts, addSketchEntity);
-          applyPolygonConstraints(lineIds, addSketchConstraint);
+          const polyId = applyPolygonConstraints(lineIds, addSketchConstraint, polygonMetaFrom(centerV, verts[0], t1, t2));
+          if (polyId) useCADStore.getState().setEditingPolygonConstraintId(polyId);
           setStatusMessage(`${sides}-gon (circumscribed) added (apothem=${apothem.toFixed(2)})`);
         } else { setStatusMessage('Polygon too small — try again'); }
         setDrawingPoints([]);
@@ -301,7 +324,12 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
             lineIds.push(eid);
             addSketchEntity({ id: eid, type: 'line', points: [v1, v2] });
           }
-          applyPolygonConstraints(lineIds, addSketchConstraint);
+          // First vertex sits at p1 (angle = startAngle); record meta for editing.
+          const polyId = applyPolygonConstraints(
+            lineIds, addSketchConstraint,
+            polygonMetaFrom(centerPt, new THREE.Vector3(p1.x, p1.y, p1.z), t1, t2),
+          );
+          if (polyId) useCADStore.getState().setEditingPolygonConstraintId(polyId);
           setStatusMessage(`${sides}-gon (edge) added (side=${sideLen.toFixed(2)})`);
         } else { setStatusMessage('Edge too small — try again'); }
         setDrawingPoints([]);

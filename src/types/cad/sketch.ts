@@ -38,6 +38,13 @@ export interface SketchConstraint {
   pointIndices?: number[];
   value?: number;
   surfacePlane?: { nu: number; nv: number; d: number };
+  /**
+   * For 'polygon' constraints: the regular-polygon parameters captured at
+   * creation, so the polygon can be regenerated with a different side count
+   * (the center constraint glyph + inline editor read/write this). `radius` is
+   * the circumradius; `baseAngle` is the in-plane angle of the first vertex.
+   */
+  polygonMeta?: { center: { x: number; y: number; z: number }; radius: number; baseAngle: number };
 }
 
 export interface SketchEntity {

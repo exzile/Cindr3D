@@ -207,6 +207,12 @@ export interface CADCoreState {
   // Sketch tool options
   sketchPolygonSides: number;
   setSketchPolygonSides: (sides: number) => void;
+  /** Id of the polygon constraint whose inline editor popup is open (null = none). */
+  editingPolygonConstraintId: string | null;
+  setEditingPolygonConstraintId: (id: string | null) => void;
+  /** Regenerate a regular polygon with a new side count, keeping its center,
+   *  circumradius and orientation. */
+  regeneratePolygon: (constraintId: string, newSides: number) => void;
   sketchFilletRadius: number;
   setSketchFilletRadius: (r: number) => void;
   sketchSlotWidth: number;
