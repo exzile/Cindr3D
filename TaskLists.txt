@@ -677,6 +677,9 @@
 #             added to FeatureType + ActiveDialog. Tests: unifyShape.test.ts — default
 #             flags (edges+faces on / bsplines off), unifier retained in ownedResources,
 #             _1 Initialize fallback, null on missing binding / Build throw. (commit c27539e)
+#   [x] 22.3-FIX (2026-05-31): the dialog/action/ActiveDialog existed but NO menu entry
+#             opened it → Merge Faces was unreachable from the UI. Added "Merge Faces" to
+#             the DESIGN→MODIFY menu (designMenuBuilders.tsx, next to Combine).
 #
 # VERIFICATION GATE: same as OCC-21 (tsc clean, eslint, vitest src/engine/occ +
 #   src/store/cad/slices green, op-level test, gitnexus_impact before editing symbols).
@@ -705,3 +708,115 @@
 #           clean after fixes: Shell, Draft, Combine, Scale. Spot-checked clean: Hole,
 #           Thread, Rib, Web, Emboss, Pipe, Coil, BoundaryFill. Re-verify any dialog
 #           touched by OCC-21/22 work.
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BROWSER QA — OCC-21/22 + 21.4e geometry (NEEDS A HUMAN IN THE LIVE 3D APP)
+# ──────────────────────────────────────────────────────────────────────────────
+# All logic/math below is tsc-clean + unit-tested (full suite 1436 green), but the
+# actual OCC kernel geometry was NOT exercisable in the headless test harness.
+# These steps verify the on-screen result. Run `npm run dev`, open the Design
+# workspace. All tools live in the ribbon DESIGN tab → "MODIFY" dropdown unless
+# noted. Each body op needs an OCC SOLID first (Create → Box / Cylinder primitive,
+# or a sketch + Extrude). Watch the status-bar message (bottom) and the timeline.
+#
+# Convention below:  ▶ steps   ✓ expected pass   ✗ failure signature
+#
+# ── QA-21.4e-A  Silhouette Split — CYLINDER (the headline new feature) ─────────
+#   ▶ Create → Cylinder primitive (e.g. r=10, h=30, axis = Z).
+#   ▶ MODIFY → "Silhouette Split". In the dialog set Split Type = "Silhouette",
+#     Body = the cylinder, View Direction = "Along X axis". Confirm.
+#   ✓ The cylinder's curved face is now divided into two halves by two straight
+#     vertical seam lines on the ±Y sides (the outline as seen looking down X).
+#     Volume/shape unchanged; status: "Silhouette Split: outline imprinted on …".
+#     The two new face halves should be independently hover-highlightable.
+#   ✗ "no cylindrical/conical silhouette …" (math rejected the view — try a view
+#     NOT parallel to the axis) OR no visible seam / unchanged face (BRepFeat
+#     imprint failed — capture console warnings beginning "[occSilhouetteSplit]").
+#   ▶ Repeat with View Direction = "Along Z axis" (parallel to the cylinder axis).
+#   ✓ Expected NO-OP with status "no cylindrical/conical silhouette for this view
+#     direction" — a view down the axis has a circular outline, not rulings.
+#
+# ── QA-21.4e-B  Silhouette Split — CONE ────────────────────────────────────────
+#   ▶ Make a cone: sketch a circle, Revolve a triangle, or a Coil/loft — any body
+#     with a conical face. (If no cone primitive exists, a Draft on a cylinder
+#     face or a revolved profile yields one.)
+#   ▶ MODIFY → "Silhouette Split", Split Type = "Silhouette", View = side axis (X/Y).
+#   ✓ The conical face gets two SLANT seam lines (following the cone's taper, not
+#     vertical) where the outline sits — i.e. the seams converge toward the apex.
+#   ✗ As above. Note: for a steep cone viewed near-axially the math may return 0
+#     rulings by design (status no-op) — pick a more side-on axis.
+#   NOTE for both A/B: this realizes Fusion "FacesOnly". 'solid-body'/'shelled-body'
+#     and sphere/torus/freeform are intentionally deferred (status no-op + warn).
+#
+# ── QA-21.2  Split Face (WAS SILENTLY BROKEN before the TKFeat loader fix) ──────
+#   This is the regression check for the TKFeat fix — it returned null on every
+#   call until 2026-05-31.
+#   ▶ Create → Box. Create a construction plane that cuts through the top face
+#     (e.g. an offset XZ plane through the middle).
+#   ▶ MODIFY → "Split Face". Pick the box's top face, choose the construction
+#     plane as the splitting tool. Confirm.
+#   ✓ The top face is split into two faces along the plane intersection line;
+#     body volume unchanged; status "Split Face applied".
+#   ✗ "Split Face: OCC operation failed …" → re-confirm TKFeat is loading (Network
+#     tab should fetch module.TKFeat.wasm at startup; console "[occSplitFace]").
+#
+# ── QA-21.1  Direct Edit (offset-face / extrude / taper) ────────────────────────
+#   ▶ Create → Box. MODIFY → "Direct Edit". Pick a face.
+#   ▶ Mode = Offset Face, distance = +5, confirm.  ✓ that face pushes out 5mm
+#     (volume grows); status "Direct Edit (offset-face) applied".
+#   ▶ Repeat, Mode = Extrude, distance = -3.  ✓ face pulls in (cut), same as a
+#     negative offset.
+#   ▶ Repeat, Mode = Taper, angle = 10°.  ✓ the picked planar face tilts by 10°.
+#   ✗ "Direct Edit … OCC operation failed" or no change → console "[occOffsetFaces]"
+#     / "[occDraft]"; for taper, a non-planar face is rejected by design.
+#
+# ── QA-21.3  Replace Face ───────────────────────────────────────────────────────
+#   ▶ Create → Box. MODIFY → "Replace Face". Pick a source face (e.g. the top),
+#     then a target face/plane that is tilted relative to it. Tangent Chain = on.
+#   ✓ The source face is replaced so the body is now bounded by the target plane
+#     (the top becomes slanted); status "Replace Face applied".
+#   ✗ "source and target faces must be on the same body" (pick both on one body) /
+#     "target face is not planar" (only planar targets supported) / OCC failure.
+#
+# ── QA-21.4a/b/c  Split Body (plane offset + face/surface tool + N pieces) ──────
+#   ▶ Create → Box. MODIFY → "Split Body".
+#   ▶ (a) Pick a principal plane, set a non-zero Plane Offset, confirm.
+#     ✓ body splits into two bodies offset from the origin (not stuck at 0).
+#   ▶ (b) Choose a face/surface body as the splitting tool (body-picker).
+#     ✓ body divides into ALL resulting solids (≥2), each a separate timeline body.
+#   ✗ only ever 2 halves at the origin → offset/tool not threaded; check console.
+#
+# ── QA-22.1  Move/Copy Body (non-primitive: extrude/imported/OCC) ───────────────
+#   ▶ Sketch + Extrude a body. MODIFY → "Move/Copy Body".
+#   ▶ Set dx=10, copy = OFF, confirm.  ✓ the body actually translates +10 X (before
+#     the fix a non-primitive body did NOT move).
+#   ▶ Re-open, dx=10, copy = ON, confirm.  ✓ a SECOND body appears 10mm over; the
+#     original stays. Both remain filletable (OCC body re-registered at new pose).
+#   ✗ body doesn't move / copy not created → console; confirm it is an OCC body.
+#
+# ── QA-22.2  Align (OCC body lands AND the BRep follows) ────────────────────────
+#   ▶ Sketch + Extrude a box (OCC body). MODIFY → "Align".
+#   ▶ Pick a source point/face on the body, then a target point/face elsewhere;
+#     moveType = translate (or align with rotation). Confirm.
+#   ✓ The body moves to the target.  THEN immediately Fillet/Chamfer an edge of the
+#     moved body:  ✓ the fillet appears at the ALIGNED pose (not back at the old
+#     location). This is the key 22.2 check — the OCC BRep moved with the mesh.
+#   ✗ body snaps back to the original pose on the next op, or fillet appears at the
+#     old location → the BRep wasn't transformed; capture console.
+#
+# ── QA-22.3  Merge Faces (now reachable — menu entry added 2026-05-31) ──────────
+#   ▶ Make a body with adjacent COPLANAR faces (e.g. two boxes Combine-joined so
+#     the shared top is split into two coplanar faces, or a split-face result).
+#   ▶ MODIFY → "Merge Faces". Pick the body. Confirm.
+#   ✓ Adjacent coplanar/tangent faces merge into single faces (fewer faces when
+#     hovering); identical solid/volume.
+#   ✗ no change → ShapeUpgrade_UnifySameDomain found nothing to merge (try a body
+#     that genuinely has redundant coplanar faces) or console warning.
+#
+# ── QA-21.5  Texture Extrude (deferred — confirm graceful message) ─────────────
+#   ▶ MODIFY → "Texture Extrude", pick a face, confirm.
+#   ✓ Status "Texture Extrude: not yet implemented — UV-tiled pattern extrude is
+#     planned for a future release" and NO phantom feature is added. (Intentional.)
+#
+# WHEN DONE: tick each ✓ here; for any ✗ paste the bottom status text + any
+# console lines starting with "[occ…]" and I'll fix the kernel path.
