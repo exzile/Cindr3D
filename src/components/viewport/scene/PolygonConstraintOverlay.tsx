@@ -1,9 +1,11 @@
 import { Html } from '@react-three/drei';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
+import type { ThreeEvent } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Hexagon, Square, RectangleHorizontal, X, Trash2 } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import { useThemeStore } from '../../../store/themeStore';
+import { GeometryEngine } from '../../../engine/GeometryEngine';
 import type { Sketch, SketchConstraint } from '../../../types/cad';
 
 /** Center of a shape constraint, from its metadata or the member-line vertices. */
@@ -229,17 +231,17 @@ function BoxEditor({
   );
 }
 
-const glyphButtonStyle = (colors: { bgPanel: string; border: string; accent: string }): React.CSSProperties => ({
-  pointerEvents: 'auto', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center',
-  width: '20px', height: '20px', background: colors.bgPanel, border: `1px solid ${colors.border}`,
-  borderRadius: '4px', cursor: 'pointer', color: colors.accent, boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
-});
+const GLYPH_RADIUS = 0.7;
 
 /**
  * Fusion-style shape affordance: a small glyph at each regular polygon /
  * rectangle / slot center. Clicking it opens an inline editor — side count
  * (polygon), width×height (rectangle), or length×width (slot) — and a delete
  * button. The polygon editor also auto-opens right after a polygon is drawn.
+ *
+ * PERF: the idle glyphs are cheap GPU meshes (NOT drei <Html>) — many <Html>
+ * elements reproject + rewrite DOM styles every frame and make panning lag once
+ * a sketch has lots of shapes. Only the single open editor uses <Html>.
  */
 export default function PolygonConstraintOverlay() {
   const activeSketch = useCADStore((s) => s.activeSketch);
@@ -249,66 +251,80 @@ export default function PolygonConstraintOverlay() {
   const regenerateSlot = useCADStore((s) => s.regenerateSlot);
   const colors = useThemeStore((s) => s.colors);
 
-  if (!activeSketch) return null;
-  const shapeConstraints = activeSketch.constraints.filter(
-    (c) => c.type === 'polygon' || c.type === 'rectangle' || c.type === 'slot',
-  );
-  if (shapeConstraints.length === 0) return null;
+  // Orient the flat glyph discs into the sketch plane (one quaternion per sketch).
+  const glyphQuat = useMemo(() => {
+    if (!activeSketch) return new THREE.Quaternion();
+    const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+    const n = t1.clone().cross(t2).normalize();
+    return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(t1, t2, n));
+  }, [activeSketch]);
 
-  const badgeStyle: React.CSSProperties = {
-    position: 'absolute', bottom: '-6px', right: '-6px', fontSize: '9px', fontWeight: 700,
-    lineHeight: '12px', minWidth: '12px', textAlign: 'center', color: colors.textPrimary,
-    background: colors.bgPanel, border: `1px solid ${colors.border}`, borderRadius: '6px', padding: '0 2px',
-  };
+  const shapeConstraints = useMemo(
+    () => (activeSketch?.constraints ?? []).filter(
+      (c) => c.type === 'polygon' || c.type === 'rectangle' || c.type === 'slot',
+    ),
+    [activeSketch],
+  );
+
+  // Shared material for every glyph disc — avoids one material per shape.
+  const glyphMat = useMemo(
+    () => new THREE.MeshBasicMaterial({ color: new THREE.Color(colors.accent), transparent: true, opacity: 0.85, depthTest: false, side: THREE.DoubleSide }),
+    [colors.accent],
+  );
+  useEffect(() => () => glyphMat.dispose(), [glyphMat]);
+
+  if (!activeSketch || shapeConstraints.length === 0) return null;
 
   return (
     <group renderOrder={1000}>
       {shapeConstraints.map((con) => {
         const center = shapeCenter(con, activeSketch);
         if (!center) return null;
-        const isEditing = editingId === con.id;
-        const close = () => setEditingId(null);
 
-        let editor: React.ReactNode = null;
-        let glyphIcon: React.ReactNode = null;
-        let glyphTitle = '';
-        let badge: number | null = null;
-
-        if (con.type === 'polygon') {
-          editor = <PolygonEditor constraintId={con.id} sides={con.entityIds.length} onClose={close} />;
-          glyphIcon = <Hexagon size={13} />;
-          glyphTitle = `Regular polygon (${con.entityIds.length} sides) — click to edit`;
-          badge = con.entityIds.length;
-        } else if (con.type === 'rectangle') {
-          const rm = con.rectangleMeta;
-          editor = <BoxEditor constraintId={con.id} icon={<Square size={13} style={{ color: colors.accent }} />}
-            valA={rm?.width ?? 0} valB={rm?.height ?? 0} deleteTitle="Delete rectangle"
-            onApply={regenerateRectangle} onClose={close} />;
-          glyphIcon = <Square size={13} />;
-          glyphTitle = `Rectangle (${(rm?.width ?? 0).toFixed(1)} × ${(rm?.height ?? 0).toFixed(1)}) — click to edit`;
-        } else {
-          const sm = con.slotMeta;
-          editor = <BoxEditor constraintId={con.id} icon={<RectangleHorizontal size={13} style={{ color: colors.accent }} />}
-            valA={sm?.length ?? 0} valB={sm?.width ?? 0} deleteTitle="Delete slot"
-            onApply={regenerateSlot} onClose={close} />;
-          glyphIcon = <RectangleHorizontal size={13} />;
-          glyphTitle = `Slot (${(sm?.length ?? 0).toFixed(1)} × ${(sm?.width ?? 0).toFixed(1)}) — click to edit`;
+        if (editingId === con.id) {
+          const close = () => setEditingId(null);
+          let editor: React.ReactNode;
+          if (con.type === 'polygon') {
+            editor = <PolygonEditor constraintId={con.id} sides={con.entityIds.length} onClose={close} />;
+          } else if (con.type === 'rectangle') {
+            const rm = con.rectangleMeta;
+            editor = <BoxEditor constraintId={con.id} icon={<Square size={13} style={{ color: colors.accent }} />}
+              valA={rm?.width ?? 0} valB={rm?.height ?? 0} deleteTitle="Delete rectangle"
+              onApply={regenerateRectangle} onClose={close} />;
+          } else {
+            const sm = con.slotMeta;
+            editor = <BoxEditor constraintId={con.id} icon={<RectangleHorizontal size={13} style={{ color: colors.accent }} />}
+              valA={sm?.length ?? 0} valB={sm?.width ?? 0} deleteTitle="Delete slot"
+              onApply={regenerateSlot} onClose={close} />;
+          }
+          return (
+            <Html key={con.id} position={center} center zIndexRange={[210, 0]} style={{ pointerEvents: 'none' }}>
+              {editor}
+            </Html>
+          );
         }
 
+        // Idle glyph — a tiny shape-hinting disc in the sketch plane, click to edit.
+        const onClick = (e: ThreeEvent<MouseEvent>) => { e.stopPropagation(); setEditingId(con.id); };
+        const onOver = (e: ThreeEvent<PointerEvent>) => { e.stopPropagation(); document.body.style.cursor = 'pointer'; };
+        const onOut = () => { document.body.style.cursor = ''; };
         return (
-          <Html key={con.id} position={center} center zIndexRange={[210, 0]} style={{ pointerEvents: 'none' }}>
-            {isEditing ? editor : (
-              <button
-                title={glyphTitle}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => { e.stopPropagation(); setEditingId(con.id); }}
-                style={glyphButtonStyle(colors)}
-              >
-                {glyphIcon}
-                {badge !== null && <span style={badgeStyle}>{badge}</span>}
-              </button>
-            )}
-          </Html>
+          <mesh
+            key={con.id}
+            position={center}
+            quaternion={glyphQuat}
+            material={glyphMat}
+            renderOrder={1001}
+            onClick={onClick}
+            onPointerOver={onOver}
+            onPointerOut={onOut}
+          >
+            {con.type === 'polygon'
+              ? <circleGeometry args={[GLYPH_RADIUS, Math.max(3, Math.min(con.entityIds.length, 16))]} />
+              : con.type === 'rectangle'
+                ? <planeGeometry args={[GLYPH_RADIUS * 1.8, GLYPH_RADIUS * 1.2]} />
+                : <circleGeometry args={[GLYPH_RADIUS, 18]} />}
+          </mesh>
         );
       })}
     </group>

@@ -233,8 +233,13 @@ function makeDot(pos: THREE.Vector3, t1: THREE.Vector3, t2: THREE.Vector3, size:
 
 export default function SketchConstraintOverlay() {
   const activeSketch = useCADStore((s) => s.activeSketch);
+  const showConstraints = useCADStore((s) => s.showSketchConstraints);
 
   const objects = useMemo(() => {
+    // Respect the "Constraints" visibility toggle. Besides being correct, hiding
+    // the per-constraint glyphs is a big perf win on sketches with many shapes
+    // (each constraint is its own draw call).
+    if (!showConstraints) return null;
     if (!activeSketch || !activeSketch.constraints || activeSketch.constraints.length === 0) {
       return null;
     }
@@ -433,7 +438,7 @@ export default function SketchConstraintOverlay() {
     }
 
     return objs.length > 0 ? objs : null;
-  }, [activeSketch]);
+  }, [activeSketch, showConstraints]);
 
   // Dispose every constraint glyph's geometry when `objects` is replaced
   // (active sketch changed, constraints edited) or on unmount. Materials are
