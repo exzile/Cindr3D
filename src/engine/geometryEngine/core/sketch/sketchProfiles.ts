@@ -378,6 +378,90 @@ export function isSketchClosedProfile(sketch: Sketch): boolean {
   });
 }
 
+/** A boundary entity together with its travel direction along an assembled chain. */
+interface OrientedEntity { entity: SketchEntity; reversed: boolean; }
+
+/**
+ * Build a THREE.Shape from an ordered, orientation-aware chain of boundary
+ * entities. Each element carries a `reversed` flag so segments that were drawn
+ * "backwards" relative to the loop's travel direction are emitted end→start.
+ * For a forward-only chain this produces output identical to the legacy
+ * `entitiesToShape(chain)` path (so existing profiles are unaffected); the
+ * difference only shows up for mixed-orientation loops, which previously failed
+ * to close.
+ */
+function orientedChainToShape(
+  chain: OrientedEntity[],
+  project: (p: SketchPoint) => { u: number; v: number },
+): THREE.Shape | null {
+  const shape = new THREE.Shape();
+  let hasContent = false;
+  const begin = (u: number, v: number) => {
+    if (!hasContent) { shape.moveTo(u, v); hasContent = true; }
+  };
+
+  for (const { entity, reversed } of chain) {
+    switch (entity.type) {
+      case 'line': {
+        if (entity.points.length >= 2) {
+          const i0 = reversed ? entity.points.length - 1 : 0;
+          const i1 = reversed ? 0 : entity.points.length - 1;
+          const a = project(entity.points[i0]);
+          const b = project(entity.points[i1]);
+          begin(a.u, a.v);
+          shape.lineTo(b.u, b.v);
+        }
+        break;
+      }
+      case 'spline': {
+        if (entity.points.length >= 2) {
+          const pts = reversed ? [...entity.points].reverse() : entity.points;
+          const first = project(pts[0]);
+          begin(first.u, first.v);
+          for (let i = 1; i < pts.length; i++) {
+            const p = project(pts[i]);
+            shape.lineTo(p.u, p.v);
+          }
+        }
+        break;
+      }
+      case 'arc': {
+        if (entity.points.length >= 1 && entity.radius) {
+          const c = project(entity.points[0]);
+          const sa = entity.startAngle ?? 0;
+          let ea = entity.endAngle ?? Math.PI;
+          if (ea <= sa) ea += Math.PI * 2;
+          const fromA = reversed ? ea : sa;
+          begin(c.u + Math.cos(fromA) * entity.radius, c.v + Math.sin(fromA) * entity.radius);
+          // reversed → sweep clockwise from ea back to sa
+          shape.absarc(c.u, c.v, entity.radius, reversed ? ea : sa, reversed ? sa : ea, reversed);
+        }
+        break;
+      }
+      case 'elliptical-arc': {
+        if (entity.points.length >= 1 && entity.majorRadius && entity.minorRadius) {
+          const c = project(entity.points[0]);
+          const rot = entity.rotation ?? 0;
+          const sa = entity.startAngle ?? 0;
+          let ea = entity.endAngle ?? Math.PI;
+          if (ea <= sa) ea += Math.PI * 2;
+          const cos = Math.cos(rot), sin = Math.sin(rot);
+          const fromA = reversed ? ea : sa;
+          const sx = entity.majorRadius * Math.cos(fromA);
+          const sy = entity.minorRadius * Math.sin(fromA);
+          begin(c.u + cos * sx - sin * sy, c.v + sin * sx + cos * sy);
+          shape.absellipse(c.u, c.v, entity.majorRadius, entity.minorRadius, reversed ? ea : sa, reversed ? sa : ea, reversed, rot);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  return hasContent ? shape : null;
+}
+
 export function entitiesToShapes(
   entities: SketchEntity[],
   project: (p: SketchPoint) => { u: number; v: number },
@@ -405,7 +489,13 @@ export function entitiesToShapes(
 
   for (let seed = 0; seed < chainable.length; seed++) {
     if (used.has(seed)) continue;
-    const chain: SketchEntity[] = [chainable[seed].entity];
+    // Track orientation per chain element. A segment is "reversed" when it was
+    // drawn in the opposite direction to the chain's travel — e.g. the user
+    // snapped its END (not its start) to the previous segment. Without honoring
+    // this, a mixed-orientation loop (very common when drawing separate line
+    // segments and snapping their endpoints) never closes, so the profile is
+    // wrongly classified as open and won't extrude as a solid.
+    const chain: OrientedEntity[] = [{ entity: chainable[seed].entity, reversed: false }];
     let chainStart = chainable[seed].endpoints[0];
     let chainEnd = chainable[seed].endpoints[1];
     used.add(seed);
@@ -415,15 +505,27 @@ export function entitiesToShapes(
       extended = false;
       for (let i = 0; i < chainable.length; i++) {
         if (used.has(i)) continue;
-        const endpoints = chainable[i].endpoints;
-        if (ptClose(chainEnd, endpoints[0])) {
-          chain.push(chainable[i].entity);
-          chainEnd = endpoints[1];
+        const [e0, e1] = chainable[i].endpoints;
+        // Try all four ways the candidate can attach to either end of the chain,
+        // flipping the segment's orientation when its far endpoint is the match.
+        if (ptClose(chainEnd, e0)) {
+          chain.push({ entity: chainable[i].entity, reversed: false });
+          chainEnd = e1;
           used.add(i);
           extended = true;
-        } else if (ptClose(chainStart, endpoints[1])) {
-          chain.unshift(chainable[i].entity);
-          chainStart = endpoints[0];
+        } else if (ptClose(chainEnd, e1)) {
+          chain.push({ entity: chainable[i].entity, reversed: true });
+          chainEnd = e0;
+          used.add(i);
+          extended = true;
+        } else if (ptClose(chainStart, e1)) {
+          chain.unshift({ entity: chainable[i].entity, reversed: false });
+          chainStart = e0;
+          used.add(i);
+          extended = true;
+        } else if (ptClose(chainStart, e0)) {
+          chain.unshift({ entity: chainable[i].entity, reversed: true });
+          chainStart = e1;
           used.add(i);
           extended = true;
         }
@@ -431,7 +533,7 @@ export function entitiesToShapes(
     }
 
     if (chain.length > 0 && ptClose(chainStart, chainEnd)) {
-      const shape = entitiesToShape(chain, project);
+      const shape = orientedChainToShape(chain, project);
       if (shape) shapes.push(shape);
     }
   }

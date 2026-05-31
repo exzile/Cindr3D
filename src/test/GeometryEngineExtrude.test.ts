@@ -275,6 +275,26 @@ describe('chainSegments (T-junction handling)', () => {
     // Rectangle should have 4 sides
     expect(shapes[0].curves.length).toBe(4);
   });
+
+  it('closes a loop whose segments were drawn in mixed orientations', () => {
+    // Mimics drawing separate line segments and snapping endpoints together:
+    // some segments end up "reversed" (their endpoints are stored end→start).
+    // The corners still coincide, so the loop IS closed — the chainer must
+    // honor each segment's direction rather than assuming a consistent winding.
+    const c0 = mkPoint(0, 0), c1 = mkPoint(2, 0), c2 = mkPoint(2, 1), c3 = mkPoint(0, 1);
+    const entities: SketchEntity[] = [
+      { id: `e${++eid}`, type: 'line', points: [c0, c1] }, // bottom  →
+      { id: `e${++eid}`, type: 'line', points: [c2, c1] }, // right   ← (reversed)
+      { id: `e${++eid}`, type: 'line', points: [c2, c3] }, // top     ←
+      { id: `e${++eid}`, type: 'line', points: [c0, c3] }, // left    ↑ (reversed)
+    ];
+    const sketch = mkSketch(entities);
+    const shapes = GeometryEngine.sketchToShapes(sketch);
+    expect(shapes).toHaveLength(1);
+    expect(shapes[0].curves.length).toBe(4);
+    // And it must be recognized as a closed (solid-extrudable) profile.
+    expect(GeometryEngine.isSketchClosedProfile(sketch)).toBe(true);
+  });
 });
 
 // ─── sketchToProfileShapesFlat (atomic regions + dedup) ──────────────────────
