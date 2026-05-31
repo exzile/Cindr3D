@@ -2,7 +2,9 @@
 ## Status key: [x] done  [~] partial  [ ] not started  [>] in progress  [skip] intentional no-op / deferred-spike
 ## Last updated: 2026-05-31  Branch: claude/sketchoptimization-branch-A3tk4
 ##   (OCC-21/22/23 verified complete — implemented in commits 63e42b3 + c27539e;
-##    missing op-level + commit-level tests now added; full suite 1419 green)
+##    missing op-level + commit-level tests added; OCC-21.4e REAL silhouette split
+##    implemented for the analytic/cylindrical case; TKFeat loader gap fixed
+##    (Split Face was silently dead at runtime). Full suite 1430 green.)
 ## SDK ref: local Fusion 360 webdeploy SDK headers (machine-specific path omitted)
 ##          Resolve via the current developer's Autodesk install directory.
 ## SDK install: local Fusion 360 webdeploy SDK headers under the current user's
@@ -531,6 +533,11 @@
 #             construction-plane origin/normal and calls occSplitFaceWithInstance.
 #   [x] 21.2c Tests: src/engine/occ/ops/__tests__/splitFace.test.ts — section→wire→
 #             SplitShape.Add(wire, castFace); null on no-face / no-edges; disposal asserted.
+#   [x] 21.2-FIX (2026-05-31): splitFace used BRepFeat_SplitShape (TKFeat) but the OCC
+#             loader never loaded TKFeat → `new occ.BRepFeat_SplitShape` was undefined →
+#             the op threw and returned null on EVERY call (silent runtime failure since
+#             OCC-21.2 shipped). Fixed by adding module.TKFeat.wasm to loader.ts LIBS
+#             (after TKOffset; deps already present). Same toolkit now backs 21.4e.
 #   Bindings: BRepFeat_SplitShape, BRepProj_Projection, BRepAlgoAPI_Section.
 #
 # ── 21.3  REPLACE FACE (most complex) ───────────────────────────────────
@@ -573,11 +580,25 @@
 #   [x] 21.4d Misnomer removed: SilhouetteSplitDialog retitled "Planar Split"; status
 #             messages updated (it performs a halfspace cut, not a silhouette projection).
 #             Function name kept (too many callers). (commit 63e42b3)
-#  [skip] 21.4e REAL silhouette split — DEFERRED to its own spike. Requires view-dependent
-#             silhouette-curve derivation (per-face tangency locus / HLRBRep) + interactive
-#             3D verification that is not reproducible in the headless test harness. The
-#             misnomer is gone (21.4d) so nothing is mislabeled in the meantime. Tracked as
-#             a standalone research task; no risky unverifiable geometry shipped.
+#   [~] 21.4e REAL silhouette split — IMPLEMENTED for the analytic (cylindrical) case
+#             (2026-05-31). engine/occ/ops/silhouetteSplit.ts:
+#             • cylinderSilhouetteRulings() — PURE, closed-form: a cylinder's outline
+#               along viewDir is the two axial rulings at azimuth ±normalize(axis×view)
+#               (surface normal ⊥ view = tangency). Fully unit-tested with real geometry
+#               assertions (perpendicularity, radius, V-range, axis-parallel ⇒ []).
+#             • occSilhouetteSplitWithInstance() — reads each face via BRepAdaptor_Surface_2,
+#               builds the rulings as line edges, imprints them onto the cylindrical face(s)
+#               via BRepFeat_SplitShape (operation 'faces-only' = Fusion FacesOnly: solid
+#               unchanged, face subdivided along the outline). VIEW/owned disposal disciplined.
+#             • Store: commitSilhouetteImprint (splitBodyActions.ts). UI: SilhouetteSplitDialog
+#               gains a "Split Type" selector — Planar (existing) | Silhouette (new) along a
+#               view axis. State decl in analysisState.ts.
+#             • REQUIRED a loader fix: TKFeat (BRepFeat_*) was never loaded — see 21.2 note.
+#             DEFERRED (documented, op returns null + warns): cone slant rulings, sphere
+#             outline circle, freeform (need marching/HLR — TKHLR not loaded), and the
+#             'solid-body'/'shelled-body' modes (need a parting-surface solid split).
+#             Geometric output on real bodies still wants interactive 3D QA (no live kernel
+#             in the headless harness) — orchestration + math are tested.
 #
 # ── 21.5  TEXTURE EXTRUDE (lowest priority) ──────────────────────────────
 #   Current: commitTextureExtrude is a @stub. Fusion's Texture is a repeating

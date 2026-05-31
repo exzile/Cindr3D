@@ -336,8 +336,11 @@ export interface CADAnalysisState {
     splitToolFeatureId?: string | null;
   }): void;
 
-  // ── SLD15 — Silhouette Split ─────────────────────────────────────────────
+  // ── SLD15 — Planar Split (formerly mislabeled "silhouette") ──────────────
   commitSilhouetteSplit(featureId: string, planeNormal: THREE.Vector3, planeOffset: number): void;
+  // OCC-21.4e — REAL silhouette split: imprint view-dependent outline curves
+  // (cylindrical faces) along viewDir via BRepFeat_SplitShape.
+  commitSilhouetteImprint(featureId: string, viewDir: THREE.Vector3): void;
 
   // ── MSH4 — Erase and Fill ────────────────────────────────────────────────
   commitEraseAndFill(featureId: string, faceNormal: THREE.Vector3, faceCentroid: THREE.Vector3): void;

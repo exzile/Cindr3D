@@ -11,6 +11,7 @@ import { createOccPlaneFrame } from '../../../../../engine/occ/plane';
 import { occExtrudeRect } from '../../../../../engine/occ/ops/extrude';
 import { performOccBooleanWithInstance } from '../../../../../engine/occ/ops/booleanCore';
 import { occSplitBodyBySurface } from '../../../../../engine/occ/ops/splitBody';
+import { occSilhouetteSplitWithInstance } from '../../../../../engine/occ/ops/silhouetteSplit';
 import { globalBRepBodyRegistry } from '../../../../../engine/occ/globalRegistry';
 import { createRegisteredOccMesh } from '../../../../../engine/occ/registeredMesh';
 import { BODY_MATERIAL } from '../../../../../components/viewport/scene/bodyMaterial';
@@ -301,6 +302,65 @@ export function createSplitBodyActions({ set, get }: CADSliceContext): Partial<C
       set({ features: [...features.map((f) => f.id === featureId ? { ...f, visible: false } : f), featureA, featureB] });
       disposeMeshDeferred(srcMesh);
       get().setStatusMessage(`Planar Split ${n}: split into two parts`);
+    },
+
+    // OCC-21.4e — REAL silhouette split (view-dependent outline imprint).
+    // Imprints the body's silhouette curves (cylindrical faces) as seen along
+    // viewDir onto its faces via BRepFeat_SplitShape. FacesOnly: the solid is
+    // unchanged, the cylindrical face is subdivided along the outline. Requires
+    // an OCC body — falls back to a status message otherwise.
+    commitSilhouetteImprint: (featureId, viewDir) => {
+      const { features } = get();
+      const r = requireMesh(features, featureId, 'Silhouette Split', get().setStatusMessage);
+      if (!r) return;
+      const { srcFeature, srcMesh } = r;
+
+      const brepBodyId = srcMesh.userData.brepBodyId as string | undefined;
+      const occ = brepBodyId ? getOccSync() : null;
+      const srcBody = occ && brepBodyId ? globalBRepBodyRegistry.get(brepBodyId) : null;
+      if (!occ || !srcBody) {
+        get().setStatusMessage('Silhouette Split: requires an OCC solid (cylindrical faces) — create one first');
+        return;
+      }
+
+      let result: BRepBody | null = null;
+      try {
+        result = occSilhouetteSplitWithInstance(
+          occ.oc,
+          srcBody,
+          [viewDir.x, viewDir.y, viewDir.z],
+          { sourceFeatureId: featureId, operation: 'faces-only' },
+        );
+      } catch (err) {
+        get().setStatusMessage(`Silhouette Split failed: ${errorMessage(err, 'unknown')}`);
+        return;
+      }
+
+      if (!result) {
+        get().setStatusMessage('Silhouette Split: no cylindrical silhouette for this view direction');
+        return;
+      }
+
+      let newMesh;
+      try {
+        newMesh = createRegisteredOccMesh(occ.oc, result, srcMesh.material, featureId);
+      } catch (err) {
+        get().setStatusMessage(`Silhouette Split failed: ${errorMessage(err, 'unknown')}`);
+        return;
+      }
+      newMesh.castShadow = true;
+      newMesh.receiveShadow = true;
+
+      get().pushUndo();
+      set((state) => ({
+        features: state.features.map((f) =>
+          f.id === featureId
+            ? { ...f, mesh: newMesh, params: { ...f.params, featureKind: 'silhouette-imprint' } }
+            : f,
+        ),
+        statusMessage: `Silhouette Split: outline imprinted on ${srcFeature.name}`,
+      }));
+      if (srcMesh.isMesh) disposeMeshDeferred(srcMesh);
     },
   };
 }

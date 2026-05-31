@@ -30,6 +30,9 @@ import urlTKBO from 'opencascade.js/dist/module.TKBO.wasm?url';
 import urlTKBool from 'opencascade.js/dist/module.TKBool.wasm?url';
 import urlTKFillet from 'opencascade.js/dist/module.TKFillet.wasm?url';
 import urlTKOffset from 'opencascade.js/dist/module.TKOffset.wasm?url';
+// TKFeat — BRepFeat_SplitShape / BRepFeat_MakePrism (Split Face + silhouette
+// imprint). Deps (TKBRep/TKTopAlgo/TKBO/TKBool/TKShHealing) are all listed above.
+import urlTKFeat from 'opencascade.js/dist/module.TKFeat.wasm?url';
 import urlTKG2d from 'opencascade.js/dist/module.TKG2d.wasm?url';
 import urlTKG3d from 'opencascade.js/dist/module.TKG3d.wasm?url';
 import urlTKMath from 'opencascade.js/dist/module.TKMath.wasm?url';
@@ -64,6 +67,7 @@ const LIBS: [url: string, name: string][] = [
   [urlTKBool,     'TKBool'],
   [urlTKFillet,   'TKFillet'],
   [urlTKOffset,   'TKOffset'],
+  [urlTKFeat,     'TKFeat'],
   [urlTKCDF,      'TKCDF'],
   [urlTKLCAF,     'TKLCAF'],
   [urlTKXSBase,   'TKXSBase'],
@@ -165,8 +169,8 @@ async function _init(): Promise<OcctInstance> {
   // Dynamic import of the factory JS — bypasses rolldown bundling.
   // The `?url` import above gives us the asset URL; at runtime the browser
   // fetches and executes it as an ES module.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   announce('Loading engine core');
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const factoryMod = await import(/* @vite-ignore */ occFactoryUrl) as any;
   const occFactory = factoryMod.default ?? factoryMod;
 
