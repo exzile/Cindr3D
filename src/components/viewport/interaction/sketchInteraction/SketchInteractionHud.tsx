@@ -1,6 +1,7 @@
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
+import { useCADStore } from '../../../../store/cadStore';
 import type { Sketch, SketchPoint, SnapType } from '../../../../types/cad';
 import type { ThemeColors } from '../../../../types/theme.types';
 
@@ -25,9 +26,27 @@ export function SketchInteractionHud({
   snapTarget,
   hoverMidpoints,
 }: SketchInteractionHudProps) {
+  const polygonSides = useCADStore((s) => s.sketchPolygonSides);
+  const setPolygonSides = useCADStore((s) => s.setSketchPolygonSides);
+
   if (!mousePos || !activeSketch) {
     return null;
   }
+
+  const isPolygonTool =
+    activeTool === 'polygon' ||
+    activeTool === 'polygon-inscribed' ||
+    activeTool === 'polygon-circumscribed' ||
+    activeTool === 'polygon-edge';
+  // Anchor the editable side-count box to the polygon's first placed point (its
+  // center / first edge endpoint) so it stays stationary and clickable while the
+  // cursor moves to size the polygon. Before the first click it follows the
+  // cursor as a read-only hint.
+  const polygonAnchor =
+    drawingPoints.length >= 1
+      ? new THREE.Vector3(drawingPoints[0].x, drawingPoints[0].y, drawingPoints[0].z)
+      : mousePos;
+  const polygonInputInteractive = drawingPoints.length >= 1;
 
   const showLineDimensions =
     (activeTool === 'line' ||
@@ -151,6 +170,53 @@ export function SketchInteractionHud({
       {showRadiusHud && radiusHudPosition && (
         <Html position={radiusHudPosition} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
           <div style={lengthLabelStyle}>{radiusHudText}</div>
+        </Html>
+      )}
+
+      {/* Fusion-style inline side-count field for the polygon tools. */}
+      {isPolygonTool && (
+        <Html position={polygonAnchor} zIndexRange={[200, 0]} style={{ pointerEvents: 'none' }}>
+          <div
+            style={{
+              ...baseLabelStyle,
+              transform: 'translate(24px, -34px)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              pointerEvents: polygonInputInteractive ? 'auto' : 'none',
+              borderColor: themeColors.accent,
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span style={{ color: themeColors.textSecondary }}>Sides</span>
+            {polygonInputInteractive ? (
+              <input
+                type="number"
+                min={3}
+                max={128}
+                step={1}
+                value={polygonSides}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  if (!Number.isNaN(v)) setPolygonSides(v);
+                }}
+                onKeyDown={(e) => e.stopPropagation()}
+                style={{
+                  width: '42px',
+                  fontSize: '11px',
+                  textAlign: 'center',
+                  color: themeColors.textPrimary,
+                  background: themeColors.bgInput,
+                  border: `1px solid ${themeColors.border}`,
+                  borderRadius: '2px',
+                  padding: '1px 2px',
+                }}
+              />
+            ) : (
+              <strong style={{ color: themeColors.textPrimary }}>{polygonSides}</strong>
+            )}
+          </div>
         </Html>
       )}
 
