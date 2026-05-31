@@ -7,6 +7,7 @@ import { disposeMeshDeferred } from '../../../../../engine/occ/picking';
 import { occDraftWithInstance } from '../../../../../engine/occ/ops/draft';
 import { occOffsetFacesWithInstance } from '../../../../../engine/occ/ops/offsetFaces';
 import { occShellWithInstance } from '../../../../../engine/occ/ops/shell';
+import { occUnifyBodyWithInstance } from '../../../../../engine/occ/ops/unifyShape';
 import { createRegisteredOccMesh } from '../../../../../engine/occ/registeredMesh';
 import { errorMessage } from '../../../../../utils/errorHandling';
 import { liveBodyMeshes } from '../../../../meshRegistry';
@@ -238,6 +239,46 @@ export function createShellDraftOffsetActions({ set, get }: CADSliceContext): Pa
       set({ features: nextFeatures });
       disposeMeshDeferred(srcMesh);
       get().setStatusMessage('Remove Face: face removed and healed');
+    },
+
+    commitMergeFaces: (featureId) => {
+      const { features } = get();
+      const r = requireMesh(features, featureId, 'Merge Faces', get().setStatusMessage);
+      if (!r) return;
+      const { srcMesh } = r;
+      const occBodyId = srcMesh.userData['brepBodyId'] as string | undefined;
+      if (!occBodyId) {
+        get().setStatusMessage('Merge Faces: requires an OCC body');
+        return;
+      }
+      const occ = getOccSync();
+      const srcBody = occ ? globalBRepBodyRegistry.get(occBodyId) : undefined;
+      if (!occ || !srcBody) {
+        get().setStatusMessage('Merge Faces: OCC body not available');
+        return;
+      }
+      const mergeResult = occUnifyBodyWithInstance(occ.oc, srcBody, { sourceFeatureId: featureId });
+      if (!mergeResult) {
+        get().setStatusMessage('Merge Faces: unify operation failed');
+        return;
+      }
+      let newMesh: THREE.Mesh;
+      try {
+        newMesh = createRegisteredOccMesh(occ.oc, mergeResult, srcMesh.material, featureId);
+      } catch (err) {
+        get().setStatusMessage(`Merge Faces failed: ${errorMessage(err, 'unknown')}`);
+        return;
+      }
+      get().pushUndo();
+      set((state) => ({
+        features: state.features.map((f) =>
+          f.id === featureId
+            ? { ...f, mesh: newMesh, params: { ...f.params, featureKind: 'merge-faces' } }
+            : f,
+        ),
+        statusMessage: 'Merge Faces applied',
+      }));
+      disposeMeshDeferred(srcMesh);
     },
   };
 }

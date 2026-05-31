@@ -31,9 +31,17 @@ export interface CADWorkflowState {
   // ── D171 Replace Face ────────────────────────────────────────────────────
   replaceFaceSourceId: string | null;
   replaceFaceTargetId: string | null;
+  replaceFaceSourceOccBodyId: string | null;
+  replaceFaceSourceOccFaceId: number | null;
+  replaceFaceSourceFeatureId: string | null;
+  replaceFaceTargetOccBodyId: string | null;
+  replaceFaceTargetOccFaceId: number | null;
+  replaceFaceTargetFeatureId: string | null;
+  isTangentChainReplaceFace: boolean;
   openReplaceFaceDialog: () => void;
-  setReplaceFaceSource: (id: string) => void;
-  setReplaceFaceTarget: (id: string) => void;
+  setReplaceFaceSource: (id: string, occ?: { bodyId: string; faceId: number; featureId: string } | null) => void;
+  setReplaceFaceTarget: (id: string, occ?: { bodyId: string; faceId: number; featureId: string } | null) => void;
+  setReplaceFaceIsTangentChain: (v: boolean) => void;
   commitReplaceFace: () => void;
 
   // ── D192 Decal ───────────────────────────────────────────────────────────
@@ -61,8 +69,11 @@ export interface CADWorkflowState {
 
   // ── D185 Split Face ──────────────────────────────────────────────────────
   splitFaceId: string | null;
+  splitFaceOccBodyId: string | null;
+  splitFaceOccFaceId: number | null;
+  splitFaceFeatureId: string | null;
   openSplitFaceDialog: () => void;
-  setSplitFace: (id: string) => void;
+  setSplitFace: (id: string, occ?: { bodyId: string; faceId: number; featureId: string } | null) => void;
   closeSplitFaceDialog: () => void;
   commitSplitFace: (params: import('../../../components/dialogs/solid/SplitFaceDialog').SplitFaceParams) => void;
 
@@ -177,8 +188,11 @@ export interface CADWorkflowState {
 
   // ── D123 Direct Edit ────────────────────────────────────────────────────
   directEditFaceId: string | null;
+  directEditOccBodyId: string | null;
+  directEditOccFaceId: number | null;
+  directEditFeatureId: string | null;
   openDirectEditDialog: () => void;
-  setDirectEditFace: (id: string) => void;
+  setDirectEditFace: (id: string, occ?: { bodyId: string; faceId: number; featureId: string } | null) => void;
   commitDirectEdit: (params: DirectEditParams) => void;
 
   // ── D137 Texture Extrude ────────────────────────────────────────────────

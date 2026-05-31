@@ -42,7 +42,8 @@ export type FeatureType =
   | 'snapFit'
   | 'lipGroove'
   | 'fastener'
-  | 'derive';
+  | 'derive'
+  | 'merge-faces';
 
 export type BooleanOperation = 'new-body' | 'join' | 'cut' | 'intersect';
 

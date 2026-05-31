@@ -15,6 +15,7 @@ import { AttachedCanvasDialog } from '../components/dialogs/insert/AttachedCanva
 import { FastenerDialog } from '../components/dialogs/insert/FastenerDialog';
 import { DeriveDialog } from '../components/dialogs/insert/DeriveDialog';
 import { SplitFaceDialog } from '../components/dialogs/solid/SplitFaceDialog';
+import { MergeFacesDialog } from '../components/dialogs/solid/MergeFacesDialog';
 import { BoundingSolidDialog } from '../components/dialogs/solid/BoundingSolidDialog';
 import { ContactSetsDialog } from '../components/dialogs/assembly/ContactSetsDialog';
 import { InsertComponentDialog } from '../components/dialogs/assembly/InsertComponentDialog';
@@ -334,7 +335,7 @@ const TOOL_DIALOG_SCOPE = new Set<string>([
   'erase-and-fill', 'mesh-smooth', 'mesh-shell', 'mesh-combine', 'mesh-reverse-normal',
   'mesh-align', 'mesh-separate', 'mesh-transform', 'convert-mesh-to-brep', 'mesh-repair',
   'pipe', 'snap-fit', 'lip-groove', 'coil', 'move-body', 'split', 'insert-svg', 'insert-dxf', 'insert-canvas',
-  'direct-edit', 'texture-extrude', 'decal', 'attached-canvas', 'split-face', 'bounding-solid',
+  'direct-edit', 'texture-extrude', 'decal', 'attached-canvas', 'split-face', 'bounding-solid', 'merge-faces',
 ]);
 
 export default function ActiveDialog() {
@@ -443,6 +444,7 @@ export default function ActiveDialog() {
     case 'attached-canvas': return <AttachedCanvasDialogConnected onClose={close} />;
     case 'split-face': return <SplitFaceDialogConnected onClose={close} />;
     case 'bounding-solid': return <BoundingSolidDialogConnected onClose={close} />;
+    case 'merge-faces': return <MergeFacesDialog onClose={close} />;
     case 'joint-origin': return <JointOriginDialogConnected onClose={close} />;
     case 'interference': return <InterferenceDialogConnected onClose={close} />;
     case 'contact-sets': return <ContactSetsDialogConnected onClose={close} />;

@@ -76,12 +76,19 @@ export default function ReplaceFaceInteraction() {
 
   const handleClick = useCallback((result: FacePickResult) => {
     const id = result.centroid.toArray().join(',');
+    const occ = result.occBodyId != null && result.occFaceId !== undefined
+      ? {
+          bodyId: result.occBodyId,
+          faceId: result.occFaceId,
+          featureId: (result.mesh.userData['featureId'] as string | undefined) ?? '',
+        }
+      : null;
     if (replaceFaceSourceId === null) {
       sourceBoundaryRef.current = result.boundary.map((v) => v.clone());
-      setReplaceFaceSource(id);
+      setReplaceFaceSource(id, occ);
     } else if (replaceFaceTargetId === null) {
       targetBoundaryRef.current = result.boundary.map((v) => v.clone());
-      setReplaceFaceTarget(id);
+      setReplaceFaceTarget(id, occ);
     }
   }, [replaceFaceSourceId, replaceFaceTargetId, setReplaceFaceSource, setReplaceFaceTarget]);
 

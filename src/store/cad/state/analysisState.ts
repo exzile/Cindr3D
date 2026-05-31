@@ -309,6 +309,9 @@ export interface CADAnalysisState {
   // ── SLD16 — Remove Face ──────────────────────────────────────────────────
   commitRemoveFace(featureId: string, faceNormal: THREE.Vector3, faceCentroid: THREE.Vector3): void;
 
+  // ── OCC-22.3 — Merge Faces ───────────────────────────────────────────────
+  commitMergeFaces(featureId: string): void;
+
   // ── OCC-15.1 — Hole (real OCC BRep cut) ─────────────────────────────────
   commitHole(featureId: string, params: Record<string, unknown>): void;
 
@@ -325,6 +328,12 @@ export interface CADAnalysisState {
     toolId: string;
     isSplittingToolExtended: boolean;
     planeOffset?: number;
+    /** OCC body ID of the splitting tool (face/body tool mode). */
+    splitToolOccBodyId?: string | null;
+    /** OCC face ID within the splitting tool body (face tool mode). */
+    splitToolOccFaceId?: number | null;
+    /** Feature ID of the splitting tool body in the feature list. */
+    splitToolFeatureId?: string | null;
   }): void;
 
   // ── SLD15 — Silhouette Split ─────────────────────────────────────────────
