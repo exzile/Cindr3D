@@ -656,3 +656,180 @@
 #           clean after fixes: Shell, Draft, Combine, Scale. Spot-checked clean: Hole,
 #           Thread, Rib, Web, Emboss, Pipe, Coil, BoundaryFill. Re-verify any dialog
 #           touched by OCC-21/22 work.
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SKETCH-1: Sketch tool / constraint / dimension parity vs Fusion 360 (2026-05-30)
+# ══════════════════════════════════════════════════════════════════════════════
+# Full audit of Cindr3D sketch against Fusion 360 SDK (Sketch/ headers).
+# Cross-referenced: entity types, editing tools, constraints, dimensions, UX.
+# Status key: [x] implemented  [~] partial/incomplete  [ ] missing / stub
+#
+# ── ENTITY / DRAWING TOOLS ────────────────────────────────────────────────────
+# [x] Line (including midpoint-line variant)
+# [x] Rectangle: 2-point, 3-point, center-point
+# [x] Circle: center-diameter, 2-point, 3-point, 2-tangent, 3-tangent
+# [x] Arc: center-point, 3-point, tangent
+# [x] Polygon: inscribed, circumscribed, edge
+# [x] Ellipse, Elliptical Arc
+# [x] Spline: fit-point (FittedSpline) + control-point (ControlPointSpline)
+# [x] Slot: center-to-center, overall, center-point, 3-point-arc, center-arc
+# [x] Point, Construction line, Centerline, Linetype convert
+# [x] Conic curve (rho parameter)
+# [x] Blend Curve (G1/G2 transition curve between two curves)
+# [x] Isoparametric curve (UV curve on body face)
+# [x] Sketch Text (places text geometry on the sketch plane)
+# [x] Project (project body edges/faces onto sketch plane)
+# [x] Intersect (cross-section of body with sketch plane)
+# [x] Project Surface (project body faces onto sketch plane)
+#
+# [ ] SKETCH-1.1 SketchFixedSpline — Fusion's fixed/frozen spline type that does NOT
+#     deform under constraints (used for imported external curve data, STEP round-trip).
+#     No 'fixed-spline' entity type exists. Add entity type that renders as a regular
+#     spline but is excluded from the solver (treated like a Fix-constrained entity).
+#     Low priority; required for clean STEP/DXF import of spline geometry.
+#
+# [ ] SKETCH-1.2 BreakLink — Fusion lets you break the associativity of a projected /
+#     intersected curve so it becomes a standalone editable entity. We project curves
+#     with `linked: true` but there is no action to toggle linked->false. Add a
+#     right-click context-menu action (and toolbar button) that clears `linked` on
+#     selected projected entities so they can be edited freely.
+#
+# ── EDITING TOOLS ─────────────────────────────────────────────────────────────
+# [x] Trim (remove curve segment between intersections)
+# [x] Extend (lengthen curve to next intersection)
+# [x] Sketch Fillet (corner round)
+# [x] Sketch Chamfer (equal, two-distance, distance+angle)
+# [x] Move / Copy (translate by dx,dy)
+# [x] Rotate (angle about centroid)
+# [x] Scale (uniform about centroid)
+# [x] Sketch Rectangular Pattern, Circular Pattern, Path Pattern
+# [x] Mirror (horizontal / vertical / diagonal — see SKETCH-1.3 for gap)
+# [x] AutoConstrain (applies coincident/horizontal/vertical automatically)
+#
+# [ ] SKETCH-1.3 Mirror along a picked sketch line — our commitSketchMirror only
+#     supports 3 fixed axes (horizontal, vertical, diagonal). Fusion lets you pick any
+#     existing sketch line as the mirror axis and reflects the selection across it.
+#     Implementation: when the user picks a line entity as the axis, compute the
+#     reflection matrix from the line's direction vector (project-reflect-unproject in
+#     the sketch plane) and apply it to all selected entity points.
+#     File: sketchTransformActions.ts (extend commitSketchMirror); SketchMirrorPanel.tsx
+#     (add "Pick Line" step before the commit button).
+#
+# [ ] SKETCH-1.4 Offset Curves (HIGHEST PRIORITY — currently a SILENT NO-OP) —
+#     the toolbar button and hotkey 'O' activate 'sketch-offset', but NO commit handler
+#     exists in any commitHandlers file and commitSketchOffset does not exist in the
+#     store. The user clicks and nothing happens. Fusion's Offset creates parallel
+#     copies of all selected curves at a fixed distance.
+#     Implementation:
+#       - Lines: translate perpendicular to direction by offset distance.
+#       - Arcs/circles: increase or decrease radius by offset distance.
+#       - Splines: offset each control/fit point along local normal.
+#       - Chain mode: walk tangent-connected curves and offset the whole chain.
+#     Engine: add sketchOffsetCurves(entities, distance, side) in
+#       engine/geometryEngine/core/sketch/.
+#     Store: add commitSketchOffset() in sketchTransformActions.ts.
+#     Wire: add 'sketch-offset' case to the commit handler chain (editingHandlers or
+#       lineEditingHandlers). Panel: reuse the existing SketchTransformPanel pattern.
+#
+# [ ] SKETCH-1.5 Break / Split point on curve — 'break' is in the Tool type union
+#     (core.ts) but has NO commit handler. Clicking does nothing. Fusion's Break splits
+#     a curve at the click point into two separate entities, automatically adding a
+#     coincident constraint at the split point.
+#     Implementation: raycast to the nearest sketch curve, compute the parametric split
+#     position (t value), replace the entity with two entities whose shared endpoint
+#     is coincident. For arcs: split at the angle. For splines: split the control
+#     polygon. Add a 'break' case to lineEditingHandlers.ts.
+#
+# ── CONSTRAINTS ───────────────────────────────────────────────────────────────
+# Solver (Newton-Raphson, src/engine/ConstraintSolver.ts) handles:
+# [x] Horizontal, Vertical (line constraints)
+# [x] Coincident (point-point, point-on-curve)
+# [x] Collinear, Parallel, Perpendicular
+# [x] Equal (length / radius)
+# [x] Concentric, Midpoint, Fix (ground)
+# [x] Tangent (line-arc, arc-arc, spline-curve)
+# [x] Symmetric, Offset (parallel at distance), Curvature (G2)
+# [x] Polygon (internal equilateral constraint)
+# [x] Surface constraints: coincident-surface, perpendicular-surface,
+#     line-on-surface, distance-surface, line-parallel-surface
+#
+# [ ] SKETCH-1.6 Smooth constraint (SmoothConstraint.h) — G2 curvature continuity
+#     PLUS co-linear curvature vectors at a junction (no twist / curvature direction
+#     discontinuity). Different from our existing Curvature constraint which only
+#     enforces equal magnitude. Add ConstraintType 'smooth'; solver residuals: match
+#     curvature magnitude AND the direction of the curvature vector (osculating circle
+#     axis) at the shared endpoint.
+#
+# [ ] SKETCH-1.7 Horizontal/Vertical Points constraints
+#     (HorizontalPointsConstraint.h, VerticalPointsConstraint.h) — constrains two
+#     arbitrary (non-adjacent) points to share the same U or V coordinate in the
+#     sketch plane. Different from constraining a LINE to be horizontal/vertical.
+#     Useful for aligning a point on one entity with a point on a separate entity.
+#     Add ConstraintType 'horizontal-points' / 'vertical-points'; solver residuals
+#     p1.u == p2.u and p1.v == p2.v respectively.
+#
+# [ ] SKETCH-1.8 Parametric Pattern constraints
+#     (CircularPatternConstraint.h, RectangularPatternConstraint.h) — Fusion's sketch
+#     patterns create copies AND a constraint that keeps them synchronized. Editing one
+#     copy propagates to all others via the solver. Our sketch patterns (commitSketchRect
+#     Pattern / commitSketchCircPattern) copy entities but add no linking constraint.
+#     Add ConstraintType 'sketch-rect-pattern' / 'sketch-circ-pattern' whose solver
+#     residuals enforce equal spacing between copies and the original. This upgrades
+#     sketch patterns from "paste copies" to "live parametric patterns".
+#
+# ── DIMENSIONS ────────────────────────────────────────────────────────────────
+# [x] Linear (horizontal, vertical, aligned)
+# [x] Radial, Diameter
+# [x] Arc Length
+# [x] Linear Diameter (for revolution profiles)
+# [x] Ellipse Major / Minor radius
+# [x] Concentric gap
+#
+# [~] SKETCH-1.9 Angular dimension wire-up — DimensionType 'angular' is in the union
+#     and the constraint types include 'angular'. Verify end-to-end: (a) does the
+#     Dimension tool let the user click two lines to produce an angular dim? (b) does
+#     the solver actually solve dimension-angular residuals? Fix any gap in the click
+#     handler → addDimension → solver path. Regression test: two lines at 45°,
+#     apply angular dim of 60°, verify lines rotate to meet it.
+#
+# [ ] SKETCH-1.10 Offset Curves Dimension (SketchOffsetCurvesDimension.h) — a
+#     parametric dimension on the distance between an original curve and its offset
+#     copy (see SKETCH-1.4). Required to make Offset Curves fully parametric: changing
+#     the dimension value re-runs the offset. Add DimensionType 'offset-curves' +
+#     solver residual: distance between parallel curve centroids == value.
+#     Implement AFTER SKETCH-1.4 is done.
+#
+# [ ] SKETCH-1.11 Tangent Distance Dimension (SketchTangentDistanceDimension.h) —
+#     distance from a point to a tangent line of a circle. Niche. Low priority.
+#
+# ── VISUAL / UX GAPS ──────────────────────────────────────────────────────────
+# [ ] SKETCH-1.12 Per-entity DOF color — Fusion colors unconstrained curves BLUE and
+#     fully-constrained curves BLACK. We set fullyConstrained / overConstrained on the
+#     whole Sketch but never color individual entities by degree-of-freedom. After each
+#     solver run, mark each entity's points as 'free' or 'fixed' based on whether the
+#     solver moved them; render free entities in a distinct color (e.g., #5b9bd5 blue).
+#     Files: SketchEntityRenderer (or equivalent), ConstraintSolver.ts (expose per-
+#     point fixed status in SolverResult).
+#
+# [ ] SKETCH-1.13 Constraint icons on canvas — Fusion shows small glyphs (padlock,
+#     two parallel bars, right-angle symbol, etc.) near the constrained geometry.
+#     We render no visual indicators. Add lightweight SVG overlays (or Three.js sprites)
+#     positioned at constraint midpoints. Medium complexity, high UX value.
+#
+# [ ] SKETCH-1.14 Closing-gap auto-snap at draw time — when the current draw point is
+#     within ~0.5 mm of the sketch's first drawn point, snap to it exactly and show a
+#     "close loop" indicator. This PREVENTS the gap from occurring (the gap-heal fix
+#     already shipped handles existing/imported sketches retroactively). Implementation:
+#     in the line-commit handler, check distance from the new point to all existing
+#     SketchPoints; if within the snap threshold, substitute the first point's
+#     coordinates and mark the loop as closed.
+#
+# [ ] SKETCH-1.15 Curve-curve intersection snap — SnapType union has 'intersection'
+#     but the snap engine may only find grid/endpoint/midpoint/center snaps in practice.
+#     Verify and add snap candidates at the parametric intersection of any two sketch
+#     curves (solve for t1,t2 such that C1(t1) == C2(t2) and offer as a snap point).
+#
+# VERIFICATION GATE for every SKETCH-1.x item:
+#   npx tsc --noEmit clean . npx vitest run green . manual QA in Claude Preview
+#   dev server (localhost:5173). Per CLAUDE.md: run gitnexus_impact before editing
+#   symbols; plane-aware math via getSketchAxes(sketch)->t1/t2 (not raw p.x/p.y).
