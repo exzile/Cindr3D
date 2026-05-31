@@ -104,6 +104,18 @@ function findNearestEntity(sketch: Sketch, worldPoint: THREE.Vector3): SketchEnt
       const center = new THREE.Vector3(entity.points[0].x, entity.points[0].y, entity.points[0].z);
       const distance = Math.abs(worldPoint.distanceTo(center) - entity.radius);
       if (distance < best.distance) {
+        // B11.b: for arcs, clamp the pick to the arc's angular sweep so the undrawn side
+        // cannot be selected.
+        if (entity.type === 'arc' && typeof entity.startAngle === 'number' && typeof entity.endAngle === 'number') {
+          const { t1: at1, t2: at2 } = GeometryEngine.getSketchAxes(sketch);
+          const toPoint = worldPoint.clone().sub(center);
+          const angle = Math.atan2(toPoint.dot(at2), toPoint.dot(at1));
+          let ea = entity.endAngle;
+          if (ea <= entity.startAngle) ea += 2 * Math.PI;
+          let normAngle = angle - entity.startAngle;
+          while (normAngle < 0) normAngle += 2 * Math.PI;
+          if (normAngle > ea - entity.startAngle) continue; // outside arc sweep
+        }
         best.distance = distance;
         best.entity = entity;
       }

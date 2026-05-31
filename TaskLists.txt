@@ -892,7 +892,7 @@
 #     Fix: emit exact geometric endpoints from entities; drop/limit the vertex sweep
 #     (also a perf hazard).
 #
-# [ ] SKETCH-2.A9  SnapType union (types/cad/core.ts:151) is DEAD/out of sync. Canonical
+# [x] SKETCH-2.A9  SnapType union (types/cad/core.ts:151) is DEAD/out of sync. Canonical
 #     union has 'grid'|'nearest' (never emitted) and lacks 'perpendicular'|'tangent'
 #     (the runtime DOES emit these via an inline union in SketchInteraction.tsx:219).
 #     SnapPoint (misc.ts:16) that uses it is never imported. Fix: reconcile the union

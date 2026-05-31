@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { useThemeStore } from '../../../store/themeStore';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
-import type { SketchPoint } from '../../../types/cad';
+import type { SketchPoint, SnapType } from '../../../types/cad';
 import { renderSketchPreview } from './sketchInteraction/previewTool';
 import { useSketchProjectionTools } from './sketchInteraction/hooks/useSketchProjectionTools';
 import { useSketchDimensionTool } from './sketchInteraction/hooks/useSketchDimensionTool';
@@ -91,7 +91,7 @@ export default function SketchInteraction() {
   useEffect(() => { drawingPointsRef.current = drawingPoints; }, [drawingPoints]);
   useEffect(() => { mousePosRef.current = mousePos; }, [mousePos]);
   // D65: snap indicator target
-  const [snapTarget, setSnapTarget] = useState<{ worldPos: THREE.Vector3; type: 'endpoint' | 'midpoint' | 'center' | 'intersection' | 'perpendicular' | 'tangent' } | null>(null);
+  const [snapTarget, setSnapTarget] = useState<{ worldPos: THREE.Vector3; type: SnapType } | null>(null);
   // Midpoint hover markers — segments whose midpoint should be shown as a dim triangle
   const [hoverMidpoints, setHoverMidpoints] = useState<THREE.Vector3[]>([]);
   const previewRef = useRef<THREE.Group>(null);
@@ -218,7 +218,7 @@ export default function SketchInteraction() {
     if (!objectSnapEnabled) return null;
     let bestDist = SNAP_RADIUS;
     let bestPriority = 99;
-    let best: { worldPos: THREE.Vector3; type: 'endpoint' | 'midpoint' | 'center' | 'intersection' | 'perpendicular' | 'tangent' } | null = null;
+    let best: { worldPos: THREE.Vector3; type: SnapType } | null = null;
     // A3: priority order (lower = higher priority). A higher-priority snap within
     // SNAP_RADIUS beats a lower-priority snap that is geometrically closer.
     const SNAP_PRIORITY: Record<string, number> = {
@@ -230,7 +230,7 @@ export default function SketchInteraction() {
     };
     const considerCandidate = (
       worldPos: THREE.Vector3,
-      type: 'endpoint' | 'midpoint' | 'center' | 'intersection' | 'perpendicular' | 'tangent',
+      type: SnapType,
     ) => {
       const d = worldPt.distanceTo(worldPos);
       if (d > SNAP_RADIUS) return; // outside grab radius — ignore
