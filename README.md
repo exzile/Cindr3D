@@ -1,24 +1,41 @@
 <div align="center">
 
-<img src=".github/cindr3d-logo.png" alt="Cindr3D" width="220" />
+<img src=".github/cindr3d-logo.png" alt="Cindr3D" width="180" />
 
-# Cindr3D
+<h1>Cindr3D</h1>
 
-**Browser-based CAD, slicing, and printer control for makers and self-hosted workshops.**
+<p><strong>Browser CAD, slicing, and printer fleet control for makers and self-hosted workshops.</strong></p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![React](https://img.shields.io/badge/React-19-61dafb.svg)](https://react.dev/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-6.x-3178c6.svg)](https://www.typescriptlang.org/)
-[![Vite](https://img.shields.io/badge/Vite-8-646cff.svg)](https://vite.dev/)
-[![Node](https://img.shields.io/badge/Node-%3E%3D22.12.0-339933.svg)](package.json)
+<p>
+  <a href="https://cindr3d.com/"><img alt="Live site" src="https://img.shields.io/badge/Live-cindr3d.com-00a86b?style=for-the-badge"></a>
+  <a href="https://github.com/exzile/Cindr3D/releases/tag/v0.5.0"><img alt="Release" src="https://img.shields.io/badge/Release-v0.5.0-ff6b35?style=for-the-badge"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-2563eb?style=for-the-badge"></a>
+</p>
 
-Cindr3D brings a professional CAD-style workflow into a web app that can run locally during development or be served from a small Linux board such as an Orange Pi.
+<p>
+  <img alt="React 19" src="https://img.shields.io/badge/React-19-61dafb">
+  <img alt="TypeScript 6" src="https://img.shields.io/badge/TypeScript-6.x-3178c6">
+  <img alt="Vite 8" src="https://img.shields.io/badge/Vite-8-646cff">
+  <img alt="Node 22.12+" src="https://img.shields.io/badge/Node-%3E%3D22.12.0-339933">
+  <img alt="OpenCascade WASM" src="https://img.shields.io/badge/OpenCascade-WASM-8b5cf6">
+</p>
+
+<p>
+  <a href="#quick-start"><strong>Quick start</strong></a> ·
+  <a href="#whats-new"><strong>What's new</strong></a> ·
+  <a href="#feature-highlights"><strong>Features</strong></a> ·
+  <a href="#orange-pi-hosting"><strong>Self-host</strong></a> ·
+  <a href="docs/ai-mcp-tools.md"><strong>AI tools</strong></a>
+</p>
+
+Cindr3D brings a professional CAD-style workflow into a web app that runs locally during development or from a small Linux board such as an Orange Pi.
 
 </div>
 
 > Cindr3D is not affiliated with Autodesk, Fusion 360, Duet3D, RepRapFirmware, or any slicer vendor.
 
-## Contents
+<details>
+<summary><strong>Table of contents</strong></summary>
 
 - [Overview](#overview)
 - [What's New](#whats-new)
@@ -40,16 +57,22 @@ Cindr3D brings a professional CAD-style workflow into a web app that can run loc
 - [Security](#security)
 - [License](#license)
 
+</details>
+
 ## Overview
 
-Cindr3D combines design, print preparation, and multi-printer fleet control in one browser workspace. It's designed to run locally during development or be served from a small Linux board (Orange Pi or similar) on your home network — no cloud account required.
+<table>
+  <tr>
+    <td><img alt="Design" src="https://img.shields.io/badge/Design-OCC%20CAD-ff8a00"><br><strong>Sketch, model, inspect</strong><br>Parametric CAD, feature timeline, B-rep operations, mesh repair, drawings, imports and exports.</td>
+    <td><img alt="Prepare" src="https://img.shields.io/badge/Prepare-Slice%20%26%20Preview-7c3aed"><br><strong>Plate, slice, simulate</strong><br>WASM slicing kernels, G-code preview, simulation playback, calibration tools, print profiles.</td>
+  </tr>
+  <tr>
+    <td><img alt="Printer" src="https://img.shields.io/badge/Printer-Fleet%20Control-0ea5e9"><br><strong>Monitor and operate</strong><br>Cross-firmware dashboards, files, macros, cameras, spools, tuning, updates, object cancellation.</td>
+    <td><img alt="AI" src="https://img.shields.io/badge/AI-BYOK%20%2B%20MCP-10b981"><br><strong>Automate locally</strong><br>Token-paired MCP server plus BYOK chat for CAD, slicer, printer, export, and inspection tools.</td>
+  </tr>
+</table>
 
-| Workspace | Purpose |
-|-----------|---------|
-| 🎨 **Design** | Sketching, solid modelling, parametric models, configurations, drawings, mesh repair, imports/exports, feature timeline, component organisation. |
-| 🛠️ **Prepare** | Plate setup, slicing pipeline with WASM kernel, G-code preview, calibration utilities. |
-| 🖨️ **3D Printer** | Multi-printer fleet, live monitoring, files, macros, mid-print object cancellation, tuning, power, spools, timelapse, updates — all cross-firmware. |
-| 🤖 **AI** | Local MCP server + BYOK in-app chat panel for driving CAD/slicer/printer actions through your own Claude / OpenAI / OpenRouter subscription. |
+Cindr3D combines design, print preparation, and multi-printer fleet control in one browser workspace. It's designed to run locally during development or be served from a small Linux board (Orange Pi or similar) on your home network — no cloud account required.
 
 The project is evolving quickly. Some CAD and slicer features are experimental, but the repository is public so the implementation can be inspected, used, and improved in the open.
 
@@ -57,6 +80,17 @@ The project is evolving quickly. Some CAD and slicer features are experimental, 
 
 > [!NOTE]
 > **v0.5.0 - 2026-05.** This release is the big DesignCAD/OCC milestone: Cindr3D moves from mostly mesh-derived modeling toward an OpenCascade-backed B-rep workflow, while also preparing the public site and documentation for a broader open-source release.
+
+| Area | v0.5.0 focus |
+|------|--------------|
+| **OCC modeling core** | Extrude, revolve, sweep, loft, primitives, booleans, split, shell, draft, offset faces, fillet, and chamfer preserve richer source topology. |
+| **Fillet / chamfer** | Stable edge anchors, circular-edge handling, tangent-chain support, live validity probes, and expanded regression coverage. |
+| **Profile extrude** | Nested sketch regions can be selected like CAD profiles: outer plate with holes, inner profiles, or targeted cuts. |
+| **Persistence** | DZND files carry OCC body metadata, profile selections, edge-modification inputs, parameters, and reconstruction data. |
+| **Release readiness** | Search metadata, sitemap, robots, Bing verification, Static Web Apps rewrites, Azure headers, wiki/help screenshots, and tests. |
+
+<details>
+<summary><strong>Full v0.5.0 notes</strong></summary>
 
 **OCC-powered Design workspace**
 
@@ -83,7 +117,19 @@ The project is evolving quickly. Some CAD and slicer features are experimental, 
 
 - Browser-native CAD, in-browser slicing, Duet/Klipper/Marlin printer control, smart print-farm queue, camera monitoring, calibration tools, BYOK AI assistant, local MCP control, and self-hosted deployment remain part of the core workflow.
 
+</details>
+
 ## Feature Highlights
+
+| Workspace | High-signal features |
+|-----------|----------------------|
+| **CAD & modelling** | OCC solids, profile-aware extrude, topology edge picking, timeline, configurations, drawings, imports/exports. |
+| **Slicer & preview** | Plate layout, WASM geometry kernels, calibration generators, G-code simulation, color modes, object labels. |
+| **Printer workflows** | Cross-firmware dashboards, files, macros, cameras, spools, tuning, updates, object cancellation. |
+| **AI assistant** | Local MCP bridge, BYOK chat, 29 tool calls, audit log, token rotation, optional destructive-action confirmation. |
+
+<details>
+<summary><strong>Detailed feature list</strong></summary>
 
 ### 🎨 CAD & Modelling
 
@@ -146,9 +192,21 @@ Cindr3D treats Klipper, Duet/RRF, Marlin, Smoothie, grbl, and Repetier as first-
 
 **Tabs:** Dashboard, Camera, Status, Console, Job, History, Analytics, Files, Macros, Bed Map, Exclude Object, Updates, Power, Input Shaper, Pressure Advance, Spools, Timelapse, Settings (plus Filaments / Object Model / DSF Plugins on Duet only).
 
+</details>
+
 ## Print Farm Intelligence
 
 Cindr3D now treats the 3D Printer workspace as a small print-farm controller, not just a single-printer monitor.
+
+| Area | What it does |
+|------|--------------|
+| **Smart Queue** | Routes jobs by machine, material, nozzle, volume, profile compatibility, and availability. |
+| **Fleet Cameras** | Shows every enabled stream, supports multiple camera types, WebRTC fallback, PTZ, and layer evidence. |
+| **Fleet Filament** | Tracks loaded spools, low-stock thresholds, material routing, and estimated filament deductions. |
+| **Automation** | Webhooks, Discord, Slack, Telegram, MQTT, Home Assistant, power-loss recovery, chamber and safety controls. |
+
+<details>
+<summary><strong>Print-farm details</strong></summary>
 
 ### Smart Queue
 
@@ -189,6 +247,8 @@ Cindr3D now treats the 3D Printer workspace as a small print-farm controller, no
 - Static SPA — any static host works; Nginx fallback to `index.html`
 - Optional Orange Pi updater service exposing `GET /api/update/status` + `POST /api/update/apply` against the latest GitHub release asset
 - WASM artifacts bundled and budget-checked in CI
+
+</details>
 
 ## Cross-Firmware Support
 

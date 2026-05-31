@@ -24,5 +24,6 @@ export * from './thicken';
 export * from './torus';
 export * from './sliceSketch';
 export * from './splitBody';
+export * from './silhouetteSplit';
 export * from './unifyShape';
 export * from './union';
