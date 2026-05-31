@@ -8,6 +8,7 @@ export function MoveBodyDialog({ onClose }: { onClose: () => void }) {
   const addFeature = useCADStore((s) => s.addFeature);
   const updateFeatureParams = useCADStore((s) => s.updateFeatureParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
+  const commitMoveBody = useCADStore((s) => s.commitMoveBody);
   // NAV-8/NAV-9: incremental move/rotate snapping
   const incrementalMove = useCADStore((s) => s.incrementalMove);
   const moveIncrement = useCADStore((s) => s.moveIncrement);
@@ -59,18 +60,8 @@ export function MoveBodyDialog({ onClose }: { onClose: () => void }) {
       return;
     }
 
-    const label = copy ? 'Copy Body' : 'Move Body';
-    const feature: Feature = {
-      id: crypto.randomUUID(),
-      name: `${label}`,
-      type: 'import',
-      params: { isMoveBody: true, targetFeatureId, moveType, dx, dy, dz, rx, ry, rz, copy },
-      visible: true,
-      suppressed: false,
-      timestamp: Date.now(),
-    };
-    addFeature(feature);
-    setStatusMessage(`${label} applied`);
+    commitMoveBody(targetFeatureId, { dx, dy, dz, rx, ry, rz, copy });
+    setStatusMessage(copy ? `Copied ${target?.name ?? targetFeatureId}` : `Moved ${target?.name ?? targetFeatureId}`);
     onClose();
   };
 

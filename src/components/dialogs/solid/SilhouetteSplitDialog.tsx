@@ -34,23 +34,23 @@ export function SilhouetteSplitDialog({ onClose }: { onClose: () => void }) {
 
   const handleApply = () => {
     if (!selectedId) {
-      setStatusMessage('Split Body: no body selected');
+      setStatusMessage('Planar Split: no body selected');
       return;
     }
     const dirVec = direction === 'x' ? [1, 0, 0] : direction === 'y' ? [0, 1, 0] : [0, 0, 1];
     if (editing) {
       updateFeatureParams(editing.id, { bodyId: selectedId, direction: dirVec, planeOffset });
       commitSilhouetteSplit(selectedId, getPlaneNormal(), planeOffset);
-      setStatusMessage(`Updated Split Body along ${direction.toUpperCase()} axis`);
+      setStatusMessage(`Updated Planar Split along ${direction.toUpperCase()} axis`);
     } else {
       commitSilhouetteSplit(selectedId, getPlaneNormal(), planeOffset);
-      setStatusMessage(`Split Body created along ${direction.toUpperCase()} axis`);
+      setStatusMessage(`Planar Split created along ${direction.toUpperCase()} axis`);
     }
     onClose();
   };
 
   return (
-    <DialogShell title={editing ? 'Edit Split Body' : 'Split Body'} onClose={onClose} size="sm" onConfirm={handleApply} confirmDisabled={!selectedId}>
+    <DialogShell title={editing ? 'Edit Planar Split' : 'Planar Split'} onClose={onClose} size="sm" onConfirm={handleApply} confirmDisabled={!selectedId}>
       <div className="form-group">
         <label>Body to Split</label>
         <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)}>

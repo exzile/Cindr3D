@@ -19,12 +19,13 @@ export function SplitBodyDialog({ onClose }: { onClose: () => void }) {
   const [bodyFeatureId, setBodyFeatureId] = useState(solidFeatures[0]?.id ?? '');
   const [toolType, setToolType] = useState<'plane' | 'sketch' | 'face'>('plane');
   const [toolId, setToolId] = useState('XY');
+  const [planeOffset, setPlaneOffset] = useState(0);
 
   const handleApply = () => {
     if (!bodyFeatureId) return;
     // isSplittingToolExtended is reserved for future implementation (plane
     // clamping to body bbox). Hardcode true until the engine supports it.
-    commitSplitBody({ bodyFeatureId, toolType, toolId, isSplittingToolExtended: true });
+    commitSplitBody({ bodyFeatureId, toolType, toolId, planeOffset, isSplittingToolExtended: true });
     onClose();
   };
 
@@ -54,6 +55,15 @@ export function SplitBodyDialog({ onClose }: { onClose: () => void }) {
           value={toolId}
           onChange={(e) => setToolId(e.target.value)}
           placeholder={toolType === 'plane' ? 'XY / XZ / YZ' : 'Sketch or face name'}
+        />
+      </div>
+      <div className="form-group">
+        <label>Plane Offset</label>
+        <input
+          type="number"
+          step={0.5}
+          value={planeOffset}
+          onChange={(e) => setPlaneOffset(parseFloat(e.target.value) || 0)}
         />
       </div>
     </DialogShell>

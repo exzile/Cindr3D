@@ -341,6 +341,13 @@ export interface CADModelingState {
   // SLD17 — Mirror feature (commit)
   commitMirrorFeature: (featureId: string, plane: "XY" | "XZ" | "YZ") => void;
 
+  // OCC-22.1 — Move/Copy body (commit)
+  commitMoveBody: (featureId: string, params: {
+    dx: number; dy: number; dz: number;
+    rx: number; ry: number; rz: number;
+    copy: boolean;
+  }) => void;
+
   // D6 Fillet edge selection + live radius (synced with FilletGizmo drag)
   filletEdgeIds: string[];
   addFilletEdge: (id: string) => void;

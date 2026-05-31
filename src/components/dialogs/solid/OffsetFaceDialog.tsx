@@ -15,18 +15,26 @@ export function OffsetFaceDialog({ onClose }: { onClose: () => void }) {
   const commitOffsetFace = useCADStore((s) => s.commitOffsetFace);
   const offsetFaceId = useCADStore((s) => s.offsetFaceId);
   const offsetOccFaceId = useCADStore((s) => s.offsetOccFaceId);
+  const offsetFaceIds = useCADStore((s) => s.offsetFaceIds);
+  const offsetFaceOccPairs = useCADStore((s) => s.offsetFaceOccPairs);
   const clearOffsetFace = useCADStore((s) => s.clearOffsetFace);
+  const removeOffsetFace = useCADStore((s) => s.removeOffsetFace);
 
   const [selectedBodyId, setSelectedBodyId] = useState<string>(String(p.bodyId ?? bodyFeatures[0]?.id ?? ''));
   const [offsetDistance, setOffsetDistance] = useState(Number(p.offsetDistance ?? 1));
   const [direction, setDirection] = useState<'outward' | 'inward'>((p.direction as 'outward' | 'inward') ?? 'outward');
-  const [extent, setExtent] = useState<'distance' | 'all'>((p.extent as 'distance' | 'all') ?? 'distance');
 
   const handleOK = () => {
     const signedDist = direction === 'inward' ? -Math.abs(offsetDistance) : Math.abs(offsetDistance);
-    const faceIds = offsetOccFaceId !== null ? [offsetOccFaceId] : [];
+    // Prefer accumulated set; fall back to legacy single pick for backward compat
+    const faceIds =
+      offsetFaceOccPairs.length > 0
+        ? offsetFaceOccPairs.map((pair) => pair.faceId)
+        : offsetOccFaceId !== null
+          ? [offsetOccFaceId]
+          : [];
     if (editing) {
-      updateFeatureParams(editing.id, { offsetDistance, direction, extent, isOffsetFace: true, bodyId: selectedBodyId, offsetFaceIds: faceIds });
+      updateFeatureParams(editing.id, { offsetDistance, direction, isOffsetFace: true, bodyId: selectedBodyId, offsetFaceIds: faceIds });
       if (selectedBodyId) commitOffsetFace(selectedBodyId, signedDist, { faceIds });
     } else if (selectedBodyId) {
       commitOffsetFace(selectedBodyId, signedDist, { faceIds });
@@ -36,7 +44,7 @@ export function OffsetFaceDialog({ onClose }: { onClose: () => void }) {
         id: crypto.randomUUID(),
         name: `Offset Face ${n}`,
         type: 'offset-face',
-        params: { offsetDistance, direction, extent, isOffsetFace: true },
+        params: { offsetDistance, direction, isOffsetFace: true },
         visible: true,
         suppressed: false,
         timestamp: Date.now(),
@@ -45,6 +53,8 @@ export function OffsetFaceDialog({ onClose }: { onClose: () => void }) {
     clearOffsetFace();
     onClose();
   };
+
+  const faceCount = offsetFaceIds.length > 0 ? offsetFaceIds.length : (offsetFaceId ? 1 : 0);
 
   return (
     <DialogShell title={editing ? 'Edit Offset Face' : 'Offset Face'} onClose={onClose} onConfirm={handleOK}>
@@ -62,11 +72,43 @@ export function OffsetFaceDialog({ onClose }: { onClose: () => void }) {
         </select>
       </div>
       <div className="dialog-field">
-        <label className="dialog-label">Face</label>
+        <label className="dialog-label">
+          Face
+          {faceCount > 0 && (
+            <button
+              type="button"
+              className="face-selector__clear"
+              onClick={clearOffsetFace}
+              style={{ marginLeft: 8, fontSize: '0.75rem', cursor: 'pointer' }}
+            >
+              Clear All
+            </button>
+          )}
+        </label>
         <div className="face-selector">
-          <span className="face-selector__chip">
-            {offsetFaceId ? '1 face selected' : 'Click a face in the viewport'}
-          </span>
+          {faceCount === 0 ? (
+            <span className="face-selector__chip">Click a face in the viewport</span>
+          ) : offsetFaceIds.length > 0 ? (
+            <>
+              <span className="face-selector__chip">{faceCount} {faceCount === 1 ? 'face' : 'faces'} selected</span>
+              {offsetFaceIds.map((id, idx) => (
+                <span key={id} className="face-selector__chip face-selector__chip--removable">
+                  Face {idx + 1}
+                  <button
+                    type="button"
+                    className="face-selector__remove"
+                    onClick={() => removeOffsetFace(id)}
+                    style={{ marginLeft: 4, cursor: 'pointer', background: 'none', border: 'none', padding: 0, lineHeight: 1 }}
+                    aria-label={`Remove face ${idx + 1}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </>
+          ) : (
+            <span className="face-selector__chip">1 face selected</span>
+          )}
         </div>
       </div>
       <div className="dialog-field">
@@ -88,17 +130,6 @@ export function OffsetFaceDialog({ onClose }: { onClose: () => void }) {
         >
           <option value="outward">Outward</option>
           <option value="inward">Inward</option>
-        </select>
-      </div>
-      <div className="dialog-field">
-        <label className="dialog-label">Extent</label>
-        <select
-          className="dialog-select"
-          value={extent}
-          onChange={(e) => setExtent(e.target.value as 'distance' | 'all')}
-        >
-          <option value="distance">Distance</option>
-          <option value="all">All</option>
         </select>
       </div>
     </DialogShell>

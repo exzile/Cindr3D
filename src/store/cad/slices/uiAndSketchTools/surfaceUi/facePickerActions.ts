@@ -118,6 +118,8 @@ export function createFacePickerActions({ set }: CADSliceContext): Partial<CADSt
     offsetOccFaceId: null,
     offsetFaceNormal: null,
     offsetFaceCentroid: null,
+    offsetFaceIds: [],
+    offsetFaceOccPairs: [],
     setOffsetFace: (id, normal, centroid, occ) => set({
       offsetFaceId: id,
       offsetOccBodyId: occ?.bodyId ?? null,
@@ -125,12 +127,28 @@ export function createFacePickerActions({ set }: CADSliceContext): Partial<CADSt
       offsetFaceNormal: normal,
       offsetFaceCentroid: centroid,
     }),
+    addOffsetFace: (id, occ) => set((state) => {
+      if (state.offsetFaceIds.includes(id)) return {};
+      const nextPairs = occ
+        ? [...state.offsetFaceOccPairs, { id, bodyId: occ.bodyId, faceId: occ.faceId }]
+        : state.offsetFaceOccPairs;
+      return {
+        offsetFaceIds: [...state.offsetFaceIds, id],
+        offsetFaceOccPairs: nextPairs,
+      };
+    }),
+    removeOffsetFace: (id) => set((state) => ({
+      offsetFaceIds: state.offsetFaceIds.filter((x) => x !== id),
+      offsetFaceOccPairs: state.offsetFaceOccPairs.filter((p) => p.id !== id),
+    })),
     clearOffsetFace: () => set({
       offsetFaceId: null,
       offsetOccBodyId: null,
       offsetOccFaceId: null,
       offsetFaceNormal: null,
       offsetFaceCentroid: null,
+      offsetFaceIds: [],
+      offsetFaceOccPairs: [],
     }),
 
     removeFaceFaceId: null,

@@ -149,7 +149,13 @@
       "Bash(npx gitnexus *)",
       "Bash(findstr \"5173\\\\|3000\\\\|4173\\\\|8080\")",
       "Bash(findstr \"TCP\")",
-      "mcp__Claude_in_Chrome__tabs_create_mcp"
+      "mcp__Claude_in_Chrome__tabs_create_mcp",
+      "Bash(cd \"C:\\\\Users\\\\joeyp\\\\AppData\\\\Local\\\\Autodesk\\\\webdeploy\\\\production\" 2>/dev/null && ls -d */CPP/include/Fusion/Features 2>/dev/null | head; echo \"---hashes---\"; ls -1 2>/dev/null | head -20)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\joeyp\\\\source\\\\repos\\\\exzile\\\\DesignCAD\" -Name)",
+      "PowerShell(npx vitest run src/engine/occ/ops/__tests__/sketchShapeToWires.test.ts 2>&1)",
+      "PowerShell(npx tsc --noEmit 2>&1 | Select-String -Pattern \"sketchToWire|extrude\" | Select-Object -First 20; Write-Output \"---tsc-done\\(exit $LASTEXITCODE\\)---\")",
+      "Bash(git commit *)",
+      "Bash([ -d \"$h/CPP/include/Fusion/Features\" ])"
     ]
   }
 }

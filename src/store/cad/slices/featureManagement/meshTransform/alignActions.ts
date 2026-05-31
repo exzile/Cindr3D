@@ -1,5 +1,9 @@
 import * as THREE from "three";
 import { disposeMeshDeferred } from "../../../../../engine/occ/picking";
+import { getOccSync } from "../../../../../engine/occ/loader";
+import { globalBRepBodyRegistry } from "../../../../../engine/occ/globalRegistry";
+import { occTransformBodyWithInstance } from "../../../../../engine/occ/ops/transformBody";
+import { createRegisteredOccMesh } from "../../../../../engine/occ/registeredMesh";
 import type { CADSliceContext } from "../../../sliceContext";
 import type { CADState } from "../../../state";
 import { recomputeBooleanDependents } from "../featureBooleanUtils";
@@ -133,10 +137,27 @@ export function createAlignActions({ set, get }: CADSliceContext): Partial<CADSt
         delete geom.userData.topology;
         delete geom.userData._topoV;
         geom.computeVertexNormals();
-        const newMesh = new THREE.Mesh(geom, srcMesh.material);
+        let newMesh = new THREE.Mesh(geom, srcMesh.material);
         newMesh.userData = { ...srcMesh.userData };
         newMesh.castShadow = true;
         newMesh.receiveShadow = true;
+
+        // Also transform the OCC BRep so downstream fillet/chamfer/combine use the new pose.
+        const oldBrepBodyId = srcMesh.userData['brepBodyId'] as string | undefined;
+        if (oldBrepBodyId) {
+          const occ = getOccSync();
+          const srcBody = occ ? globalBRepBodyRegistry.get(oldBrepBodyId) : undefined;
+          if (occ && srcBody) {
+            const newBody = occTransformBodyWithInstance(occ.oc, srcBody, M, { sourceFeatureId: feature.id });
+            if (newBody) {
+              const occMesh = createRegisteredOccMesh(occ.oc, newBody, srcMesh.material, feature.id);
+              occMesh.castShadow = true;
+              occMesh.receiveShadow = true;
+              newMesh = occMesh;
+            }
+          }
+        }
+
         set((state) => ({
           features: recomputeBooleanDependents(
             state.features.map((f) =>

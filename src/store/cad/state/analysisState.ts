@@ -324,6 +324,7 @@ export interface CADAnalysisState {
     toolType: 'plane' | 'sketch' | 'face';
     toolId: string;
     isSplittingToolExtended: boolean;
+    planeOffset?: number;
   }): void;
 
   // ── SLD15 — Silhouette Split ─────────────────────────────────────────────

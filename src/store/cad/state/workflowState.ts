@@ -137,12 +137,20 @@ export interface CADWorkflowState {
   offsetOccFaceId: number | null;
   offsetFaceNormal: [number, number, number] | null;
   offsetFaceCentroid: [number, number, number] | null;
+  /** Accumulated set of picked face ids (centroid keys). */
+  offsetFaceIds: string[];
+  /** Accumulated OCC pairs for each picked face. */
+  offsetFaceOccPairs: Array<{ id: string; bodyId: string; faceId: number }>;
   setOffsetFace: (
     id: string,
     normal: [number, number, number],
     centroid: [number, number, number],
     occ?: { bodyId: string; faceId: number } | null,
   ) => void;
+  /** Add a face to the accumulated set (idempotent). */
+  addOffsetFace: (id: string, occ: { bodyId: string; faceId: number } | null) => void;
+  /** Remove a face from the accumulated set by id. */
+  removeOffsetFace: (id: string) => void;
   clearOffsetFace: () => void;
 
   // ── SOL-I5: Remove Face face picker ─────────────────────────────────────
