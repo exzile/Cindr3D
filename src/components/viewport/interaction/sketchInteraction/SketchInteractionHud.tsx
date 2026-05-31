@@ -1,16 +1,8 @@
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
-import type { Sketch, SketchPoint } from '../../../../types/cad';
+import type { Sketch, SketchPoint, SnapType } from '../../../../types/cad';
 import type { ThemeColors } from '../../../../types/theme.types';
-
-type SnapType =
-  | 'endpoint'
-  | 'midpoint'
-  | 'center'
-  | 'intersection'
-  | 'perpendicular'
-  | 'tangent';
 
 interface SketchInteractionHudProps {
   mousePos: THREE.Vector3 | null;

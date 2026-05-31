@@ -58,25 +58,8 @@ export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
         // Two end arcs — angles are plane-local (via t1/t2), perpDir
         // always points in +t2 relative to axisDir so start = +π/2, end = -π/2
         // for the end cap at c1 (swept the long way) and opposite at c2.
-        const perpAngleAt = (centre: SketchPoint) => {
-          // perpDir relative to axisDir in local coords
-          const local = new THREE.Vector3(
-            perpDir.dot(t1),
-            perpDir.dot(t2),
-            0,
-          );
-          const axisLocal = new THREE.Vector3(
-            axisDir.dot(t1),
-            axisDir.dot(t2),
-            0,
-          );
-          // start angle (from +t1) of perpDir
-          return { local, axisLocal, centre };
-        };
-        const { local: perpLocal, axisLocal: axisLocal } = perpAngleAt(c1);
-        // Start angle of perpDir = atan2(local.y, local.x) in plane coords
-        const perpAngle = Math.atan2(perpLocal.y, perpLocal.x);
-        const axisAngle = Math.atan2(axisLocal.y, axisLocal.x);
+        // C4: both caps anchored to axisAngle — perpAngle is no longer used.
+        const axisAngle = Math.atan2(axisDir.dot(t2), axisDir.dot(t1));
         // Arc at c1: from +perpDir (perpAngle) sweeping opposite to axis
         // through -perpDir. For Fusion-like rendering, we just emit a
         // half-turn of radius = halfWidth at each centre.

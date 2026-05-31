@@ -210,12 +210,23 @@ export default function SketchInteraction() {
   // D65 / S8 / NAV-24: find nearest snap candidate within snap radius.
   // Supports endpoint, midpoint, center, intersection (existing) +
   // perpendicular and tangent (NAV-24).
-  const SNAP_RADIUS = 4;
-  const SKETCH_PLANE_SNAP_TOLERANCE = 0.05;
+  const SNAP_PIXELS = 12; // screen-space snap radius in pixels (A2)
   const findSnapCandidate = useCallback((worldPt: THREE.Vector3, drawStart?: THREE.Vector3 | null) => {
     if (!activeSketch || !snapEnabled) return null;
     // NAV-24: master object-snap gate
     if (!objectSnapEnabled) return null;
+    // A2: compute world-units-per-pixel at cursor depth for zoom-independent snap radius.
+    const camToPoint = worldPt.clone().sub(camera.position);
+    const depth = Math.max(camToPoint.length(), 0.1);
+    let worldUnitsPerPx = 1;
+    if ((camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
+      const pc = camera as THREE.PerspectiveCamera;
+      worldUnitsPerPx = (2 * Math.tan((pc.fov * Math.PI / 180) / 2) * depth) / viewportSize.height;
+    } else if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {
+      const oc = camera as THREE.OrthographicCamera;
+      worldUnitsPerPx = (oc.top - oc.bottom) / viewportSize.height;
+    }
+    const SNAP_RADIUS = SNAP_PIXELS * worldUnitsPerPx;
     let bestDist = SNAP_RADIUS;
     let bestPriority = 99;
     let best: { worldPos: THREE.Vector3; type: SnapType } | null = null;
@@ -280,39 +291,25 @@ export default function SketchInteraction() {
             }
           }
         }
-      // A5: nearest on-curve snap (lowest priority, above grid).
-      // Projects cursor onto line/arc/circle to find the closest point on the curve.
-      if (e.points.length >= 2 && (e.type === 'line' || e.type === 'construction-line' || e.type === 'centerline')) {
-        if (!snapToEndpoint) { // only run if endpoint snap didn't already cover this
+        // A5: nearest on-curve snap for line segments
+        {
           const P0 = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
           const P1 = new THREE.Vector3(e.points[e.points.length - 1].x, e.points[e.points.length - 1].y, e.points[e.points.length - 1].z);
           const seg = P1.clone().sub(P0);
           const segLen2 = seg.lengthSq();
           if (segLen2 > 1e-10) {
             const t = Math.max(0, Math.min(1, worldPt.clone().sub(P0).dot(seg) / segLen2));
-            const nearest = P0.clone().addScaledVector(seg, t);
-            considerCandidate(nearest, 'nearest');
+            considerCandidate(P0.clone().addScaledVector(seg, t), 'nearest');
           }
         }
-      } else if ((e.type === 'circle' || e.type === 'arc') && e.points.length >= 1 && (e.radius ?? 0) > 0) {
-        const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
-        const r = e.radius!;
-        const toWorld = worldPt.clone().sub(center);
-        const dist = toWorld.length();
-        if (dist > 1e-6) {
-          const nearest = center.clone().addScaledVector(toWorld, r / dist);
-          considerCandidate(nearest, 'nearest');
-        }
-      }
-
-      if ((e.type === 'circle' || e.type === 'arc' || e.type === 'ellipse' || e.type === 'elliptical-arc') && e.points.length >= 1) {
+      } else if ((e.type === 'circle' || e.type === 'arc' || e.type === 'ellipse' || e.type === 'elliptical-arc') && e.points.length >= 1) {
         // Center snap — A6: include ellipse / elliptical-arc (center = points[0])
         if (snapToCenter) {
           const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
           considerCandidate(center, 'center');
         }
         // A7: arc midpoint = point at (startAngle + endAngle) / 2 on the arc
-        if (snapToMidpoint && (e.type === 'arc') && e.points.length >= 1 && typeof e.startAngle === 'number' && typeof e.endAngle === 'number') {
+        if (snapToMidpoint && e.type === 'arc' && typeof e.startAngle === 'number' && typeof e.endAngle === 'number') {
           const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
           const r = e.radius ?? 0;
           const { t1: sk_t1, t2: sk_t2 } = GeometryEngine.getSketchAxes(activeSketch!);
@@ -323,6 +320,15 @@ export default function SketchInteraction() {
             .addScaledVector(sk_t1, Math.cos(midA) * r)
             .addScaledVector(sk_t2, Math.sin(midA) * r);
           considerCandidate(midPt, 'midpoint');
+        }
+        // A5: nearest on-curve snap for circles and arcs (radial projection)
+        if ((e.type === 'circle' || e.type === 'arc') && (e.radius ?? 0) > 0) {
+          const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
+          const toWorld = worldPt.clone().sub(center);
+          const dist = toWorld.length();
+          if (dist > 1e-6) {
+            considerCandidate(center.clone().addScaledVector(toWorld, e.radius! / dist), 'nearest');
+          }
         }
         // Tangent snap: when drawing a line (drawStart set), find tangent point on circle
         // where the line from drawStart to that point is tangent to the circle.
@@ -380,7 +386,7 @@ export default function SketchInteraction() {
             considerCandidate(pt, 'endpoint');
           }
         }
-        if ((e.type === 'spline' || e.type === 'spline-control') && e.points.length >= 2) {
+        if (e.type === 'spline' && e.points.length >= 2) {
           // Spline knots: all control/fit points are endpoints
           for (const pt of e.points) {
             considerCandidate(new THREE.Vector3(pt.x, pt.y, pt.z), 'endpoint');
@@ -521,11 +527,11 @@ export default function SketchInteraction() {
     }
 
     return best;
-  }, [activeSketch, snapEnabled, objectSnapEnabled, snapToEndpoint, snapToMidpoint, snapToCenter, snapToIntersection, snapToPerpendicular, snapToTangent, getSketchPlane, scene]);
+  }, [activeSketch, snapEnabled, objectSnapEnabled, snapToEndpoint, snapToMidpoint, snapToCenter, snapToIntersection, snapToPerpendicular, snapToTangent, getSketchPlane, scene, camera, viewportSize]);
 
   // Returns midpoints of all line segments the cursor is hovering near (within HOVER_RADIUS of
   // the perpendicular foot on the segment). Used to show dim triangle markers before snapping.
-  const HOVER_MIDPOINT_RADIUS = SNAP_RADIUS * 2;
+  const HOVER_MIDPOINT_RADIUS = SNAP_PIXELS * 2; // ~24px in world units at typical zoom
   const findHoverMidpoints = useCallback((worldPt: THREE.Vector3): THREE.Vector3[] => {
     if (!activeSketch || (!snapEnabled && !sketchSnapEnabled) || !objectSnapEnabled || !snapToMidpoint) {
       return [];
