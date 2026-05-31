@@ -176,7 +176,7 @@ function createEllipse(
   entity: SketchEntity,
   material: THREE.LineBasicMaterial,
   axes: { t1: THREE.Vector3; t2: THREE.Vector3 },
-): THREE.Line {
+): THREE.Object3D {
   const { t1, t2 } = axes;
   const cx = entity.cx ?? entity.points[0]?.x ?? 0;
   const cy = entity.cy ?? entity.points[0]?.y ?? 0;
@@ -200,8 +200,27 @@ function createEllipse(
     points.push(center3.clone().addScaledVector(t1, u).addScaledVector(t2, v));
   }
 
-  const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  return setSketchRenderOrder(new THREE.Line(geometry, material));
+  const curve = setSketchRenderOrder(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), material));
+
+  // Fusion shows the major/minor axes as dashed construction lines through the
+  // centre. Build them in the ellipse's rotated frame and group with the curve.
+  const majorDir = t1.clone().multiplyScalar(cosR).add(t2.clone().multiplyScalar(sinR));
+  const minorDir = t1.clone().multiplyScalar(-sinR).add(t2.clone().multiplyScalar(cosR));
+  const axisLine = (dir: THREE.Vector3, len: number): THREE.Line => {
+    const geom = new THREE.BufferGeometry().setFromPoints([
+      center3.clone().addScaledVector(dir, -len),
+      center3.clone().addScaledVector(dir, len),
+    ]);
+    const line = new THREE.Line(geom, CONSTRUCTION_MATERIAL);
+    line.computeLineDistances();
+    return setSketchRenderOrder(line);
+  };
+
+  const group = new THREE.Group();
+  group.add(curve);
+  group.add(axisLine(majorDir, a));
+  group.add(axisLine(minorDir, b));
+  return group;
 }
 
 function createEllipticalArc(

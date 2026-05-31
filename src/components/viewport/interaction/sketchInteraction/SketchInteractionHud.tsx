@@ -105,6 +105,33 @@ export function SketchInteractionHud({
     radiusHudPosition = centerVector.clone().add(mousePos).multiplyScalar(0.5);
   }
 
+  // Ellipse / elliptical-arc creation dimensions: major-axis length + angle while
+  // placing the first axis, then minor-axis length while placing the second.
+  const showEllipseDims =
+    (activeTool === 'ellipse' || activeTool === 'elliptical-arc') && drawingPoints.length >= 1;
+  let ellipseHudText = '';
+  let ellipseHudPosition: THREE.Vector3 | null = null;
+  if (showEllipseDims) {
+    const centerPoint = drawingPoints[0];
+    const centerVector = new THREE.Vector3(centerPoint.x, centerPoint.y, centerPoint.z);
+    const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+    if (drawingPoints.length === 1) {
+      const mv = mousePos.clone().sub(centerVector);
+      const len = mv.length();
+      const angDeg = (Math.atan2(mv.dot(t2), mv.dot(t1)) * 180) / Math.PI;
+      ellipseHudText = `${len.toFixed(2)} ${units}   ${Math.abs(angDeg).toFixed(1)}°`;
+      ellipseHudPosition = centerVector.clone().add(mousePos).multiplyScalar(0.5);
+    } else if (drawingPoints.length === 2) {
+      const mp = drawingPoints[1];
+      const majorDir = new THREE.Vector3(mp.x - centerPoint.x, mp.y - centerPoint.y, mp.z - centerPoint.z).normalize();
+      const planeNormal = t1.clone().cross(t2).normalize();
+      const minorDir = majorDir.clone().cross(planeNormal).normalize();
+      const minorLen = Math.abs(mousePos.clone().sub(centerVector).dot(minorDir));
+      ellipseHudText = `minor ${minorLen.toFixed(2)} ${units}`;
+      ellipseHudPosition = mousePos.clone();
+    }
+  }
+
   const baseLabelStyle: React.CSSProperties = {
     pointerEvents: 'none',
     userSelect: 'none',
@@ -170,6 +197,12 @@ export function SketchInteractionHud({
       {showRadiusHud && radiusHudPosition && (
         <Html position={radiusHudPosition} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
           <div style={lengthLabelStyle}>{radiusHudText}</div>
+        </Html>
+      )}
+
+      {showEllipseDims && ellipseHudPosition && (
+        <Html position={ellipseHudPosition} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
+          <div style={lengthLabelStyle}>{ellipseHudText}</div>
         </Html>
       )}
 

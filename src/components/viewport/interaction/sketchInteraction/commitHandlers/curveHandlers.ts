@@ -345,10 +345,10 @@ export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
     case 'ellipse': {
       if (drawingPoints.length === 0) {
         setDrawingPoints([sketchPoint]);
-        setStatusMessage('Ellipse: centre placed — click major-axis endpoint');
+        setStatusMessage('Ellipse: centre placed — place first axis point');
       } else if (drawingPoints.length === 1) {
         setDrawingPoints([...drawingPoints, sketchPoint]);
-        setStatusMessage('Ellipse: major placed — click minor-axis endpoint');
+        setStatusMessage('Ellipse: first axis set — place point on ellipse');
       } else {
         const centre = drawingPoints[0];
         const majorPt = drawingPoints[1];
