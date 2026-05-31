@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { circumcenter2D, findBlendEndpoint, sampleCubicBezier } from '../helpers';
+import { polygonVertexPositions, polygonLoop } from '../polygonGeometry';
 import type { SketchPreviewHelpers } from './types';
 
 const BLEND_PREVIEW_SAMPLES = Array.from({ length: 33 }, () => new THREE.Vector3());
@@ -19,6 +20,7 @@ export function renderCurveAndPolygonPreview(activeTool: string, h: SketchPrevie
     t1,
     t2,
     conicRho,
+    polygonSides,
     addLine,
     circlePoints,
   } = h;
@@ -56,36 +58,23 @@ export function renderCurveAndPolygonPreview(activeTool: string, h: SketchPrevie
 
     case 'polygon':
     case 'polygon-inscribed': {
-      const radius = mousePos.distanceTo(startV);
-      const polyPts: THREE.Vector3[] = [];
-      for (let i = 0; i <= 6; i++) {
-        const angle = (i / 6) * Math.PI * 2;
-        polyPts.push(
-          startV
-            .clone()
-            .addScaledVector(t1, Math.cos(angle) * radius)
-            .addScaledVector(t2, Math.sin(angle) * radius),
-        );
-      }
-      addLine(polyPts);
+      // Cursor is a VERTEX: size = distance, orientation = cursor angle.
+      const cursorDist = mousePos.distanceTo(startV);
+      const d = mousePos.clone().sub(startV);
+      const baseAngle = Math.atan2(d.dot(t2), d.dot(t1));
+      const verts = polygonVertexPositions(startV, cursorDist, polygonSides, baseAngle, 'inscribed', t1, t2);
+      addLine(polygonLoop(verts));
       addLine([startV, mousePos]);
       return true;
     }
 
     case 'polygon-circumscribed': {
+      // Cursor is an EDGE MIDPOINT: apothem = distance, orientation = cursor angle.
       const apothem = mousePos.distanceTo(startV);
-      const radius = apothem / Math.cos(Math.PI / 6);
-      const polyPts: THREE.Vector3[] = [];
-      for (let i = 0; i <= 6; i++) {
-        const angle = (i / 6) * Math.PI * 2;
-        polyPts.push(
-          startV
-            .clone()
-            .addScaledVector(t1, Math.cos(angle) * radius)
-            .addScaledVector(t2, Math.sin(angle) * radius),
-        );
-      }
-      addLine(polyPts);
+      const d = mousePos.clone().sub(startV);
+      const baseAngle = Math.atan2(d.dot(t2), d.dot(t1));
+      const verts = polygonVertexPositions(startV, apothem, polygonSides, baseAngle, 'circumscribed', t1, t2);
+      addLine(polygonLoop(verts));
       addLine([startV, mousePos]);
       return true;
     }
@@ -94,8 +83,8 @@ export function renderCurveAndPolygonPreview(activeTool: string, h: SketchPrevie
       if (drawingPoints.length === 1) {
         const edgeVec = mousePos.clone().sub(startV);
         const edgeLen = edgeVec.length();
-        const radius = edgeLen / (2 * Math.sin(Math.PI / 6));
-        const apothem = edgeLen / (2 * Math.tan(Math.PI / 6));
+        const radius = edgeLen / (2 * Math.sin(Math.PI / polygonSides));
+        const apothem = edgeLen / (2 * Math.tan(Math.PI / polygonSides));
         const edgeDir = edgeVec.clone().normalize();
         const planeNormal = t1.clone().cross(t2);
         const perpDir = edgeDir.clone().cross(planeNormal).normalize();
@@ -104,8 +93,8 @@ export function renderCurveAndPolygonPreview(activeTool: string, h: SketchPrevie
         const toP1 = startV.clone().sub(centerV);
         const startAngle = Math.atan2(toP1.dot(t2), toP1.dot(t1));
         const polyPts: THREE.Vector3[] = [];
-        for (let i = 0; i <= 6; i++) {
-          const angle = startAngle + (i / 6) * Math.PI * 2;
+        for (let i = 0; i <= polygonSides; i++) {
+          const angle = startAngle + (i / polygonSides) * Math.PI * 2;
           polyPts.push(
             centerV
               .clone()

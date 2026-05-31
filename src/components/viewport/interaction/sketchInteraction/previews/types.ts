@@ -14,6 +14,7 @@ export interface SketchPreviewCtx {
   centerlineMat: THREE.LineDashedMaterial;
   conicRho: number;
   blendCurveMode: 'g1' | 'g2';
+  polygonSides: number;
 }
 
 export interface SketchPreviewHelpers {
@@ -30,6 +31,7 @@ export interface SketchPreviewHelpers {
   t2: THREE.Vector3;
   conicRho: number;
   blendCurveMode: 'g1' | 'g2';
+  polygonSides: number;
   addLine: (pts: THREE.Vector3[], mat?: THREE.LineBasicMaterial | THREE.LineDashedMaterial) => void;
   circlePoints: (center: THREE.Vector3, radius: number, segs?: number) => THREE.Vector3[];
 }

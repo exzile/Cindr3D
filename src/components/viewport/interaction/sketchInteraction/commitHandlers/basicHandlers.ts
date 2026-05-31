@@ -2,10 +2,30 @@ import * as THREE from 'three';
 import type { SketchPoint, SketchEntity, SketchConstraint } from '../../../../../types/cad';
 import { circumcenter2D } from '../helpers';
 import { ccwArcToCursor } from '../arcAngles';
+import { polygonVertexPositions } from '../polygonGeometry';
 import type { SketchCommitHandler } from './types';
 
 function planeDir(edgeDir: THREE.Vector3, normal: THREE.Vector3): THREE.Vector3 {
   return edgeDir.clone().cross(normal).normalize();
+}
+
+/** Emit one `line` entity per polygon edge (wrapping) and return their ids in order. */
+function emitPolygonLines(
+  verts: THREE.Vector3[],
+  addSketchEntity: (e: SketchEntity) => void,
+): string[] {
+  const n = verts.length;
+  const lineIds: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const a = verts[i];
+    const b = verts[(i + 1) % n];
+    const p1: SketchPoint = { id: crypto.randomUUID(), x: a.x, y: a.y, z: a.z };
+    const p2: SketchPoint = { id: crypto.randomUUID(), x: b.x, y: b.y, z: b.z };
+    const eid = crypto.randomUUID();
+    lineIds.push(eid);
+    addSketchEntity({ id: eid, type: 'line', points: [p1, p2] });
+  }
+  return lineIds;
 }
 
 function applyPolygonConstraints(
@@ -203,26 +223,21 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
     }
     case 'polygon':
     case 'polygon-inscribed': {
-      // Inscribed: vertices ON the circle, radius = center-to-vertex distance
+      // Inscribed: the clicked point is a VERTEX (on the circumscribing circle).
       if (drawingPoints.length === 0) {
         setDrawingPoints([sketchPoint]);
         setStatusMessage('Polygon center placed — click a vertex point to set size (inscribed)');
       } else {
         const center = drawingPoints[0];
-        const radius = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z)
-          .distanceTo(new THREE.Vector3(center.x, center.y, center.z));
+        const centerV = new THREE.Vector3(center.x, center.y, center.z);
+        const d = new THREE.Vector3(sketchPoint.x - center.x, sketchPoint.y - center.y, sketchPoint.z - center.z);
+        const radius = d.length();
         if (radius > 0.001) {
           const sides = polygonSides;
-          const lineIds: string[] = [];
-          for (let i = 0; i < sides; i++) {
-            const a1 = (i / sides) * Math.PI * 2;
-            const a2 = ((i + 1) / sides) * Math.PI * 2;
-            const p1: SketchPoint = { id: crypto.randomUUID(), x: center.x + t1.x * Math.cos(a1) * radius + t2.x * Math.sin(a1) * radius, y: center.y + t1.y * Math.cos(a1) * radius + t2.y * Math.sin(a1) * radius, z: center.z + t1.z * Math.cos(a1) * radius + t2.z * Math.sin(a1) * radius };
-            const p2: SketchPoint = { id: crypto.randomUUID(), x: center.x + t1.x * Math.cos(a2) * radius + t2.x * Math.sin(a2) * radius, y: center.y + t1.y * Math.cos(a2) * radius + t2.y * Math.sin(a2) * radius, z: center.z + t1.z * Math.cos(a2) * radius + t2.z * Math.sin(a2) * radius };
-            const eid = crypto.randomUUID();
-            lineIds.push(eid);
-            addSketchEntity({ id: eid, type: 'line', points: [p1, p2] });
-          }
+          // Cursor angle drives rotation so a vertex sits exactly under the cursor (Fusion parity).
+          const baseAngle = Math.atan2(d.dot(t2), d.dot(t1));
+          const verts = polygonVertexPositions(centerV, radius, sides, baseAngle, 'inscribed', t1, t2);
+          const lineIds = emitPolygonLines(verts, addSketchEntity);
           applyPolygonConstraints(lineIds, addSketchConstraint);
           setStatusMessage(`${sides}-gon (inscribed) added (vertex r=${radius.toFixed(2)})`);
         } else { setStatusMessage('Polygon too small — try again'); }
@@ -231,27 +246,21 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
       break;
     }
     case 'polygon-circumscribed': {
-      // Circumscribed: circle is inscribed in the polygon — click sets edge-midpoint distance
+      // Circumscribed: the clicked point is an EDGE MIDPOINT (on the inscribed circle).
       if (drawingPoints.length === 0) {
         setDrawingPoints([sketchPoint]);
         setStatusMessage('Polygon center placed — click edge midpoint to set size (circumscribed)');
       } else {
         const center = drawingPoints[0];
-        const apothem = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z)
-          .distanceTo(new THREE.Vector3(center.x, center.y, center.z));
+        const centerV = new THREE.Vector3(center.x, center.y, center.z);
+        const d = new THREE.Vector3(sketchPoint.x - center.x, sketchPoint.y - center.y, sketchPoint.z - center.z);
+        const apothem = d.length();
         const sides = polygonSides;
-        const radius = apothem / Math.cos(Math.PI / sides); // vertex distance
-        if (radius > 0.001) {
-          const lineIds: string[] = [];
-          for (let i = 0; i < sides; i++) {
-            const a1 = (i / sides) * Math.PI * 2;
-            const a2 = ((i + 1) / sides) * Math.PI * 2;
-            const p1: SketchPoint = { id: crypto.randomUUID(), x: center.x + t1.x * Math.cos(a1) * radius + t2.x * Math.sin(a1) * radius, y: center.y + t1.y * Math.cos(a1) * radius + t2.y * Math.sin(a1) * radius, z: center.z + t1.z * Math.cos(a1) * radius + t2.z * Math.sin(a1) * radius };
-            const p2: SketchPoint = { id: crypto.randomUUID(), x: center.x + t1.x * Math.cos(a2) * radius + t2.x * Math.sin(a2) * radius, y: center.y + t1.y * Math.cos(a2) * radius + t2.y * Math.sin(a2) * radius, z: center.z + t1.z * Math.cos(a2) * radius + t2.z * Math.sin(a2) * radius };
-            const eid = crypto.randomUUID();
-            lineIds.push(eid);
-            addSketchEntity({ id: eid, type: 'line', points: [p1, p2] });
-          }
+        if (apothem > 0.001) {
+          // Cursor angle drives rotation so an edge midpoint sits under the cursor (Fusion parity).
+          const baseAngle = Math.atan2(d.dot(t2), d.dot(t1));
+          const verts = polygonVertexPositions(centerV, apothem, sides, baseAngle, 'circumscribed', t1, t2);
+          const lineIds = emitPolygonLines(verts, addSketchEntity);
           applyPolygonConstraints(lineIds, addSketchConstraint);
           setStatusMessage(`${sides}-gon (circumscribed) added (apothem=${apothem.toFixed(2)})`);
         } else { setStatusMessage('Polygon too small — try again'); }

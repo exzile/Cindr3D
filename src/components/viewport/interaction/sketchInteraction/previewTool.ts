@@ -32,7 +32,7 @@ function previewFingerprint(ctx: SketchPreviewCtx): string {
   const dp = ctx.drawingPoints
     .map((p) => `${p.x.toFixed(4)},${p.y.toFixed(4)},${p.z.toFixed(4)}`)
     .join(';');
-  return `${ctx.activeTool}|${ms}|${dp}|${ctx.isDraggingArc}|${ctx.conicRho}|${ctx.blendCurveMode}`;
+  return `${ctx.activeTool}|${ms}|${dp}|${ctx.isDraggingArc}|${ctx.conicRho}|${ctx.blendCurveMode}|${ctx.polygonSides}`;
 }
 
 export type { SketchPreviewCtx } from './previews/types';
@@ -51,6 +51,7 @@ export function renderSketchPreview(ctx: SketchPreviewCtx): void {
     centerlineMat,
     conicRho,
     blendCurveMode,
+    polygonSides,
   } = ctx;
 
   if (!previewGroup) return;
@@ -105,6 +106,7 @@ export function renderSketchPreview(ctx: SketchPreviewCtx): void {
     t2,
     conicRho,
     blendCurveMode,
+    polygonSides,
     addLine,
     circlePoints,
   };

@@ -701,6 +701,7 @@ export default function SketchInteraction() {
       centerlineMat: centerlinePreviewMaterial.current,
       conicRho,
       blendCurveMode,
+      polygonSides,
     });
   });
 
