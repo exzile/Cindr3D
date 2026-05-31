@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { useCADStore } from '../../../../../store/cadStore';
 import type { SketchPoint } from '../../../../../types/cad';
 import { circumcenter2D } from '../helpers';
+import { ccwArcThrough, ccwArcTangent } from '../arcAngles';
 import type { SketchCommitHandler } from './types';
 
 export const handleTangentSketchCommit: SketchCommitHandler = (ctx) => {
@@ -220,16 +221,10 @@ export const handleTangentSketchCommit: SketchCommitHandler = (ctx) => {
           const { u: u1, v: v1 } = projectToPlane(drawingPoints[0], { id:'', x: cc.center.x, y: cc.center.y, z: cc.center.z });
           const { u: u2, v: v2 } = projectToPlane(drawingPoints[1], { id:'', x: cc.center.x, y: cc.center.y, z: cc.center.z });
           const { u: u3, v: v3 } = projectToPlane(sketchPoint, { id:'', x: cc.center.x, y: cc.center.y, z: cc.center.z });
-          let startAngle = Math.atan2(v1, u1);
-          const midAngle  = Math.atan2(v2, u2);
-          let endAngle   = Math.atan2(v3, u3);
-          // C1: ensure the through-point lies on the CCW arc start→end.
-          // Normalize midAngle and endAngle into [0, 2π) relative to startAngle.
-          const norm2pi = (a: number, from: number) => { let r = a - from; while (r < 0) r += 2 * Math.PI; return r; };
-          if (norm2pi(midAngle, startAngle) > norm2pi(endAngle, startAngle)) {
-            // Mid is on the CW side — flip so the CCW arc contains the through-point
-            [startAngle, endAngle] = [endAngle, startAngle];
-          }
+          // C1: pick the CCW arc that passes through the middle (through) point.
+          const { startAngle, endAngle } = ccwArcThrough(
+            Math.atan2(v1, u1), Math.atan2(v2, u2), Math.atan2(v3, u3),
+          );
           addSketchEntity({
             id: crypto.randomUUID(), type: 'arc',
             points: [{ id: crypto.randomUUID(), ...cc.center }],
@@ -366,15 +361,12 @@ export const handleTangentSketchCommit: SketchCommitHandler = (ctx) => {
       // Compute plane-local start/end angles
       const toStart = new THREE.Vector3(startPt.x - cx, startPt.y - cy, startPt.z - cz);
       const toEnd = new THREE.Vector3(endPt.x - cx, endPt.y - cy, endPt.z - cz);
-      let startAngle = Math.atan2(toStart.dot(t2), toStart.dot(t1));
-      let endAngle = Math.atan2(toEnd.dot(t2), toEnd.dot(t1));
-      // C2: CCW arc start tangent must match the incoming tangentDir (no cusp).
-      // Tangent of the CCW arc at angle θ is: T = -t1*sin(θ) + t2*cos(θ).
-      const arcStartTangent = t1.clone().multiplyScalar(-Math.sin(startAngle))
-        .add(t2.clone().multiplyScalar(Math.cos(startAngle)));
-      if (arcStartTangent.dot(tangentDir) < 0) {
-        [startAngle, endAngle] = [endAngle, startAngle];
-      }
+      // C2: orient the CCW arc so its start tangent matches tangentDir (no cusp).
+      const { startAngle, endAngle } = ccwArcTangent(
+        Math.atan2(toStart.dot(t2), toStart.dot(t1)),
+        Math.atan2(toEnd.dot(t2), toEnd.dot(t1)),
+        t1, t2, tangentDir,
+      );
       addSketchEntity({
         id: crypto.randomUUID(),
         type: 'arc',

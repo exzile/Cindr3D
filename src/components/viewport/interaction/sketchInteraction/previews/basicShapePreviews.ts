@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { useCADStore } from '../../../../../store/cadStore';
 import { circumcenter2D } from '../helpers';
+import { ccwArcToCursor, ccwArcThrough, ccwArcTangent, sampleCcwArc } from '../arcAngles';
 import type { SketchPreviewHelpers } from './types';
 
 export function renderBasicShapePreview(activeTool: string, h: SketchPreviewHelpers): boolean {
@@ -58,19 +59,14 @@ export function renderBasicShapePreview(activeTool: string, h: SketchPreviewHelp
           const arcRadius = Math.abs(radius);
           const toStart = startV.clone().sub(arcCenter);
           const toEnd = mousePos.clone().sub(arcCenter);
-          const startAngle = Math.atan2(toStart.dot(t2), toStart.dot(t1));
-          const endAngle = Math.atan2(toEnd.dot(t2), toEnd.dot(t1));
-          const arcPts: THREE.Vector3[] = [];
-          for (let i = 0; i <= 32; i++) {
-            const angle = startAngle + (i / 32) * (endAngle - startAngle);
-            arcPts.push(
-              arcCenter
-                .clone()
-                .addScaledVector(t1, Math.cos(angle) * arcRadius)
-                .addScaledVector(t2, Math.sin(angle) * arcRadius),
-            );
-          }
-          addLine(arcPts);
+          // Match the dragged-tangent-arc commit: orient so the arc leaves the
+          // junction smoothly (no cusp) and the preview matches the committed arc.
+          const { startAngle, endAngle } = ccwArcTangent(
+            Math.atan2(toStart.dot(t2), toStart.dot(t1)),
+            Math.atan2(toEnd.dot(t2), toEnd.dot(t1)),
+            t1, t2, tangentDir,
+          );
+          addLine(sampleCcwArc(arcCenter, arcRadius, startAngle, endAngle, t1, t2));
         } else {
           addLine([startV, mousePos], currentLineMat);
         }
@@ -138,19 +134,13 @@ export function renderBasicShapePreview(activeTool: string, h: SketchPreviewHelp
         const radius = startVec.distanceTo(startV);
         const d1 = startVec.clone().sub(startV);
         const d2 = mousePos.clone().sub(startV);
-        const startAngle = Math.atan2(d1.dot(t2), d1.dot(t1));
-        const endAngle = Math.atan2(d2.dot(t2), d2.dot(t1));
-        const arcPts: THREE.Vector3[] = [];
-        for (let i = 0; i <= 32; i++) {
-          const angle = startAngle + (i / 32) * (endAngle - startAngle);
-          arcPts.push(
-            startV
-              .clone()
-              .addScaledVector(t1, Math.cos(angle) * radius)
-              .addScaledVector(t2, Math.sin(angle) * radius),
-          );
-        }
-        addLine(arcPts);
+        // Same minor-arc-toward-cursor logic + CCW sampling as the commit handler,
+        // so the preview matches the committed arc exactly.
+        const { startAngle, endAngle } = ccwArcToCursor(
+          Math.atan2(d1.dot(t2), d1.dot(t1)),
+          Math.atan2(d2.dot(t2), d2.dot(t1)),
+        );
+        addLine(sampleCcwArc(startV, radius, startAngle, endAngle, t1, t2));
         addLine([startV, startVec]);
         addLine([startV, mousePos.clone().sub(startV).normalize().multiplyScalar(radius).add(startV)]);
       }
@@ -213,20 +203,20 @@ export function renderBasicShapePreview(activeTool: string, h: SketchPreviewHelp
             drawingPoints[0].y - cc.center.y,
             drawingPoints[0].z - cc.center.z,
           );
+          const dMid = new THREE.Vector3(
+            drawingPoints[1].x - cc.center.x,
+            drawingPoints[1].y - cc.center.y,
+            drawingPoints[1].z - cc.center.z,
+          );
           const d3 = mousePos.clone().sub(center);
-          const startAngle = Math.atan2(d1.dot(t2), d1.dot(t1));
-          const endAngle = Math.atan2(d3.dot(t2), d3.dot(t1));
-          const arcPts: THREE.Vector3[] = [];
-          for (let i = 0; i <= 32; i++) {
-            const angle = startAngle + (i / 32) * (endAngle - startAngle);
-            arcPts.push(
-              center
-                .clone()
-                .addScaledVector(t1, Math.cos(angle) * cc.radius)
-                .addScaledVector(t2, Math.sin(angle) * cc.radius),
-            );
-          }
-          addLine(arcPts);
+          // Match the 3-point commit: pick the CCW arc that passes through the
+          // middle (through) point so the preview matches the committed arc.
+          const { startAngle, endAngle } = ccwArcThrough(
+            Math.atan2(d1.dot(t2), d1.dot(t1)),
+            Math.atan2(dMid.dot(t2), dMid.dot(t1)),
+            Math.atan2(d3.dot(t2), d3.dot(t1)),
+          );
+          addLine(sampleCcwArc(center, cc.radius, startAngle, endAngle, t1, t2));
         }
       }
       return true;

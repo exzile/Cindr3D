@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { SketchPoint, SketchEntity, SketchConstraint } from '../../../../../types/cad';
 import { circumcenter2D } from '../helpers';
+import { ccwArcToCursor } from '../arcAngles';
 import type { SketchCommitHandler } from './types';
 
 function planeDir(edgeDir: THREE.Vector3, normal: THREE.Vector3): THREE.Vector3 {
@@ -181,13 +182,16 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
         const { u: u2, v: v2 } = projectToPlane(sketchPoint, center);
         const radius = Math.sqrt(u1 * u1 + v1 * v1);
         if (radius > 0.001) {
+          // Center-point arc: minor arc from the start click toward the cursor,
+          // stored CCW-canonical so the committed render matches the live preview.
+          const { startAngle, endAngle } = ccwArcToCursor(Math.atan2(v1, u1), Math.atan2(v2, u2));
           addSketchEntity({
             id: crypto.randomUUID(),
             type: 'arc',
             points: [center],
             radius,
-            startAngle: Math.atan2(v1, u1),
-            endAngle: Math.atan2(v2, u2),
+            startAngle,
+            endAngle,
           });
           setStatusMessage('Arc added');
         } else {
