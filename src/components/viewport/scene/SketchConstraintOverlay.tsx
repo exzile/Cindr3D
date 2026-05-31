@@ -229,6 +229,46 @@ function makeDot(pos: THREE.Vector3, t1: THREE.Vector3, t2: THREE.Vector3, size:
   return makeCoincidentRing(pos, t1, t2, size * 0.3, color) as unknown as THREE.LineSegments;
 }
 
+/**
+ * PERF: merge every glyph into ONE LineSegments per material (colour). A sketch
+ * with many shapes can otherwise produce hundreds of individual line objects —
+ * each its own draw call — which makes panning lag. The originals' geometries
+ * are disposed here; the merged geometries are disposed by the component's
+ * cleanup effect. Materials are shared singletons and are never disposed.
+ */
+function mergeGlyphsByMaterial(objs: THREE.Object3D[]): THREE.Object3D[] {
+  const byMat = new Map<THREE.Material, number[]>();
+  for (const obj of objs) {
+    const line = obj as THREE.Line;
+    const pos = line.geometry?.getAttribute?.('position') as THREE.BufferAttribute | undefined;
+    if (!pos) continue;
+    const mat = line.material as THREE.Material;
+    let arr = byMat.get(mat);
+    if (!arr) { arr = []; byMat.set(mat, arr); }
+    const n = pos.count;
+    if (line.type === 'LineSegments') {
+      for (let i = 0; i < n; i++) arr.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+    } else {
+      // Line / LineLoop store sequential points — expand to segment pairs.
+      const loop = line.type === 'LineLoop';
+      const last = loop ? n : n - 1;
+      for (let i = 0; i < last; i++) {
+        const a = i, b = (i + 1) % n;
+        arr.push(pos.getX(a), pos.getY(a), pos.getZ(a), pos.getX(b), pos.getY(b), pos.getZ(b));
+      }
+    }
+    line.geometry?.dispose?.();
+  }
+  const merged: THREE.Object3D[] = [];
+  for (const [mat, arr] of byMat) {
+    if (arr.length === 0) continue;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
+    merged.push(new THREE.LineSegments(g, mat));
+  }
+  return merged;
+}
+
 // ── Main Component ──────────────────────────────────────────────────────────
 
 export default function SketchConstraintOverlay() {
@@ -435,7 +475,7 @@ export default function SketchConstraintOverlay() {
       }
     }
 
-    return objs.length > 0 ? objs : null;
+    return objs.length > 0 ? mergeGlyphsByMaterial(objs) : null;
   }, [activeSketch, showConstraints]);
 
   // Dispose every constraint glyph's geometry when `objects` is replaced
