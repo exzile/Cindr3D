@@ -131,11 +131,11 @@ export function buildSketchMenus({
     },
     {
       icon: <Hexagon size={MI} />, label: 'Polygon',
-      onClick: () => setActiveTool('polygon-inscribed'),
+      onClick: () => { setActiveTool('polygon-inscribed'); setStatusMessage('Inscribed Polygon: click to place the center, then click a vertex point (set side count in the palette)'); },
       submenu: [
-        { icon: <Hexagon size={MI} />, label: 'Inscribed Polygon', onClick: () => setActiveTool('polygon-inscribed') },
-        { icon: <Hexagon size={MI} />, label: 'Circumscribed Polygon', onClick: () => setActiveTool('polygon-circumscribed') },
-        { icon: <Hexagon size={MI} />, label: 'Edge Polygon', onClick: () => setActiveTool('polygon-edge') },
+        { icon: <Hexagon size={MI} />, label: 'Inscribed Polygon', onClick: () => { setActiveTool('polygon-inscribed'); setStatusMessage('Inscribed Polygon: click to place the center, then click a vertex point (set side count in the palette)'); } },
+        { icon: <Hexagon size={MI} />, label: 'Circumscribed Polygon', onClick: () => { setActiveTool('polygon-circumscribed'); setStatusMessage('Circumscribed Polygon: click to place the center, then click an edge-midpoint (set side count in the palette)'); } },
+        { icon: <Hexagon size={MI} />, label: 'Edge Polygon', onClick: () => { setActiveTool('polygon-edge'); setStatusMessage('Edge Polygon: click the two endpoints of one edge (set side count in the palette)'); } },
       ],
     },
     {

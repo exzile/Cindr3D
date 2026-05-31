@@ -1,7 +1,9 @@
-import { useRef, useState, useEffect, useCallback, Children } from 'react';
+import { useRef, useState, useEffect, useCallback, Children, isValidElement } from 'react';
+import type { ReactElement } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronRight, Check, MoreHorizontal } from 'lucide-react';
 import type { MenuItem } from '../../types/toolbar.types';
+import { useCADStore } from '../../store/cadStore';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 
 // ─── Flyout Sub-Menu Item ─────────────────────────────────────────────────
@@ -99,12 +101,35 @@ export function RibbonSection({ title, children, menuItems, accentColor, maxVisi
   const overflowBtnRef = useRef<HTMLButtonElement>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
+  const activeTool = useCADStore((s) => s.activeTool);
   const hasFlyout = !!menuItems && menuItems.length > 0;
   const childArray = Children.toArray(children);
 
   const visibleCount = maxVisible !== undefined ? Math.min(maxVisible, childArray.length) : childArray.length;
   const hasOverflow = hasFlyout && visibleCount < childArray.length;
-  const visibleChildren = hasOverflow ? childArray.slice(0, visibleCount) : childArray;
+
+  // A ToolButton child is active if it explicitly passes active=true (dropdown
+  // tools compute this from the activeTool set) or if its `tool` prop matches.
+  const isChildActive = (child: unknown): boolean => {
+    if (!isValidElement(child)) return false;
+    const props = (child as ReactElement).props as { active?: boolean; tool?: string };
+    return props.active === true || (props.tool !== undefined && props.tool === activeTool);
+  };
+
+  let visibleChildren = hasOverflow ? childArray.slice(0, visibleCount) : childArray;
+
+  // When the active tool lives in the overflow, promote it into the LAST visible
+  // slot so the selected tool is always shown (and highlighted) in the ribbon —
+  // matching Fusion/AutoCAD flyout behaviour. The displaced tool stays reachable
+  // via the overflow menu (which always lists every tool).
+  if (hasOverflow) {
+    const activeIdx = childArray.findIndex(isChildActive);
+    if (activeIdx >= visibleCount) {
+      const promoted = childArray.slice(0, visibleCount);
+      promoted[visibleCount - 1] = childArray[activeIdx];
+      visibleChildren = promoted;
+    }
+  }
 
   // Position the flyout portal below whichever trigger was clicked
   const openMenu = (triggerEl: HTMLElement) => {
