@@ -833,3 +833,220 @@
 #   npx tsc --noEmit clean . npx vitest run green . manual QA in Claude Preview
 #   dev server (localhost:5173). Per CLAUDE.md: run gitnexus_impact before editing
 #   symbols; plane-aware math via getSketchAxes(sketch)->t1/t2 (not raw p.x/p.y).
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SKETCH-2: Sketch CORRECTNESS audit — existing tools that misbehave vs Fusion
+# ══════════════════════════════════════════════════════════════════════════════
+# Deep behavioral audit (2026-05-30) of drawing tools, snaps, and constraints.
+# SKETCH-1 tracks MISSING tools; SKETCH-2 tracks BUGS in tools that already exist.
+# All items below were verified against the actual code (file:line cited).
+# Status: [x] fixed  [~] partial  [ ] open
+#
+# ══ A. SNAP ENGINE ════════════════════════════════════════════════════════════
+# All snap logic is in ONE file: SketchInteraction.tsx (findSnapCandidate 214-384,
+# snapToGrid 192-207). No separate engine, no inference/alignment guides.
+#
+# [ ] SKETCH-2.A1  Grid snap increment is gridSize/10 (BUG). SketchInteraction.tsx:197
+#     `const snap = gridSize / 10` → with default gridSize 10 the snap step is 1 unit,
+#     so points snap 10x finer than the VISIBLE grid and never land on grid lines.
+#     Also ignores the per-sketch `sketchGridSize` override (coreState.ts:187). Fusion
+#     snaps to the displayed grid. Fix: snap to the rendered grid spacing; honor override.
+#
+# [ ] SKETCH-2.A2  Snap tolerance is WORLD-space mm, not screen px (BUG, zoom-dependent).
+#     SNAP_RADIUS=4 (line 212) compared against worldPt.distanceTo (line 224). At high
+#     zoom a 4mm grab area is huge; zoomed out it's unreachable — snap "feel" changes
+#     with zoom. Same for SELECT_*_PICK_RADIUS, HOVER_MIDPOINT_RADIUS, and the 0.5/0.1
+#     world tolerances in the intersection solver (line 375). Fusion uses a fixed ~8px
+#     radius. Fix: project candidate + cursor to screen space and compare in pixels
+#     (or scale SNAP_RADIUS by world-units-per-pixel at cursor depth).
+#
+# [ ] SKETCH-2.A3  No snap-type priority — closest-distance-wins (BUG). considerCandidate
+#     (220-229) keeps whichever candidate is nearest in world distance across ALL types,
+#     so a midpoint 1.9mm away beats an endpoint 2.0mm away. Fusion ranks
+#     endpoint/center > intersection > midpoint > on-curve > grid regardless of a hair's
+#     difference. Fix: priority-ordered pass, or weight bestDist by per-type priority.
+#
+# [ ] SKETCH-2.A4  Intersection snap is LINE-LINE only (BUG/GAP). snapToIntersection
+#     (334-381) iterates lineEntities only and solves a 2-line system. No line-arc,
+#     line-circle, arc-arc, or spline intersection. Fusion snaps any curve-curve
+#     intersection. Fix: add analytic line-circle / circle-circle + sampled spline path.
+#     (Overlaps SKETCH-1.15.)
+#
+# [ ] SKETCH-2.A5  `nearest` (on-curve) snap not implemented (BUG). Runtime never emits
+#     'nearest'. The closest thing is 'perpendicular' (foot onto a straight segment
+#     only, 255-266) — not nearest-point-on-arbitrary-curve. Fix: add closest-point-on-
+#     curve projection for line/arc/circle/ellipse/spline.
+#
+# [ ] SKETCH-2.A6  Center snap skips ellipse / elliptical-arc (GAP). Gated on
+#     type==='circle'||'arc' (line 268). Ellipses store center in points[0] but get no
+#     center snap. Fix: include ellipse/elliptical-arc.
+#
+# [ ] SKETCH-2.A7  Midpoint snap skips arcs (GAP). Midpoint computed only for line types
+#     (248-253) as endpoint average; arcs get none, and the average would be wrong for an
+#     arc anyway. Fix: arc midpoint = point at (startAngle+endAngle)/2.
+#
+# [ ] SKETCH-2.A8  Endpoint snap leans on a per-mousemove brute-force scan of EVERY mesh
+#     vertex in the scene (310-331) — O(all verts) each move, dedup by string key,
+#     tessellation-dependent. Entity-level endpoint snap (241-247) only covers line
+#     endpoints; arc ends, spline knots, rect/polygon corners are not offered directly.
+#     Fix: emit exact geometric endpoints from entities; drop/limit the vertex sweep
+#     (also a perf hazard).
+#
+# [ ] SKETCH-2.A9  SnapType union (types/cad/core.ts:151) is DEAD/out of sync. Canonical
+#     union has 'grid'|'nearest' (never emitted) and lacks 'perpendicular'|'tangent'
+#     (the runtime DOES emit these via an inline union in SketchInteraction.tsx:219).
+#     SnapPoint (misc.ts:16) that uses it is never imported. Fix: reconcile the union
+#     to what runtime emits; delete dead SnapPoint or wire it in.
+#
+# [ ] SKETCH-2.A10  No inference / alignment guide lines anywhere (GAP, major Fusion miss).
+#     No dashed H/V/parallel/perpendicular/collinear guides as the cursor moves. Only
+#     static snap glyphs exist. Fix: inference engine testing cursor alignment vs
+#     existing geometry + dashed guide rendering + auto-constrain on commit.
+#     (Overlaps SKETCH-1 inference notes.)
+#
+# ══ B. CONSTRAINTS (tool application + Newton-Raphson solver) ══════════════════
+# Solver math for point-DOF constraints (parallel/perp/collinear/H/V/coincident-pos/
+# midpoint/concentric/symmetric mirror) is CORRECT. Plane projection (sketchSolveInputs
+# .ts:31-48 t1/t2, un-project constraintAndViewActions.ts:135-137) is CORRECT. The bugs
+# are about missing DOFs, entity ordering, and pointIndices.
+#
+# [ ] SKETCH-2.B1  radius / startAngle / endAngle / majorRadius are NOT solver parameters
+#     (BUG — biggest gap). buildParams (ConstraintSolver.ts:99-122) emits only point x/y.
+#     Consequence: radial, diameter, arc-length, ellipse-major/minor dimensions and the
+#     tangent + concentric-gap + equal-circle constraints CANNOT move geometry — they only
+#     raise residual≠0 and get reported as over-constrained. Applying a radial dim does
+#     NOT resize the circle (Fusion does). Fix: add radius/angle as DOFs in buildParams/
+#     applyParams with correct residual derivatives. Unblocks B2/B4 and SKETCH-1.10.
+#
+# [ ] SKETCH-2.B2  "Equal" is a no-op for circle-circle and nonsensical for line-vs-circle
+#     (BUG). ConstraintSolver.ts:368-386 break with no residual for two circles ("radius
+#     not a DOF"); line-vs-circle compares line LENGTH to circle RADIUS with no type
+#     guard. Fix: make radius a DOF (B1) so circle-circle equal works; reject line/circle
+#     pairs in the tool with a message.
+#
+# [ ] SKETCH-2.B3  Constraint tool never captures pointIndices (BUG). useSketchConstraint
+#     Tool.ts:165-168 dispatches `{type, entityIds: nextSelection}` with no pointIndices,
+#     so the solver defaults p0↔p0 (ConstraintSolver.ts:319) — clicking the END of line A
+#     and START of line B always bonds the WRONG endpoints. Coincident is the most-used
+#     constraint. Fix: hit-test nearest POINT (not entity) and record its index. (The
+#     polygon auto-constraints already do pointIndices:[1,0] correctly — copy that.)
+#
+# [ ] SKETCH-2.B4  Tangent: line-circle can't actually solve (needs B1), arc-arc / circle-
+#     circle not handled at all (break), no internal/external side handling. ConstraintSolver
+#     .ts:415-435. Fix: add curve-curve branch dist(cA,cB)==|rA±rB|, make radius a DOF,
+#     pick ± by current config.
+#
+# [ ] SKETCH-2.B5  Symmetric tool axis ordering is ambiguous/wrong (BUG). useSketchConstraint
+#     Tool.ts:19-30 takes 3 clicks in click order, but solver expects [axis, a, b]
+#     (ConstraintSolver.ts:436). Whatever the user clicks FIRST becomes the axis → mirrors
+#     across the wrong line. Fix: prompt "pick two entities, then the axis" and reorder to
+#     [axis,a,b] before dispatch.
+#
+# [ ] SKETCH-2.B6  fullyConstrained / DOF is never computed — always hard-coded false
+#     (BUG). constraintAndViewActions.ts:142 and every sketch-creation site hard-code
+#     fullyConstrained:false. The solver builds a full Jacobian (724-757) but discards it.
+#     No rank/DOF computation exists. Fusion turns geometry black when fully constrained.
+#     Fix: after solve compute rank(J) vs nParams → fully = rank>=nParams; return from
+#     SolverResult, store on the sketch. (Enables SKETCH-1.12 DOF coloring.)
+#
+# [ ] SKETCH-2.B7  Over-constrained detection = "residual didn't converge" (BUG/GAP).
+#     overConstraintCheck.ts:33-50 + constraintAndViewActions.ts:121-127 flag over-
+#     constrained purely when residual>=tol after 100 iters. This conflates genuine
+#     conflict, harmless redundancy, and merely-non-driveable residuals (every radial dim
+#     from B1 looks over-constrained even when alone+valid). Redundant-but-satisfiable
+#     constraints aren't flagged at all. Fix: redundancy via Jacobian rank deficiency;
+#     conflict via inconsistent post-solve residual.
+#
+# [ ] SKETCH-2.B8  addSketchConstraint dedupe ignores pointIndices (BUG). constraintAnd
+#     ViewActions.ts:158-161 keys on type+entityIds only, so two different coincident
+#     constraints on the same line pair (p1↔p0 vs p0↔p1) are wrongly deduped. Compounds
+#     B3. Fix: include pointIndices in the dedupe key.
+#
+# [ ] SKETCH-2.B9  "Fix" pins the WHOLE entity, never a single point; circle radius
+#     unfixable (BUG). ConstraintSolver.ts:771-773 marks all points of the entity fixed.
+#     Fusion can ground one endpoint or a whole curve incl. radius. Fix: honor pointIndices
+#     in fix; fix radius DOF when present (needs B1).
+#
+# [ ] SKETCH-2.B10  No live constraint inference while drawing; AutoConstrain doesn't
+#     re-solve (BUG/GAP). Only polygon/rectangle commit auto-adds constraints. autoConstrain
+#     Sketch (constraintAndViewActions.ts:10-106) is a manual batch pass that never calls
+#     solveSketch, so its constraints don't move geometry until something else solves.
+#     Fix: live H/V/coincident inference glyphs in freehand handlers; have autoConstrain
+#     Sketch call solveSketch() after adding. (Overlaps SKETCH-2.A10.)
+#
+# [ ] SKETCH-2.B11  Rectangle edges have no solver DOF; arc pick uses full circle (BUG).
+#     Rectangles store 2 points; edges are derived corners (ConstraintSolver.ts:207-220),
+#     so perpendicular/parallel on a rectangle EDGE silently does nothing. Arc picking
+#     (useSketchConstraintTool.ts:105) tests |dist-radius| against the FULL circle, so you
+#     can pick an arc on the undrawn part. Fix: explode rectangles into 4 line entities
+#     (like polygons); clamp arc pick to [startAngle,endAngle].
+#
+# ══ C. DRAWING TOOL GEOMETRY ══════════════════════════════════════════════════
+# Renderer convention (load-bearing): createArc (sketchRendering.ts:154) forces every arc
+# CCW (if endAngle<=startAngle add 2pi). Any handler computing angles must guarantee the
+# intended arc is the CCW one or it renders the complementary (wrong-side) arc.
+#
+# [ ] SKETCH-2.C1  arc-3point renders the wrong-side arc (BUG, very visible). tangentHandlers
+#     .ts:194-223 computes circumcircle center + start/end atan2 but never checks the
+#     through-point lies on the CCW arc. When the middle point is on the CW side, the arc
+#     bulges opposite to what the user drew. Fix: if CCW sweep start→end doesn't contain
+#     the mid angle, swap start/end (slot-3point-arc curveHandlers.ts:268-279 already does
+#     this midFromStart<endFromStart test — reuse it).
+#
+# [ ] SKETCH-2.C2  tangent-arc can render a cusp / wrong arc (BUG). tangentHandlers.ts:282-360
+#     center solve is correct but emits raw atan2 angles with no orientation guard vs the
+#     CCW renderer, so the start tangent may point opposite the connecting curve (cusp
+#     instead of smooth). Same in dragged variant sketchEventHelpers.ts:108-117. Fix: check
+#     the CCW arc start tangent matches tangentDir; swap start/end if not.
+#
+# [ ] SKETCH-2.C3  circle-2tangent / circle-3tangent ignore sketch.planeOrigin (BUG —
+#     silently wrong on offset planes). tangentHandlers.ts:55 toUV / :146 toUV3 project as
+#     dot(t1)/dot(t2) WITHOUT subtracting planeOrigin, and reconstruct center as t1*cu+t2*cv
+#     WITHOUT adding it back (:99,:183). On any plane not through the world origin (offset
+#     planes, most planar faces) the circle center is displaced by the in-plane component
+#     of planeOrigin; radius is correct so it looks tangent but lands in the wrong place.
+#     Fix: subtract origin in toUV*, add origin back in the center reconstruction (mirror
+#     sketchProfiles.ts:41-58). 3-point circle/arc are already correct (circumcenter2D
+#     projects relative to p1).
+#
+# [ ] SKETCH-2.C4  slot / slot-center end-cap arcs use inconsistent angle conventions →
+#     cap on wrong side / overlap (BUG). curveHandlers.ts:13-103: cap at c1 uses
+#     [perpAngle, perpAngle+pi] (anchored to perpDir) while cap at c2 uses
+#     [axisAngle-pi/2, axisAngle+pi/2] (anchored to axisDir). With the CCW renderer this
+#     frequently caps the wrong side. slot-overall / slot-center-point do it consistently
+#     and are correct. Fix: anchor both caps to axisAngle±pi/2 / +3pi/2 like slot-center-point.
+#
+# [ ] SKETCH-2.C5  slot-3point-arc / slot-center-arc caps use a fixed ±pi/2 that ignores
+#     sweep direction (BUG). curveHandlers.ts:288-294,:336-339. When the arc sweep flips
+#     (arcSA/arcEA swap at :277-279) the caps point tangentially along the slot arc instead
+#     of capping the ends → slot left open. Fix: derive cap orientation from the radial
+#     direction at each end and the signed sweep, not a hardcoded ±pi/2.
+#
+# [ ] SKETCH-2.C6  spline-control is NOT a control-point curve (GAP). curveHandlers.ts:451
+#     accumulates points; finalize (sketchEventHelpers.ts:27-40) builds a CatmullRom that
+#     INTERPOLATES every click. A true control-point spline treats clicks as a control hull
+#     the curve does NOT pass through. So 'spline' (fit) and 'spline-control' produce
+#     identical curves. Fix: real B-spline/Bezier (de Boor / de Casteljau) over the hull.
+#
+# [~] SKETCH-2.C7  blend-curve is G1 only; the G1/G2 toggle is cosmetic (GAP). curveEditing
+#     Handlers.ts:21-61 always builds a G1 (tangent-matched) cubic Bezier; blendCurveMode
+#     'g2' is shown in status text but never changes the math. Fix: implement G2 (curvature-
+#     matched) blend when mode==='g2', or remove the toggle.
+#
+# Verified-CORRECT drawing tools (no action): line/midpoint-line/construction/centerline/
+# point; rectangle 2pt/3pt/center; 2-point & center & 3-point circle (circumcenter2D);
+# center-point arc; polygon inscribed/circumscribed/edge (radius relationships correct);
+# ellipse / elliptical-arc (rotation + minor-dir correct); conic (rational Bezier, rho
+# classification correct). Latent traps noted: ellipse cx/cy store raw world x/y (dead,
+# renderer uses points[0]); conic has no rho->1 guard (UI presumably clamps).
+#
+# ══ PRIORITY ORDER (highest correctness impact first) ═════════════════════════
+#  1. B1 (radius/angle DOFs) — unblocks all radial/diameter/tangent/equal-circle work
+#  2. B3 + B8 (coincident pointIndices) — most-used constraint bonds wrong endpoints
+#  3. C3 (tangent-circle offset-plane) + C1 + C2 (wrong-side arcs) — visible geometry bugs
+#  4. B6 + B7 (DOF / over-constraint from Jacobian rank) — the data is computed, just discarded
+#  5. A2 + A3 (screen-space tolerance + snap priority) — snap "feel" vs Fusion
+#  6. C4 + C5 (slot caps), B5 (symmetric axis), A4/A6/A7 (snap coverage)
+#
+# VERIFICATION GATE per item: npx tsc --noEmit clean . npx vitest run green . manual QA
+#   in Claude Preview (localhost:5173). Plane-aware math via getSketchAxes->t1/t2.
