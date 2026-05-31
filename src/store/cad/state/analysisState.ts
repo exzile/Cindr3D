@@ -13,6 +13,11 @@ export interface ShellCommitOptions {
   removeFaces: ShellPickData[];
   /** Per-face wall-thickness overrides (Fusion "Individual Faces"). */
   faceThicknesses: (ShellPickData & { thickness: number })[];
+  /**
+   * When true, also remove tangent-connected neighbours of each selected face.
+   * Mirrors Fusion ShellFeatureInput.isTangentChain.
+   */
+  isTangentChain?: boolean;
 }
 
 export interface CADAnalysisState {
@@ -279,7 +284,19 @@ export interface CADAnalysisState {
     pullAxisDir: THREE.Vector3,
     draftAngle: number,
     fixedPlaneY: number,
-    options?: { faceIds?: number[]; neutralPlaneOrigin?: THREE.Vector3; neutralPlaneNormal?: THREE.Vector3 },
+    options?: {
+      faceIds?: number[];
+      neutralPlaneOrigin?: THREE.Vector3;
+      neutralPlaneNormal?: THREE.Vector3;
+      /** 'one-side' (default) | 'two-side' | 'symmetric'. Mirrors Fusion setSingleAngle/setTwoAngles. */
+      mode?: 'one-side' | 'two-side' | 'symmetric';
+      /** Second angle (degrees) for 'two-side' mode. Defaults to draftAngle. */
+      angle2?: number;
+      /** Negate the pull direction (Fusion isDirectionFlipped). */
+      isDirectionFlipped?: boolean;
+      /** Expand face selection to tangent neighbours (Fusion isTangentChain). */
+      isTangentChain?: boolean;
+    },
   ): void;
 
   // ── SLD14 — Offset Face ──────────────────────────────────────────────────
@@ -291,6 +308,9 @@ export interface CADAnalysisState {
 
   // ── SLD16 — Remove Face ──────────────────────────────────────────────────
   commitRemoveFace(featureId: string, faceNormal: THREE.Vector3, faceCentroid: THREE.Vector3): void;
+
+  // ── OCC-22.3 — Merge Faces ───────────────────────────────────────────────
+  commitMergeFaces(featureId: string): void;
 
   // ── OCC-15.1 — Hole (real OCC BRep cut) ─────────────────────────────────
   commitHole(featureId: string, params: Record<string, unknown>): void;
@@ -307,6 +327,13 @@ export interface CADAnalysisState {
     toolType: 'plane' | 'sketch' | 'face';
     toolId: string;
     isSplittingToolExtended: boolean;
+    planeOffset?: number;
+    /** OCC body ID of the splitting tool (face/body tool mode). */
+    splitToolOccBodyId?: string | null;
+    /** OCC face ID within the splitting tool body (face tool mode). */
+    splitToolOccFaceId?: number | null;
+    /** Feature ID of the splitting tool body in the feature list. */
+    splitToolFeatureId?: string | null;
   }): void;
 
   // ── SLD15 — Silhouette Split ─────────────────────────────────────────────

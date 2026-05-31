@@ -8,9 +8,10 @@ import { makeBRepBodyFromOccShape, type BRepBody } from '../brepBody';
 import { getOcc } from '../loader';
 import type { OccPlaneFrame } from '../plane';
 import { type SketchProfile, sketchProfileToWires, wireToFace } from './sketchToWire';
+import { runEdgeOpBuild } from './adjacency';
 
 type OccSweepApi = OcctRaw & {
-  BRepOffsetAPI_MakePipe_1: new (pathWire: unknown, profileFace: unknown) => { Build(progress: unknown): void; Shape(): unknown; delete(): void };
+  BRepOffsetAPI_MakePipe_1: new (pathWire: unknown, profileFace: unknown) => { Build(progress?: unknown): void; Shape(): unknown; delete(): void };
   BRepOffsetAPI_MakePipeShell_1: new (spine: unknown) => {
     SetMode_2(isFrenet: boolean): void;
     SetMode_3(fixedBinormal: unknown): void;
@@ -18,7 +19,7 @@ type OccSweepApi = OcctRaw & {
     SetMaxSegment(nbSegMin: number): void;
     SetTolerance(tol3d: number, boundTol: number, angTol: number): void;
     IsReady(): boolean;
-    Build(progress: unknown): void;
+    Build(progress?: unknown): void;
     IsDone(): boolean;
     Shape(): unknown;
     delete(): void;
@@ -94,12 +95,10 @@ export function occSweepWithInstance(
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const pipe = new occ.BRepOffsetAPI_MakePipe_1(pathWires.outerWire as any, profileFace);
-    const progress = new occ.Message_ProgressRange_1();
     try {
-      pipe.Build(progress);
+      runEdgeOpBuild(oc, pipe);
       resultShape = pipe.Shape();
     } finally {
-      progress.delete?.();
       pipe.delete();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (pathWires.outerWire as any).delete();
@@ -143,15 +142,13 @@ export function occSweepWithInstance(
       pipeShell.Add_2(guideWires.outerWire as any, true, true);
     }
 
-    const progress = new occ.Message_ProgressRange_1();
     try {
       const isReady = pipeShell.IsReady?.();
       if (isReady === false) throw new Error('[occSweep] MakePipeShell not ready — check spine/profile topology');
-      pipeShell.Build(progress);
+      runEdgeOpBuild(oc, pipeShell);
       if (!pipeShell.IsDone?.()) throw new Error('[occSweep] MakePipeShell Build failed');
       resultShape = pipeShell.Shape();
     } finally {
-      progress.delete?.();
       pipeShell.delete();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (pathWires.outerWire as any).delete();
@@ -212,12 +209,10 @@ export function occSweepFromPathWireWithInstance(
     if (!profileFace) throw new Error('[occSweep] failed to build profile face');
 
     const pipe = new occ.BRepOffsetAPI_MakePipe_1(pathWire, profileFace);
-    const progress = new occ.Message_ProgressRange_1();
     try {
-      pipe.Build(progress);
+      runEdgeOpBuild(oc, pipe);
       resultShape = pipe.Shape();
     } finally {
-      progress.delete?.();
       pipe.delete();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (profileFace as any).delete();
@@ -245,14 +240,12 @@ export function occSweepFromPathWireWithInstance(
       pipeShell.Add_2(options.guideWire, true, true);
     }
 
-    const progress = new occ.Message_ProgressRange_1();
     try {
       if (pipeShell.IsReady?.() === false) throw new Error('[occSweep] MakePipeShell not ready');
-      pipeShell.Build(progress);
+      runEdgeOpBuild(oc, pipeShell);
       if (!pipeShell.IsDone?.()) throw new Error('[occSweep] MakePipeShell Build failed');
       resultShape = pipeShell.Shape();
     } finally {
-      progress.delete?.();
       pipeShell.delete();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (profileWires.outerWire as any).delete();

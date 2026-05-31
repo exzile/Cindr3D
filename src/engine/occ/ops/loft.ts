@@ -9,6 +9,7 @@ import { makeBRepBodyFromOccShape, type BRepBody } from '../brepBody';
 import { getOcc } from '../loader';
 import type { OccPlaneFrame } from '../plane';
 import { type SketchProfile, sketchProfileToWires } from './sketchToWire';
+import { runEdgeOpBuild } from './adjacency';
 
 type OccLoftApi = OcctRaw & {
   BRepOffsetAPI_ThruSections_1: new (isSolid: boolean, ruled: boolean, pres3d: number) => {
@@ -16,7 +17,7 @@ type OccLoftApi = OcctRaw & {
     AddVertex(vertex: unknown): void;
     SetSmoothing(useSmoothing: boolean): void;
     CheckCompatibility(check: boolean): void;
-    Build(progress: unknown): void;
+    Build(progress?: unknown): void;
     IsDone(): boolean;
     Shape(): unknown;
     delete(): void;
@@ -90,9 +91,8 @@ export function occLoftWithInstance(
     for (const hw of wires.holeWires) (hw as any).delete();
   }
 
-  const progress = new occ.Message_ProgressRange_1();
   try {
-    loftMaker.Build(progress);
+    runEdgeOpBuild(oc, loftMaker);
     if (!loftMaker.IsDone()) {
       console.warn('[occLoft] BRepOffsetAPI_ThruSections.IsDone() = false');
       return null;
@@ -106,7 +106,6 @@ export function occLoftWithInstance(
     console.warn('[occLoft] threw during Build/Shape:', e);
     return null;
   } finally {
-    progress.delete?.();
     for (const w of builtWires) w.delete();
     loftMaker.delete();
   }

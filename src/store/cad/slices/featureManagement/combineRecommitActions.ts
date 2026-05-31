@@ -21,7 +21,7 @@ export function createCombineRecommitActions({ set, get }: CADSliceContext): Par
         get().setStatusMessage("Combine (edit): feature not found");
         return;
       }
-      const { operation, keepTools, targetId, toolId } = params;
+      const { operation, keepTools, isNewComponent = false, targetId, toolId } = params;
       const toolIds = params.toolIds?.length ? params.toolIds : [toolId];
       const targetFeature = features.find((f) => f.id === targetId);
       const toolFeatures = toolIds
@@ -85,6 +85,7 @@ export function createCombineRecommitActions({ set, get }: CADSliceContext): Par
                 ...f.params,
                 operation,
                 keepTools,
+                isNewComponent,
                 targetId,
                 toolId: toolIds[0],
                 toolIds,
@@ -96,7 +97,7 @@ export function createCombineRecommitActions({ set, get }: CADSliceContext): Par
           if (affectedParentIds.includes(f.id)) {
             const isNextParent = nextParentIds.includes(f.id);
             const shouldSuppress = isNextParent
-              ? !keepTools
+              ? !keepTools && !isNewComponent
               : parentIsHiddenByAnotherCombine(state.features, f.id, featureId);
             return { ...f, suppressed: shouldSuppress };
           }

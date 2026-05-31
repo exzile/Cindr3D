@@ -342,13 +342,104 @@
 #           exist. Pattern documented in memory/wasm_patterns.md (occDeref note).
 
 # ══════════════════════════════════════════════════════════════════════════════
+# COMPLETED — OCC-19: Modify/modeling-op binding-bug sweep (2026-05-30)
+# ══════════════════════════════════════════════════════════════════════════════
+# Second audit (4 review agents across all 33 OCC ops) for the same recurring
+# binding bug-classes fixed in OCC-17/18, now in the NON-fillet/chamfer modeling
+# ops. The 0-arg-Build rule proved UNIFORM across the BRepBuilderAPI_MakeShape
+# hierarchy. Two commits: b784808, b59ca4a. tsc clean, OCC suite (52) green.
+# [x] 19.1  Build(progress) -> runEdgeOpBuild (0-arg in this build) in the modeling
+#           ops: revolve.ts (MakeRevol x2), shell.ts (MakeThickSolid x2), sweep.ts
+#           (MakePipe/MakePipeShell x4), loft.ts (ThruSections), pattern.ts (Fuse).
+#           runEdgeOpBuild is a strict superset (tries Build(progress), falls back to
+#           Build() only on "expected 0 args") → zero-regression. Smoking gun:
+#           thicken.ts already used bare prism.Build() for the same base class.
+# [x] 19.2  booleanBase.ts propagateBooleanIds: removed newFace.delete?.() —
+#           newFace = TopoDS.Face_1(modShape) is a VIEW (same ptr) deleted right after
+#           via modShape.delete?.() → double-free on every boolean that remapped a face.
+# [x] 19.3  extrude.ts applyDraftAngle (taperAngle!=0 path): full draft.ts bug set on a
+#           path that missed OCC-18 — DraftAngle_1->_2 ctor, 4-arg Add -> 5-arg (Flag),
+#           Build(progress)->runEdgeOpBuild, AND explorer.Current() owned copy +
+#           Face_1 VIEW use-after-free/double-free (split into ownedFaceCopies). Tapered
+#           extrude was fully broken/crashing; non-tapered unaffected (early-return guard).
+# [x] 19.4  sliceSketch.ts occSliceSketch: edgeShape=Current() owned + Edge_1 VIEW were
+#           never freed → per-edge heap leak. Wrapped loop in try/finally freeing the
+#           owned copy on all continue paths.
+# [x] 19.5  Cleared agent false-positives w/ reasoning: offsetFaces Value().delete()
+#           (owned gp_Pnt copy), scale/mirror (Shape() consumed before maker delete),
+#           transform.ts (binding returns owned copy — backs working off-origin
+#           primitives + 2-sided extrude). draft/helix/booleanCore/unify clean.
+# [x] 19.6  Broad re-scan (whole src) of BRepAdaptor_Surface_2 sites caught TWO more
+#           type-strict cast misses (the first agent wrongly called BRepAdaptor "shape-
+#           ok"; OCC-18 offsetFaces proved it type-strict): thicken.ts computeBodyNormal
+#           (uncast Current() → threw → normal stuck at [0,0,1] fallback → thicken always
+#           extruded along +Z, wrong for non-XY surfaces; also dropped a VIEW delete) and
+#           fillet.ts computeChordLengthRadius (uncast Current() → normals empty → chord-
+#           length fillet always used the 90° fallback, never the true dihedral). Both
+#           fixed with occ.TopoDS.Face_1 cast. Commit: <thicken+fillet>.
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OPEN — Test & lint debt surfaced during OCC-19 audit
+# ══════════════════════════════════════════════════════════════════════════════
+# [x] TEST-1  9 pre-existing vitest failures across 5 files — all fixed (commit ff3ea5f):
+#             edgeModHelpers.test.ts: mocked getSelectableEdges (OCC-17 changed from
+#               computeEdgeAnchor); kind='circle'/'line' now controls the round-seed guard.
+#             occStepIO.test.ts: (1) added Message_ProgressRange_1 to mock oc + corrected
+#               rawShapeDeletes→0 (VIEW not deleted); (2) fixed real code bug: reader leaked
+#               on ReadFile failure (early return before catch); (3) reordered assertion
+#               after dispose() since reader is an ownedResource.
+#             occTopologySupport.test.ts: assignTopologyIds no longer deduplicates ids map
+#               (only byPtr); updated expected keys [1,2]→[1,2,3].
+#             occSnapshot.test.ts: mocked loader returning null; added null-guard to
+#               restoreOccSnapshot so it bails without clearing registry when OCC unavailable.
+#             ExtrudeCommitActions.test.ts: mocked OCC loader + extrude + boolean + tessellate
+#               + registeredMesh + buildSingleProfileOccBooleanExtrudeMesh; flag controls
+#               join-success vs new-body-promotion per test scenario.
+# [x] LINT-2  sliceSketch.ts: replaced oc:any + 9 local any + curve:any with typed
+#             OccSliceApi interface (gp_Pnt_3/Dir_4/Ax3_2/Pln_2, MakeFace_1, Section_3,
+#             TopExp_Explorer_2, TopoDS.Edge_1, BRep_Tool.Curve_2). Zero any remaining.
+#             Same pattern as draft.ts/fillet.ts. Commit ff3ea5f.
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OCC-20: Shell/Draft/Scale/Combine vs Fusion 360 SDK parity audit (2026-05-30)
+# ══════════════════════════════════════════════════════════════════════════════
+# Cross-referenced each engine op + dialog against the matching Fusion *FeatureInput.h.
+# [x] 20.1  SCALE — non-uniform ignored the scale center + commitScale hardcoded (0,0,0)
+#           so the dialog's "Body Centroid" refPoint (the DEFAULT) did nothing. Fixed
+#           end-to-end: nonUniformScale honors center via GTrsf SetTranslationPart(C·(1−s));
+#           commitScale threads refPoint and computes world bbox center. Commit 43e0607.
+#           Fusion ScaleFeatureInput parity now: point ✓, isUniform ✓, setToNonUniform ✓.
+# [x] 20.2  DRAFT — DraftDialog Mode (one-side/two-side/symmetric) was dead. Fixed in
+#           commit 6773314: engine classifies each face by neutral-plane centroid position,
+#           applies angleRad to "above" faces and -angleRad2 / -angleRad (symmetric) to
+#           "below" faces. DraftDialog wires mode + new "Angle 2" input (visible in two-side
+#           mode only). Mirrors Fusion setSingleAngle(isSymmetric) / setTwoAngles(a1,a2).
+# [x] 20.3  DRAFT — isTangentChain and isDirectionFlipped now wired. Flip negates gp_Dir
+#           before OCC call. TangentChain calls expandTangentFaceChain (BFS over body faces
+#           comparing BRepAdaptor_Surface_2 D1 normals at UV midpoints). Both exposed in
+#           DraftDialog as checkboxes. Commit 6773314.
+# [x] 20.4  SHELL — isTangentChain wired. ShellDialog's tangentChain toggle existed but
+#           buildOpts() never passed it to commitShell → occShellWithInstance never saw it.
+#           Fixed: buildOpts() includes isTangentChain; engine calls expandTangentFaceChain
+#           before building the TopTools_ListOfShape. Commit 6773314.
+# [x] 20.5  COMBINE — isNewComponent checkbox added to CombineDialog. When true, input
+#           bodies are not suppressed/disposed; result body sits alongside the originals.
+#           Wired through commitCombine + recommitCombine. Commit 6773314.
+# NEW FILE: src/engine/occ/ops/faceAdjacency.ts — expandTangentFaceChain (shared by
+#   draft + shell): BFS expanding a face seed set to tangent neighbours (|n1·n2|≥cos(10°))
+#   via BRepAdaptor_Surface_2.D1 → D1U×D1V normal computation.
+
+# ══════════════════════════════════════════════════════════════════════════════
 # OPEN — Fillet/Chamfer manual QA (not automatable in preview harness)
 # ══════════════════════════════════════════════════════════════════════════════
 # [ ] QA-1  Live red-flash pulse: interactive 3D — pick the bottom edge near a
 #           fillet, dial chamfer past its limit → edge flashes red + toast appears
-#           (data path verified; on-screen pulse needs a genuine 3D edge pick).
-# [ ] QA-2  Decimal entry in the live Chamfer/Fillet dialog (type ".25", "1.5").
-# [ ] QA-3  Rolling-ball corner output vs Fusion (OCC-13.4 carry-over).
+#           (data path verified in browser eval; on-screen pulse needs a 3D edge pick).
+# [x] QA-2  Decimal entry: NumberInput rewritten type=text/inputMode=decimal + draft
+#           buffer (src/components/dialogs/solid/edgeDialog/NumberInput.tsx); ".25",
+#           "0.", "1.5" all accepted without fallback snap. Shipped in OCC-17.
+# [ ] QA-3  Rolling-ball corner output vs Fusion (OCC-13.4 carry-over; documented as
+#           ROUND-TRIP-ONLY in parity matrix — OCC computes this automatically).
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SDK reference (Fusion 360 BRep topology headers)
@@ -357,3 +448,211 @@
 #                    geometry()→Curve3D, length(), isDegenerate, pointOnEdge()
 # BRep/BRepFace.h  — edges(), vertices(), geometry()→Surface, area(), centroid()
 # BRep/BRepBody.h  — concaveEdges(), convexEdges(), isSolid, volume(), area()
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OCC-21: Modify-tool Fusion parity — stub completion + semantic fixes (2026-05-30)
+# ══════════════════════════════════════════════════════════════════════════════
+# AUDIT (this branch): offset-face / replace-face / direct-edit / texture-extrude /
+#   split-face / split-body / silhouette-split cross-referenced against the matching
+#   Fusion *FeatureInput.h headers. Findings: 1 real geometry bug (fixed), 4 outright
+#   stubs that record a Feature + params but emit NO geometry, 1 mislabeled tool, and
+#   1 limited tool. All required OCC bindings confirmed present in the WASM build:
+#   BRepFeat_SplitShape, BRepAlgoAPI_Splitter, BRepFeat_MakePrism, BRepProj_Projection,
+#   BRepAlgoAPI_Section.
+#
+# Reference param models (Fusion SDK):
+#   OffsetFacesFeatureInput.h  — faces[], distance(+normal dir), targetBaseFeature
+#   ReplaceFaceFeatureInput.h  — sourceFaces[], targetFaces(surface/plane/body),
+#                                isTangentChain(default true)
+#   SplitFaceFeatureInput.h    — facesToSplit[], splittingTool(body/plane/face/sketch),
+#                                isSplittingToolExtended, splitType enum:
+#                                {surfaceIntersection(default), alongVector, closestPoint}
+#   SplitBodyFeatureInput.h    — splitBodies(body|collection), splittingTool(SINGLE
+#                                body/plane/profile/face), isSplittingToolExtended
+#   SilhouetteSplitFeatureInput.h — targetBody, viewDirection(axis/edge/face/plane),
+#                                operation enum: {FacesOnly, ShelledBody, SolidBody}
+#
+# [x] 21.0  OFFSET FACE — reversed-normal bug FIXED (commit a797e6e). sampleFaceNormal
+#           used the raw parametric normal (D1U×D1V) and ignored topological orientation,
+#           so +distance on a TopAbs_REVERSED face pushed inward (cut) instead of outward.
+#           Now negates on REVERSED via enumEq(rawFace.Orientation_1(), TopAbs_REVERSED),
+#           matching geomSurface.ts / tessellate.ts. tsc+eslint clean, 93 OCC tests pass.
+#
+# ── 21.1  DIRECT EDIT (highest value / lowest risk) ───────────────────────────────
+#   Current: src/store/.../surfaceUi/faceFeatureDialogActions.ts commitDirectEdit is a
+#     @stub — warns + adds a 'direct-edit' Feature, emits NO geometry. DirectEditDialog
+#     has modes {offset-face, extrude, taper}, distance, tapAngle. DirectEditFacePicker
+#     stores ONLY a centroid string (setDirectEditFace(centroid.join(','))) — no body
+#     feature id, no OCC face id.
+#   Goal: route to EXISTING tested engine ops (no new geometry code):
+#     - mode 'offset-face' AND 'extrude' -> occOffsetFacesWithInstance(oc,body,[faceId],dist)
+#       (offsetFaces already does prism + fuse/cut = press-pull; +dist grows, -dist cuts)
+#     - mode 'taper' -> occDraftWithInstance with the picked face as draft face, neutral
+#       plane = face plane (sketchPlaneFromFace), pull = face normal, angle = tapAngle
+#   [ ] 21.1a Picker: capture body + OCC face. Mirror shellRemoveFaceData — store
+#             {centroid, normal, brepBodyId, featureId}. Resolve OCC face id with
+#             findOccFaceIdByCentroid(tess, centroid) (same as commitShell).
+#   [ ] 21.1b commitDirectEdit: resolve srcMesh/brepBodyId/srcBody like commitOffsetFace;
+#             dispatch by mode to occOffsetFacesWithInstance / occDraftWithInstance;
+#             createRegisteredOccMesh; replace feature mesh; disposeMeshDeferred(srcMesh);
+#             pushUndo(); featureKind:'direct-edit'.
+#   [ ] 21.1c Tests: offset-face grows volume, extrude == offset-face, taper changes
+#             face angle; reuse occ test-mock pattern from ExtrudeCommitActions.test.ts.
+#   Files: faceFeatureDialogActions.ts, DirectEditFacePicker.tsx, DirectEditDialog.tsx
+#     (already wired in ActiveDialog), state/workflowState.ts (picker payload type).
+#
+# ── 21.2  SPLIT FACE ─────────────────────────────────────────────────
+#   Current: commitSplitFace is a @stub. SplitFaceDialog picks faceId + splittingTool
+#     {sketch, plane, surface}. SplitFacePicker stores centroid string only.
+#   Goal: NEW engine op src/engine/occ/ops/splitFace.ts using BRepFeat_SplitShape:
+#     - Resolve the tool to projected edges/wires ON the target face:
+#         . sketch  -> sketchToWire (existing) -> BRepProj_Projection onto the face
+#         . plane   -> BRepAlgoAPI_Section(face, plane) -> section edges
+#         . surface -> BRepAlgoAPI_Section(face, surfaceBody) -> section edges
+#     - BRepFeat_SplitShape(body); .Add(edge, face) per split edge; Build();
+#       return Shape() (body keeps same volume, target face now imprinted/subdivided).
+#   Fusion parity: implement splitType — default surfaceIntersection; alongVector
+#     (project tool along a direction entity via BRepProj_Projection direction overload);
+#     closestPoint (project sketch curve to nearest point). Honor isSplittingToolExtended
+#     (extend section/plane to fully cross the face).
+#   [ ] 21.2a splitFace.ts engine op (+ owned/VIEW lifetime notes; runEdgeOpBuild for Build)
+#   [ ] 21.2b Picker captures body+OCC face; commit resolves tool geom + calls op
+#   [ ] 21.2c Tests: box top face split by a plane -> face count +1, volume unchanged
+#   Bindings: BRepFeat_SplitShape, BRepProj_Projection, BRepAlgoAPI_Section.
+#
+# ── 21.3  REPLACE FACE (most complex) ───────────────────────────────────
+#   Current: commitReplaceFace is a @stub. ReplaceFacePanel does 2-step source/target
+#     face pick (stores opaque centroid ids). No isTangentChain.
+#   Goal: NEW engine op src/engine/occ/ops/replaceFace.ts. Approach (BRepAlgoAPI_Splitter
+#     / sew): take source faces off the body, extend the target surface/plane so it fully
+#     intersects the body, then rebuild the solid bounded by the new surface:
+#     - Build a halfspace/trim from targetFaces (surface body or construction plane).
+#     - BRepAlgoAPI_Splitter(body, tool) -> pick the solid piece on the keep side, OR
+#       BRepBuilderAPI_Sewing to swap the face and re-solidify.
+#   Fusion parity: sourceFaces[] all on same body; targetFaces = surface/plane/body;
+#     isTangentChain (default TRUE) -> expandTangentFaceChain on sourceFaces before op.
+#   [ ] 21.3a replaceFace.ts engine op
+#   [ ] 21.3b ReplaceFacePanel: capture body + OCC face ids for source set + target;
+#             add isTangentChain toggle (default on)
+#   [ ] 21.3c commitReplaceFace wires op; tests (planar face replaced by tilted plane)
+#   Bindings: BRepAlgoAPI_Splitter, BRepBuilderAPI_Sewing, BRepAlgoAPI_Section.
+#
+# ── 21.4  SPLIT BODY (generalize) + TRUE SILHOUETTE SPLIT ───────────────────
+#   Current SPLIT BODY: commitSplitBody (splitBodyActions.ts) only origin XY/XZ/YZ planes,
+#     offset hardcoded 0, sketch/face tools rejected. Engine occPlaneSplitBodies already
+#     accepts an offset — just not exposed.
+#   [ ] 21.4a SplitBodyDialog: add plane-offset field; thread offset -> commitSplitBody ->
+#             occPlaneSplitBodies (drop the hardcoded 0). Low risk.
+#   [ ] 21.4b Generalize splittingTool to a picked face/surface/sketch (not just named
+#             principal planes): resolve tool -> cutting surface, use BRepAlgoAPI_Splitter
+#             to divide the body into all resulting solids (not just 2 halfspaces).
+#   [ ] 21.4c Honor isSplittingToolExtended (extend tool surface to bbox before split).
+#
+#   Current SILHOUETTE SPLIT: WRONG SEMANTICS. SilhouetteSplitDialog is titled
+#     "Split Body" and commitSilhouetteSplit performs a PLANAR halfspace cut identical
+#     to Split Body — NOT a silhouette split. Fusion's silhouette split computes the
+#     body's silhouette curves as seen along viewDirection (where the surface is tangent
+#     to the view ray — e.g. a cylinder's two outline lines) and splits faces there.
+#   [ ] 21.4d Rename current dialog/action away from "silhouette" (it IS a planar split
+#             body — fold into 21.4a/b or label "Planar Split"). REMOVE the misnomer.
+#   [ ] 21.4e Implement REAL silhouette split: derive silhouette edges via per-face
+#             tangency to the view direction (surface normal perpendicular to viewDir
+#             locus), or HLRBRep if a usable binding exists; imprint via
+#             BRepFeat_SplitShape. operation enum: FacesOnly | ShelledBody | SolidBody.
+#             NOTE: largest/most research-heavy item — may need its own spike.
+#
+# ── 21.5  TEXTURE EXTRUDE (lowest priority) ──────────────────────────────
+#   Current: commitTextureExtrude is a @stub. Fusion's Texture is a repeating
+#     emboss/deboss pattern on a face. Implement as a tiled prism boolean array over the
+#     face (pattern of small extrusions fused/cut), or document as out-of-scope.
+#   [ ] 21.5a Decide scope (real pattern-extrude vs defer). If building: tile face UV,
+#             build prism per cell, batch-boolean. Heavy; gate behind perf budget.
+#
+# VERIFICATION GATE for every 21.x item: npx tsc --noEmit clean . npx eslint <files> .
+#   npx vitest run src/engine/occ src/store/cad/slices stays green . add op-level test.
+#   Per CLAUDE.md: run gitnexus_impact on any edited symbol; new engine code in
+#   engine/occ/ops/ (never the shim); honor VIEW-vs-owned .delete() rules; use
+#   runEdgeOpBuild for all Build() calls.
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OCC-22: Move / Align / MergeFaces — geometry-application gaps (2026-05-30)
+# ══════════════════════════════════════════════════════════════════════════════
+# Second audit sweep (modify-tool follow-up). Found via tracing every commit action
+# for "adds a Feature but never applies geometry". The 4 stubs are OCC-21; these are
+# additional, distinct defects.
+#
+# ── 22.1  MOVE / COPY non-primitive body is a NO-OP (real bug) ────────────────────
+#   src/components/dialogs/solid/MoveBodyDialog.tsx handleApply:
+#     - primitive target  → updateFeatureParams(x/y/z/rx/ry/rz)  ✓ works (OCC rebuilds
+#       from params)
+#     - ANY OTHER body (extrude/revolve/sweep/loft/imported/OCC) → just addFeature() an
+#       'import' feature with params {isMoveBody:true, moveType, dx,dy,dz, rx,ry,rz, copy}.
+#       NOTHING consumes those params: grep shows `isMoveBody` is read ONLY by
+#       panels/timeline/editDialogFor.ts (maps the edit button back to the dialog).
+#       → The body never moves; copy never duplicates geometry. Effectively dead.
+#   Fusion MoveFeatureInput parity: free-move (transform), point-to-point, rotate, and
+#   "create copy". Reference: Features/MoveFeatureInput.h.
+#   [ ] 22.1a Implement a real move/copy commit for mesh + OCC bodies. Build a Matrix4
+#             from (dx,dy,dz, rx,ry,rz) the same way commitAlign does; for OCC bodies
+#             transform the BRep via BRepBuilderAPI_Transform (gp_Trsf SetValues / compose
+#             rotation+translation) and re-register a fresh brepBodyId (mirror.ts /
+#             scale.ts are the reference); for plain THREE meshes clone-geometry +
+#             applyMatrix4 (commitAlign mesh branch is the reference). copy=true → new
+#             Feature with a new id; copy=false → replace mesh + dispose old.
+#   [ ] 22.1b Recompute boolean dependents (recomputeBooleanDependents) like alignActions.
+#   [ ] 22.1c Tests: move extrude body by (10,0,0) shifts its bbox; copy adds a 2nd body;
+#             OCC body keeps a valid brepBodyId at the new pose (filletable afterwards).
+#
+# ── 22.2  ALIGN leaves the OCC BRep at the old pose (consistency bug) ─────────────
+#   src/store/.../meshTransform/alignActions.ts commitAlign: for a mesh-backed body it
+#   clones srcMesh.geometry, applyMatrix4(M), builds newMesh, and copies userData
+#   (INCLUDING brepBodyId) — but never transforms the underlying OCC BRepBody in
+#   globalBRepBodyRegistry. Result: the visual mesh moves while the registered OCC body
+#   stays put, so a later fillet/chamfer/combine runs on stale geometry (wrong position)
+#   and the body visually snaps back to the old pose.
+#   [ ] 22.2a When feature.mesh.userData.brepBodyId is set, transform the OCC body via
+#             BRepBuilderAPI_Transform(srcBody.shape, gp_Trsf(M)) → makeBRepBodyFromOccShape
+#             → createRegisteredOccMesh, and assign the NEW brepBodyId (do not copy the
+#             old one). Fall back to the current mesh-only path for non-OCC bodies.
+#   [ ] 22.2b Test: align an OCC box onto a target face, then fillet an edge → fillet
+#             result sits at the aligned pose (not the original).
+#   NOTE: 22.1a and 22.2a share an "OCC-transform-and-reregister" helper — extract one
+#         (e.g. occTransformBodyWithInstance(oc, body, mat4)) in engine/occ/ops/ and use
+#         it from both move and align.
+#
+# ── 22.3  MERGE FACES (solid) — Fusion parity gap (low priority) ──────────────────
+#   Fusion MergeFacesFeatureInput.h: merge selected adjacent coplanar/tangent faces of a
+#   SOLID into one face (topology simplification). We only have SURFACE merge
+#   (surfaceCreationActions setSurfaceMergeFace1/2 — stitches two surface faces). No
+#   solid MergeFaces tool exists.
+#   [ ] 22.3a Decide scope. If building: BRepFeat / ShapeUpgrade_UnifySameDomain over the
+#             selected faces (unifyShape.ts already wraps UnifySameDomain — reuse it,
+#             restricted to the picked faces) → fewer faces, identical solid.
+#
+# VERIFICATION GATE: same as OCC-21 (tsc clean, eslint, vitest src/engine/occ +
+#   src/store/cad/slices green, op-level test, gitnexus_impact before editing symbols).
+
+# ══════════════════════════════════════════════════════════════════════════════
+# OCC-23: Offset Face dialog — dead control + multi-face parity (2026-05-30)
+# ══════════════════════════════════════════════════════════════════════════════
+# Found during the third audit sweep (modify-dialog "collected-but-not-applied" class,
+# same family as the now-fixed Shell tangentChain and Direct Edit modes).
+# Engine (offsetFaces.ts) is correct as of OCC-21.0 (reversed-normal fix). These are
+# DIALOG-side gaps in OffsetFaceDialog.tsx.
+#
+# [x] 23.1  DEAD "Extent" control. The dialog offers Extent = {Distance, All} and writes
+#           it into params, but handleOK calls commitOffsetFace(body, signedDist,{faceIds})
+#           and NEVER passes extent — so "All" does nothing. Fusion OffsetFaces is purely
+#           distance-based (no "extent" concept). FIX: remove the Extent dropdown (it is a
+#           fabricated non-functional control), or repurpose it only if a real semantic is
+#           defined. Lowest-risk = delete the control + the extent param.
+# [x] 23.2  SINGLE-FACE limit. faceIds = offsetOccFaceId!==null ? [offsetOccFaceId] : [].
+#           Fusion OffsetFacesFeatureInput.faces() is a multi-face vector and the engine
+#           occOffsetFacesWithInstance already loops over faceIds[]. FIX: let the picker
+#           accumulate a face SET (mirror shellRemoveFaceIds/Data) and pass all OCC face
+#           ids. UI: show "N faces selected" + a clear button.
+# [x] 23.3  While here, sweep the other modify dialogs for the same pattern (a useState
+#           value that reaches updateFeatureParams but never the geometry commit). Known
+#           clean after fixes: Shell, Draft, Combine, Scale. Spot-checked clean: Hole,
+#           Thread, Rib, Web, Emboss, Pipe, Coil, BoundaryFill. Re-verify any dialog
+#           touched by OCC-21/22 work.

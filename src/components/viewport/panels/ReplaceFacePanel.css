@@ -91,6 +91,26 @@
   flex-shrink: 0;
 }
 
+.replace-face-panel__options {
+  padding: 0 14px 10px;
+}
+
+.replace-face-panel__option-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--panel-text, #cdd6f4);
+}
+
+.replace-face-panel__option-label input[type='checkbox'] {
+  accent-color: #2196f3;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
 .replace-face-panel__footer {
   display: flex;
   gap: 8px;

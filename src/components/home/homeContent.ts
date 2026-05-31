@@ -79,7 +79,7 @@ import {
 export const workflows = [
   {
     title: 'Design',
-    copy: 'Sketch parts, build parametric features, organize components, and export models from a browser-based CAD workspace.',
+    copy: 'Sketch parts, build OCC-backed parametric features, organize components, and export models from a browser-based CAD workspace.',
     image: '/help/help-design-overview.png',
     color: '#7c3aed',
     sections: [
@@ -96,9 +96,9 @@ export const workflows = [
         label: 'Solid modeling',
         items: [
           'Parametric model library for Gridfinity bins, insert bosses, brackets, project boxes, clips, and gear blanks',
-          'Extrude, revolve, sweep, and loft from closed sketches',
-          'Shell, fillet, chamfer, draft, and taper operations',
-          'Non-destructive boolean union, subtract, and intersect with editable parent links',
+          'Profile-aware extrude, revolve, sweep, and loft from closed sketches',
+          'Topology-aware shell, fillet, chamfer, draft, offset-face, and taper operations',
+          'OCC boolean union, subtract, and intersect with editable parent links',
           'Mirror and pattern (linear, circular) for repeated geometry',
         ],
       },
@@ -244,8 +244,8 @@ export const featureGroups = [
     icon: Shapes,
     summary: 'Parametric CAD tools for creating printable parts directly in the browser.',
     details: [
-      { icon: PenLine, title: 'Constraint-based 2D sketcher', body: 'Dimensions, coincident, tangent, parallel, perpendicular, equal, and projection constraints. Improved tangent-arc solving, construction geometry, sketch references projected from 3D faces, and a fully keyboard-navigable constraint toolbar.' },
-      { icon: Box, title: 'Solid modeling operations', body: 'Extrude, revolve, sweep, loft, shell, rib, split, draft, hole, thread, chamfer, and fillet — all stored as non-destructive timeline entries. Each feature is individually editable; change a sketch and all downstream geometry recomputes.' },
+      { icon: PenLine, title: 'Constraint-based 2D sketcher', body: 'Dimensions, coincident, tangent, parallel, perpendicular, equal, and projection constraints. Profile-region selection lets rectangles, circles, and nested loops drive the exact extrusion region you choose.' },
+      { icon: Box, title: 'OCC-backed solid modeling', body: 'Extrude, revolve, sweep, loft, shell, rib, split, draft, hole, thread, chamfer, and fillet now route through OpenCascade-backed B-rep operations where available, preserving real circular edges and editable timeline entries.' },
       { icon: BookOpen, title: 'Parametric model library', body: 'Ready-to-configure parametric starters for Gridfinity bins, insert bosses, snap-fit clips, bracket pairs, project enclosure boxes, cable clips, gear blanks, and knurled knobs — drop one on the timeline and tune it with typed dimensions.' },
       { icon: Wrench, title: 'Thread presets', body: 'Helix-based thread geometry with configurable pitch, length, class (1A/2A/3A), and handedness. Generates clean printable threads for M2–M12 hardware — no post-processing, no chasing required.' },
       { icon: History, title: 'Feature timeline and component tree', body: 'Full parametric history with rollback, reorder, and suppression. Component tree with visibility toggling, per-body grouping, material assignments, color overrides, named views, and arbitrary section planes for inspection.' },
@@ -260,7 +260,7 @@ export const featureGroups = [
       { icon: GitBranch, title: 'Named design configurations', body: 'Save unlimited parameter snapshots with per-variant feature suppression. Switch configurations from the ribbon, capture the current state, rename, delete, or export a manifest — useful for "standard / lightweight / reinforced" print variants of the same model.' },
       { icon: Scan, title: 'Mesh repair reports', body: 'Analyzes imported geometry for vertex count, triangle count, duplicate vertices, open boundary edges, non-manifold edges, and degenerate (zero-area) faces before the mesh touches the timeline.' },
       { icon: Wand2, title: 'Repair actions', body: 'Duplicate-vertex welding, normal recompute, normal flip, and full STL import healing — applied individually or in one batch pass. Each repair step is recorded and can be rolled back.' },
-      { icon: GitMerge, title: 'Non-destructive booleans', body: 'Union, subtract, and intersect operations retain editable parent links. Edit either input body and the boolean result recomputes instantly. Intersect supports partial overlaps via the csgIntersect overlap algorithm.' },
+      { icon: GitMerge, title: 'Topology-preserving booleans', body: 'Union, subtract, and intersect operations retain editable parent links while preserving OCC source bodies for downstream fillets, chamfers, offsets, splits, and save/reload reconstruction.' },
       { icon: Copy, title: 'Mirror and pattern tools', body: 'Linear arrays (X/Y/Z count + spacing), circular arrays (axis + count), and mirror across any sketch plane or planar face. All patterns are timeline entries — change the seed feature and the whole array updates.' },
     ],
   },
@@ -454,7 +454,7 @@ export const stats = [
   { value: '29', label: 'AI / MCP tools', sub: 'CAD · Slicer · Printer' },
   { value: '100%', label: 'Browser-native', sub: 'No install · No cloud' },
   { value: 'MIT', label: 'Open source license', sub: 'Fork · Extend · Self-host' },
-  { value: 'WASM', label: 'In-browser slicing', sub: 'No upload required' },
+  { value: 'OCC', label: 'CAD kernel', sub: 'B-rep modeling in browser' },
 ];
 
 export const whyItems = [
@@ -545,85 +545,84 @@ export const faqs = [
 
 export const latestReleaseHighlights = [
   {
+    icon: Cpu,
+    label: 'OCC modeling core',
+    detail: 'The Design workspace now uses an OpenCascade-backed B-rep foundation for the major solid workflows. Extrude, revolve, sweep, loft, booleans, primitives, split, shell, draft, offset faces, fillet, and chamfer all preserve richer topology for downstream edits.',
+  },
+  {
     icon: Crosshair,
-    label: 'Calibration Center',
-    detail: 'Card-based calibration hub on the 3D Printer page covering nine test types: first layer, flow rate, temperature tower, retraction, pressure advance, input shaper, dimensional accuracy, max volumetric speed, and firmware health checks. Status badges roll up from the calibration aging tracker.',
+    label: 'Topology-aware edge selection',
+    detail: 'Fillet and chamfer edge picking moved away from mesh-crease guessing toward selectable OCC edge metadata, with stable edge anchors, circular-edge handling, tangent-chain awareness, and live validity probes before a feature is committed.',
   },
   {
-    icon: ListChecks,
-    label: 'Guided calibration wizard with in-wizard 3D preview',
-    detail: 'Seven-step flow — pick printer → pick filament (or quick-create a spool) → setup check → load model → slice with calibration presets → queue → monitor → inspect → apply and save. The slice step renders the full 3D toolpath with interactive hoverable tuning planes: each Z band where a parameter changes (temperature, PA, fan, flow) appears as a translucent plane showing the exact value transition.',
-  },
-  {
-    icon: Sliders,
-    label: 'Calibration slice presets',
-    detail: 'Auto-configured G-code profiles for every calibration test type. Presets are scaled to the active printer\'s nozzle diameter and profile layer height at load time so the test geometry is always correctly proportioned.',
+    icon: Box,
+    label: 'Profile-aware extrude',
+    detail: 'Sketches with multiple closed regions can now drive the intended result: select the outer region for a plate with holes, select inner regions independently, or cut nested profiles without the operation blindly extruding every loop together.',
   },
   {
     icon: ShieldCheck,
-    label: 'Firmware-safe apply + rollback',
-    detail: 'Per-firmware command sets for Klipper (SET_PRESSURE_ADVANCE, SHAPER_CALIBRATE, SAVE_CONFIG), Marlin (M900, M303, EEPROM), and Duet (PA config.g). Every write goes through snapshot → diff → typed confirm → one-click rollback.',
+    label: 'Reliable project reloads',
+    detail: 'Native DZND saves now carry OCC body metadata, selected profile regions, feature parameters, edge-modification inputs, and reconstruction data needed to restore extrudes, cuts, fillets, chamfers, and downstream body operations after refresh.',
   },
   {
-    icon: LayoutGrid,
-    label: 'Customizable dashboard grid',
-    detail: 'The printer dashboard is now a fully drag-and-resize panel grid. Rearrange temperature, macros, camera, bed compensation, job progress, and other panels by dragging. Resize any panel. Hide panels you don\'t use. Layout persists per printer across sessions.',
+    icon: Move,
+    label: 'Expanded direct-edit tools',
+    detail: 'Offset faces, draft, shell tangent-chain behavior, split and replace face, move, align, merge faces, scale, combine, and primitive creation received OCC-backed implementation work so more edits operate on the source body instead of flattened mesh fallbacks.',
   },
   {
-    icon: FlaskConical,
-    label: 'Firmware health + max volumetric speed generators',
-    detail: 'Two new G-code generators: firmware health check emits a structured diagnostic sequence that surfaces misconfigured limits, step rates, and thermistor readings; max volumetric speed ramps extrusion rate across bands to find the flow ceiling for a given filament and nozzle.',
+    icon: History,
+    label: 'Modern compact timeline',
+    detail: 'The Design timeline was restyled for denser scanning, clearer feature state, and easier editing. Timeline entries now better reflect reconstructed OCC features and the tool dialogs they can reopen.',
   },
   {
-    icon: Bell,
-    label: 'G-code toast + printer alerts',
-    detail: 'Inline toast notifications surface G-code responses, macro completions, and firmware warnings without covering the dashboard. A dedicated PrinterAlerts strip shows persistent alerts (thermal runaway, min-temp, driver faults) with dismiss and detail actions.',
-  },
-  {
-    icon: LayoutGrid,
-    label: 'Bed compensation panel overhaul',
-    detail: 'Full 3D mesh deviation visualization with per-point deviation heatmap and mesh statistics. Trigger a full bed probe via a guarded confirm modal with a "home axes first" option — the bed is never probed without explicit confirmation. Per-point re-probe and CSV export of the current mesh.',
-  },
-  {
-    icon: Scan,
-    label: 'Height map visualization overhaul',
-    detail: 'Redesigned interactive probing visualization with gradient heatmap, contour lines, per-point deviation tooltip, and a configurable deviation scale. Exports the mesh as CSV or triggers a fresh probing sequence directly from the panel.',
+    icon: Scissors,
+    label: 'Sketch cleanup controls',
+    detail: 'Selected sketch entities can be deleted with Delete or Backspace, or from the context menu, helping users clean up profiles before extrude, cut, revolve, or sketch-driven feature creation.',
   },
   {
     icon: Code2,
-    label: 'Post-processors tab — 8 layer processor types',
-    detail: 'Full layer-processor system in the slicer profile editor with 8 types: change settings at Z, pause at Z, filament change at Z, tuning tower (parameter ramp across Z bands), search & replace (regex), timelapse capture command injection, custom G-code at Z, and print from height. Processors compose and each is independently enabled or disabled per profile.',
+    label: 'Search-ready public site',
+    detail: 'The hosted site now ships canonical route metadata, sitemap and robots files, static route rewrites, Bing verification, and Azure Static Web Apps headers so the public release is easier to discover and safer to serve.',
+  },
+  {
+    icon: LayoutGrid,
+    label: 'Refactored workspace modules',
+    detail: 'Large CAD, dialog, viewport, slicer, and printer panels were split into focused modules with shared helpers and targeted tests. The result is a cleaner foundation for release builds and future community contributions.',
+  },
+  {
+    icon: FlaskConical,
+    label: 'Broader OCC test coverage',
+    detail: 'New regression coverage exercises selectable edges, fillet ordering, requested-radius checks, topology anchors, sketch-to-wire conversion, primitive OCC bodies, transform and pattern operations, STEP IO, and save/reload behavior.',
   },
 ];
 
 export const nextReleaseFeatures = [
   {
+    icon: ShieldCheck,
+    label: 'Public-repo security hardening',
+    detail: 'Tighten release hygiene around tracked local files, persisted credentials, deploy workflow pinning, dependency audit checks, and hosted CSP profiles before the next public milestone.',
+  },
+  {
+    icon: Crosshair,
+    label: 'Pure OCC selectable-edge service',
+    detail: 'Finish the clean topology service so fillet and chamfer rendering, hover, selection, tangent propagation, and edge IDs all come directly from OCC edge data instead of tessellation-derived fallback logic.',
+  },
+  {
     icon: Scan,
-    label: 'Camera-assisted band inspection',
-    detail: 'Photos attach to calibration results directly from the wizard. Crop banded regions, label test bands using the existing AR overlay, and align ruler / measurement overlays with the live video feed. Offline fallback generates a printable band-labeled measurement sheet.',
-  },
-  {
-    icon: BrainCircuit,
-    label: 'AI calibration recommendations',
-    detail: 'Per-run choice between BYOK cloud vision (analyze first-layer adhesion, score stringing artifacts, identify ringing bands) and manual scoring. AI cites evidence from attached photos, asks for missing measurements, and never auto-applies printer-affecting values without explicit confirmation.',
-  },
-  {
-    icon: History,
-    label: 'Result history + confidence scoring',
-    detail: 'Up to 5 most recent results per printer × material × nozzle × profile tuple with date, applied value, measurements, photos, AI confidence, and notes. Variance across the rolling window surfaces high-confidence bands and flags noisy results for re-runs.',
+    label: 'Camera-assisted calibration',
+    detail: 'Attach photos to calibration results, crop banded regions, align ruler overlays with live video, and use BYOK vision models for explainable first-layer, ringing, and stringing recommendations.',
   },
   {
     icon: BarChart2,
-    label: 'Calibration repeatability analytics',
-    detail: 'Per-parameter drift charts across sessions: spot when pressure advance creeps between filament swaps or input shaper shifts after a belt service. Configurable alert thresholds flag values that have moved outside their confidence band since last applied.',
+    label: 'Calibration history analytics',
+    detail: 'Track result history per printer, material, nozzle, and profile with confidence scoring, drift charts, and alerts when pressure advance, input shaper, or dimensional values move outside their expected band.',
   },
   {
     icon: Rocket,
     label: 'Plugin / extension system',
-    detail: 'A registry-based plugin architecture that lets third-party tools hook into CAD features, slicer pipeline steps, printer panels, and MCP tool sets. Plugins are isolated web workers — a broken plugin cannot crash the main workspace.',
+    detail: 'A registry-based plugin architecture that lets third-party tools hook into CAD features, slicer pipeline steps, printer panels, and MCP tool sets. Plugins are isolated web workers so a broken plugin cannot crash the main workspace.',
   },
 ];
-
 export const PAGE_COLORS: Record<string, string> = {
   Design: '#7c3aed',
   Prepare: '#0284c7',

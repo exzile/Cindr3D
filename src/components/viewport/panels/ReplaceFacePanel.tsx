@@ -13,6 +13,8 @@ export default function ReplaceFacePanel() {
   const activeDialog = useCADStore((s) => s.activeDialog);
   const replaceFaceSourceId = useCADStore((s) => s.replaceFaceSourceId);
   const replaceFaceTargetId = useCADStore((s) => s.replaceFaceTargetId);
+  const isTangentChain = useCADStore((s) => s.isTangentChainReplaceFace);
+  const setReplaceFaceIsTangentChain = useCADStore((s) => s.setReplaceFaceIsTangentChain);
   const commitReplaceFace = useCADStore((s) => s.commitReplaceFace);
   const setActiveDialog = useCADStore((s) => s.setActiveDialog);
 
@@ -57,6 +59,18 @@ export default function ReplaceFacePanel() {
           )}
           <span>{replaceFaceTargetId ? 'Target face selected' : 'Step 2: Click target face'}</span>
         </div>
+      </div>
+
+      {/* Options */}
+      <div className="replace-face-panel__options">
+        <label className="replace-face-panel__option-label">
+          <input
+            type="checkbox"
+            checked={isTangentChain}
+            onChange={(e) => setReplaceFaceIsTangentChain(e.target.checked)}
+          />
+          <span>Tangent chain</span>
+        </label>
       </div>
 
       {/* Footer */}

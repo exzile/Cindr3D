@@ -378,6 +378,94 @@ export function isSketchClosedProfile(sketch: Sketch): boolean {
   });
 }
 
+/** A boundary entity together with its travel direction along an assembled chain. */
+interface OrientedEntity { entity: SketchEntity; reversed: boolean; }
+
+/**
+ * Build a THREE.Shape from an ordered, orientation-aware chain of boundary
+ * entities. Each element carries a `reversed` flag so segments that were drawn
+ * "backwards" relative to the loop's travel direction are emitted end→start.
+ * For a forward-only chain this produces output identical to the legacy
+ * `entitiesToShape(chain)` path (so existing profiles are unaffected); the
+ * difference only shows up for mixed-orientation loops, which previously failed
+ * to close.
+ */
+function orientedChainToShape(
+  chain: OrientedEntity[],
+  project: (p: SketchPoint) => { u: number; v: number },
+  autoClose = false,
+): THREE.Shape | null {
+  const shape = new THREE.Shape();
+  let hasContent = false;
+  const begin = (u: number, v: number) => {
+    if (!hasContent) { shape.moveTo(u, v); hasContent = true; }
+  };
+
+  for (const { entity, reversed } of chain) {
+    switch (entity.type) {
+      case 'line': {
+        if (entity.points.length >= 2) {
+          const i0 = reversed ? entity.points.length - 1 : 0;
+          const i1 = reversed ? 0 : entity.points.length - 1;
+          const a = project(entity.points[i0]);
+          const b = project(entity.points[i1]);
+          begin(a.u, a.v);
+          shape.lineTo(b.u, b.v);
+        }
+        break;
+      }
+      case 'spline': {
+        if (entity.points.length >= 2) {
+          const pts = reversed ? [...entity.points].reverse() : entity.points;
+          const first = project(pts[0]);
+          begin(first.u, first.v);
+          for (let i = 1; i < pts.length; i++) {
+            const p = project(pts[i]);
+            shape.lineTo(p.u, p.v);
+          }
+        }
+        break;
+      }
+      case 'arc': {
+        if (entity.points.length >= 1 && entity.radius) {
+          const c = project(entity.points[0]);
+          const sa = entity.startAngle ?? 0;
+          let ea = entity.endAngle ?? Math.PI;
+          if (ea <= sa) ea += Math.PI * 2;
+          const fromA = reversed ? ea : sa;
+          begin(c.u + Math.cos(fromA) * entity.radius, c.v + Math.sin(fromA) * entity.radius);
+          // reversed → sweep clockwise from ea back to sa
+          shape.absarc(c.u, c.v, entity.radius, reversed ? ea : sa, reversed ? sa : ea, reversed);
+        }
+        break;
+      }
+      case 'elliptical-arc': {
+        if (entity.points.length >= 1 && entity.majorRadius && entity.minorRadius) {
+          const c = project(entity.points[0]);
+          const rot = entity.rotation ?? 0;
+          const sa = entity.startAngle ?? 0;
+          let ea = entity.endAngle ?? Math.PI;
+          if (ea <= sa) ea += Math.PI * 2;
+          const cos = Math.cos(rot), sin = Math.sin(rot);
+          const fromA = reversed ? ea : sa;
+          const sx = entity.majorRadius * Math.cos(fromA);
+          const sy = entity.minorRadius * Math.sin(fromA);
+          begin(c.u + cos * sx - sin * sy, c.v + sin * sx + cos * sy);
+          shape.absellipse(c.u, c.v, entity.majorRadius, entity.minorRadius, reversed ? ea : sa, reversed ? sa : ea, reversed, rot);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  // Snap a healed near-miss loop exactly shut so the resulting region is closed.
+  if (hasContent && autoClose) shape.closePath();
+
+  return hasContent ? shape : null;
+}
+
 export function entitiesToShapes(
   entities: SketchEntity[],
   project: (p: SketchPoint) => { u: number; v: number },
@@ -405,34 +493,70 @@ export function entitiesToShapes(
 
   for (let seed = 0; seed < chainable.length; seed++) {
     if (used.has(seed)) continue;
-    const chain: SketchEntity[] = [chainable[seed].entity];
+    // Track orientation per chain element. A segment is "reversed" when it was
+    // drawn in the opposite direction to the chain's travel — e.g. the user
+    // snapped its END (not its start) to the previous segment. Without honoring
+    // this, a mixed-orientation loop (very common when drawing separate line
+    // segments and snapping their endpoints) never closes, so the profile is
+    // wrongly classified as open and won't extrude as a solid.
+    const chain: OrientedEntity[] = [{ entity: chainable[seed].entity, reversed: false }];
     let chainStart = chainable[seed].endpoints[0];
     let chainEnd = chainable[seed].endpoints[1];
     used.add(seed);
+
+    // Track the chain's bounding box so the closing-gap heal tolerance can be
+    // proportional to the sketch's size (see the closure check below).
+    let minU = Math.min(chainStart.u, chainEnd.u), maxU = Math.max(chainStart.u, chainEnd.u);
+    let minV = Math.min(chainStart.v, chainEnd.v), maxV = Math.max(chainStart.v, chainEnd.v);
+    const grow = (p: { u: number; v: number }) => {
+      if (p.u < minU) minU = p.u; if (p.u > maxU) maxU = p.u;
+      if (p.v < minV) minV = p.v; if (p.v > maxV) maxV = p.v;
+    };
 
     let extended = true;
     while (extended) {
       extended = false;
       for (let i = 0; i < chainable.length; i++) {
         if (used.has(i)) continue;
-        const endpoints = chainable[i].endpoints;
-        if (ptClose(chainEnd, endpoints[0])) {
-          chain.push(chainable[i].entity);
-          chainEnd = endpoints[1];
-          used.add(i);
-          extended = true;
-        } else if (ptClose(chainStart, endpoints[1])) {
-          chain.unshift(chainable[i].entity);
-          chainStart = endpoints[0];
-          used.add(i);
-          extended = true;
+        const [e0, e1] = chainable[i].endpoints;
+        // Try all four ways the candidate can attach to either end of the chain,
+        // flipping the segment's orientation when its far endpoint is the match.
+        if (ptClose(chainEnd, e0)) {
+          chain.push({ entity: chainable[i].entity, reversed: false });
+          chainEnd = e1;
+          used.add(i); extended = true; grow(e1);
+        } else if (ptClose(chainEnd, e1)) {
+          chain.push({ entity: chainable[i].entity, reversed: true });
+          chainEnd = e0;
+          used.add(i); extended = true; grow(e0);
+        } else if (ptClose(chainStart, e1)) {
+          chain.unshift({ entity: chainable[i].entity, reversed: false });
+          chainStart = e0;
+          used.add(i); extended = true; grow(e0);
+        } else if (ptClose(chainStart, e0)) {
+          chain.unshift({ entity: chainable[i].entity, reversed: true });
+          chainStart = e1;
+          used.add(i); extended = true; grow(e1);
         }
       }
     }
 
-    if (chain.length > 0 && ptClose(chainStart, chainEnd)) {
-      const shape = entitiesToShape(chain, project);
-      if (shape) shapes.push(shape);
+    // Closure with gap-healing. A hand-drawn loop frequently ends a fraction of
+    // a millimetre short of its start (the closing snap just missed), leaving a
+    // gap far larger than `tolerance` (1µm) but tiny relative to the sketch. Such
+    // a near-miss is unambiguously meant to be closed, so we heal gaps up to ~1%
+    // of the sketch's diagonal (clamped to [0.05, 1.0] units). When healed we
+    // snap the path shut via closePath() so the region is exactly closed and the
+    // profile becomes solid-extrudable. Genuine open chains (gap well beyond the
+    // heal tolerance) are still left open → surface extrude, as before.
+    if (chain.length > 0) {
+      const gap = Math.hypot(chainStart.u - chainEnd.u, chainStart.v - chainEnd.v);
+      const extent = Math.hypot(maxU - minU, maxV - minV);
+      const healTol = Math.min(1.0, Math.max(0.05, 0.01 * extent));
+      if (gap <= healTol) {
+        const shape = orientedChainToShape(chain, project, /* autoClose */ gap > tolerance);
+        if (shape) shapes.push(shape);
+      }
     }
   }
 

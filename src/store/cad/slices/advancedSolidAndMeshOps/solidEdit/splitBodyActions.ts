@@ -10,6 +10,7 @@ import { getOccSync } from '../../../../../engine/occ/loader';
 import { createOccPlaneFrame } from '../../../../../engine/occ/plane';
 import { occExtrudeRect } from '../../../../../engine/occ/ops/extrude';
 import { performOccBooleanWithInstance } from '../../../../../engine/occ/ops/booleanCore';
+import { occSplitBodyBySurface } from '../../../../../engine/occ/ops/splitBody';
 import { globalBRepBodyRegistry } from '../../../../../engine/occ/globalRegistry';
 import { createRegisteredOccMesh } from '../../../../../engine/occ/registeredMesh';
 import { BODY_MATERIAL } from '../../../../../components/viewport/scene/bodyMaterial';
@@ -62,7 +63,15 @@ function occPlaneSplitBodies(
 
 export function createSplitBodyActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
-    commitSplitBody: ({ bodyFeatureId, toolType, toolId }) => {
+    commitSplitBody: ({
+      bodyFeatureId,
+      toolType,
+      toolId,
+      planeOffset = 0,
+      isSplittingToolExtended = true,
+      splitToolOccBodyId,
+      splitToolOccFaceId,
+    }) => {
       const { features } = get();
       const srcFeature = features.find((f) => f.id === bodyFeatureId);
 
@@ -80,8 +89,76 @@ export function createSplitBodyActions({ set, get }: CADSliceContext): Partial<C
         return;
       }
 
-      if (toolType !== 'plane') {
-        get().setStatusMessage('Split Body: sketch/face splitting tools require a face or surface pick - use Silhouette Split for plane cuts');
+      // ── OCC BRepAlgoAPI_Splitter path (toolType === 'face') ──────────────
+      if (toolType === 'face') {
+        if (!splitToolOccBodyId) {
+          get().setStatusMessage('Split Body: pick a splitting body/face first (set splitToolOccBodyId)');
+          return;
+        }
+
+        const occ = getOccSync();
+        const srcBrepBodyId = srcMesh.userData.brepBodyId as string | undefined;
+        const srcBody = srcBrepBodyId ? globalBRepBodyRegistry.get(srcBrepBodyId) : undefined;
+        const toolBody = globalBRepBodyRegistry.get(splitToolOccBodyId);
+
+        if (!occ || !srcBody || !toolBody) {
+          get().setStatusMessage('Split Body: OCC bodies not available for Splitter');
+          return;
+        }
+
+        let splitResults: ReturnType<typeof occSplitBodyBySurface>;
+        try {
+          splitResults = occSplitBodyBySurface(occ.oc, srcBody, toolBody, { isSplittingToolExtended });
+        } catch (err) {
+          console.warn('[commitSplitBody] occSplitBodyBySurface threw:', err);
+          get().setStatusMessage(`Split Body: Splitter failed — ${errorMessage(err, 'unknown')}`);
+          return;
+        }
+
+        if (splitResults.length === 0) {
+          get().setStatusMessage('Split Body: BRepAlgoAPI_Splitter produced no pieces (tool may not intersect body)');
+          return;
+        }
+
+        const n = features.filter((f) => f.params?.featureKind === 'split-body-surface').length + 1;
+
+        const newFeatures: Feature[] = splitResults.map((piece, i) => {
+          const pieceId = crypto.randomUUID();
+          const pieceMesh = createRegisteredOccMesh(occ.oc, piece, BODY_MATERIAL, pieceId);
+          pieceMesh.castShadow = true;
+          pieceMesh.receiveShadow = true;
+          return {
+            id: pieceId,
+            name: `${srcFeature.name} Split ${n}${String.fromCharCode(65 + i)}`,
+            type: 'split-body' as Feature['type'],
+            params: {
+              featureKind: 'split-body-surface',
+              sourceFeatureId: bodyFeatureId,
+              splitToolOccBodyId,
+              splitToolOccFaceId: splitToolOccFaceId ?? null,
+              piece: i,
+            },
+            mesh: pieceMesh,
+            bodyKind: srcFeature.bodyKind ?? 'solid',
+            visible: true,
+            suppressed: false,
+            timestamp: Date.now(),
+          } satisfies Feature;
+        });
+
+        get().pushUndo();
+        set({
+          features: [
+            ...features.map((f) => (f.id === bodyFeatureId ? { ...f, visible: false } : f)),
+            ...newFeatures,
+          ],
+        });
+        get().setStatusMessage(`Split Body ${n}: ${splitResults.length} piece${splitResults.length === 1 ? '' : 's'} created (OCC Splitter)`);
+        return;
+      }
+
+      if (toolType === 'sketch') {
+        get().setStatusMessage('Split Body: sketch splitting tool is not yet supported — use Plane or Face/Body tool type');
         return;
       }
 
@@ -107,7 +184,7 @@ export function createSplitBodyActions({ set, get }: CADSliceContext): Partial<C
         const srcBody = globalBRepBodyRegistry.get(srcBrepBodyId);
         if (srcBody) {
           try {
-            const [partABody, partBBody] = occPlaneSplitBodies(occ.oc, srcBody, planeNormal, 0, idA, idB);
+            const [partABody, partBBody] = occPlaneSplitBodies(occ.oc, srcBody, planeNormal, planeOffset, idA, idB);
             if (partABody && partBBody) {
               const meshA = createRegisteredOccMesh(occ.oc, partABody, BODY_MATERIAL, idA);
               const meshB = createRegisteredOccMesh(occ.oc, partBBody, BODY_MATERIAL, idB);
@@ -138,8 +215,8 @@ export function createSplitBodyActions({ set, get }: CADSliceContext): Partial<C
       }
 
       // ── THREE mesh fallback ────────────────────────────────────────────
-      const partA = GeometryEngine.planeCutMesh(srcMesh, planeNormal, 0, 'positive');
-      const partB = GeometryEngine.planeCutMesh(srcMesh, planeNormal, 0, 'negative');
+      const partA = GeometryEngine.planeCutMesh(srcMesh, planeNormal, planeOffset, 'positive');
+      const partB = GeometryEngine.planeCutMesh(srcMesh, planeNormal, planeOffset, 'negative');
       partA.castShadow = true; partA.receiveShadow = true;
       partB.castShadow = true; partB.receiveShadow = true;
 
@@ -162,7 +239,7 @@ export function createSplitBodyActions({ set, get }: CADSliceContext): Partial<C
 
     commitSilhouetteSplit: (featureId, planeNormal, planeOffset) => {
       const { features } = get();
-      const r = requireMesh(features, featureId, 'Split Body', get().setStatusMessage);
+      const r = requireMesh(features, featureId, 'Planar Split', get().setStatusMessage);
       if (!r) return;
       const { srcFeature, srcMesh } = r;
       const n = features.filter((f) => f.params?.featureKind === 'silhouette-split').length + 1;
@@ -194,7 +271,7 @@ export function createSplitBodyActions({ set, get }: CADSliceContext): Partial<C
               };
               get().pushUndo();
               set({ features: [...features.map((f) => f.id === featureId ? { ...f, visible: false } : f), featureA, featureB] });
-              get().setStatusMessage(`Split Body ${n}: split by plane (OCC) into two parts`);
+              get().setStatusMessage(`Planar Split ${n}: split by plane (OCC) into two parts`);
               return;
             }
             if (partABody) globalBRepBodyRegistry.delete(partABody.id);
@@ -223,7 +300,7 @@ export function createSplitBodyActions({ set, get }: CADSliceContext): Partial<C
       get().pushUndo();
       set({ features: [...features.map((f) => f.id === featureId ? { ...f, visible: false } : f), featureA, featureB] });
       disposeMeshDeferred(srcMesh);
-      get().setStatusMessage(`Split Body ${n}: split into two parts`);
+      get().setStatusMessage(`Planar Split ${n}: split into two parts`);
     },
   };
 }

@@ -56,36 +56,32 @@ The project is evolving quickly. Some CAD and slicer features are experimental, 
 ## What's New
 
 > [!NOTE]
-> **v0.3.0 — 2026-05-06.** Design workspace, workshop integrations, and operational depth. This release closes the gap between "browser CAD prototype" and a workshop-grade tool: parametric library, design configurations, 2D drawings, mesh repair, non-destructive booleans, plus Discord/Slack/Telegram/MQTT/HomeAssistant bridges, slicer-profile import, power-loss recovery, enclosure safety, and stepper driver tuning.
+> **v1.0.0 - 2026-05.** This release is the big DesignCAD/OCC milestone: Cindr3D moves from mostly mesh-derived modeling toward an OpenCascade-backed B-rep workflow, while also preparing the public site and documentation for a broader open-source release.
 
-**Design workspace**
+**OCC-powered Design workspace**
 
-- **Parametric model library** — drop configurable Gridfinity bins, threaded insert bosses, brackets, project boxes, cable clips, and gear blanks straight onto the feature timeline.
-- **Design configurations** — named parameter sets with per-variant feature suppression, ribbon switching, and configuration export.
-- **Drawing workspace** — auto-generated top/front/right views with inferred dimensions, title block, and SVG/DXF/PDF export.
-- **Mesh repair** — manifold report, duplicate-vertex weld, normal repair/flip, auto-fix, and STL import healing.
-- **Non-destructive boolean history** — combine features keep parent links and recompute when parents change.
-- **Threading library** — metric thread presets with helix geometry and configurable pitch, length, and class.
-- **Sketch tangent solving** — the constraint solver now resolves tangents while preserving over-constrained feedback.
+- **OpenCascade modeling core** - extrude, revolve, sweep, loft, primitives, booleans, split, shell, draft, offset faces, fillet, and chamfer now preserve richer source topology for downstream edits.
+- **Topology-aware fillet and chamfer** - selectable edge metadata, stable edge anchors, circular-edge handling, tangent-chain support, live validity probes, and expanded regression coverage make edge operations more predictable.
+- **Profile-aware extrude** - sketches with nested regions can be used like real CAD profiles: select the outer region for a plate with holes, select inner regions independently, or cut only the intended profiles.
+- **Reliable save/reload** - DZND project files now carry OCC body metadata, profile selections, edge-modification inputs, feature parameters, and reconstruction data so refreshes preserve more of the model history.
+- **Sketch cleanup** - selected sketch entities can be deleted with Delete/Backspace or the context menu, making it easier to repair profiles before feature creation.
 
-**Workshop integrations**
+**Direct-edit and timeline polish**
 
-- **Notification bridges** — generic webhooks plus first-class Discord, Slack, Telegram, and MQTT for `PRINT_START`, `LAYER_CHANGE`, `PAUSED`, `FAILED`, `DONE`.
-- **Home Assistant bridge** — REST/discovery payloads and remote pause/resume/cancel actions per printer.
-- **Slicer profile exchange** — import Cura, OrcaSlicer, Bambu Studio, and 3MF profile data with mapping preview, plus 3MF plate round-trip.
-- **Power-loss recovery** — snapshot file, position, Z, layer, bed, and tool state; offer a reconnect resume flow that restores heat/Z and resumes from the saved file position.
-- **Enclosure safety** — chamber temperature control, ramp curves, preheat/cooldown, door-open interlock, and MQTT VOC/PM2.5/CO2 thresholds.
-- **Stepper driver tuning** — per-axis current, microsteps, StealthChop/SpreadCycle mode, firmware command wrappers, wiggle tests, and per-printer presets.
+- **More OCC-backed edit tools** - offset faces, draft, shell tangent-chain behavior, split/replace face, move, align, merge faces, scale, combine, and primitive creation received OCC implementation work.
+- **Modern compact timeline** - timeline entries are denser, clearer, and easier to scan, with feature dialogs wired back into more reconstructed OCC features.
+- **Module refactors** - CAD store slices, feature actions, edge-op dialogs, viewport edge picking, slicer object panels, and printer camera settings were split into focused modules with shared helpers.
+- **WASM and GPU cleanup** - transient OCC handles, tessellation buffers, preview meshes, and R3F resources received leak fixes and lifecycle hardening.
 
-**Slicer + preview polish**
+**Public release readiness**
 
-- **G-code dock panel** — full raw G-code listing with virtual scrolling, click-to-jump, scrub-to-follow, and a breakpoint system for step-by-step inspection.
-- **Print Preview dashboard card** — live build plate with object silhouettes, toolpath up to the current layer, and right-click per-object cancel.
-- **PTZ camera improvements** — direct command delivery, lower latency, and tighter Reolink/Tapo/Hikvision/Amcrest control.
+- **Search-ready hosted site** - route-specific metadata, canonical URLs, sitemap, robots.txt, Bing verification, Static Web Apps rewrites, and Azure security headers are in place.
+- **Help and wiki screenshots** - printer dashboard, layout editing, Prepare G-code simulation, profile creation, and Design screenshots were added to make onboarding less guessy.
+- **Test expansion** - new tests cover selectable edges, sketch-to-wire conversion, fillet ordering, requested-radius checks, topology anchors, primitive OCC bodies, transform/pattern operations, STEP IO, and persistence.
 
-**Carried forward from v0.2.0**
+**Carried forward from earlier releases**
 
-- AI Assistant (local MCP server + BYOK chat panel), smart print farm queue, all-cameras fleet grid, mid-print object cancellation across all three firmwares, cross-firmware live progress, and the universal tuning UI for Input Shaper / Pressure Advance / Power / Spools / Timelapse / Updates.
+- Browser-native CAD, in-browser slicing, Duet/Klipper/Marlin printer control, smart print-farm queue, camera monitoring, calibration tools, BYOK AI assistant, local MCP control, and self-hosted deployment remain part of the core workflow.
 
 ## Feature Highlights
 
@@ -96,8 +92,10 @@ The project is evolving quickly. Some CAD and slicer features are experimental, 
 - Parametric model library for common printable objects and hardware-ready starter geometry
 - Design configurations for named variants, parameter sets, feature suppression, and variant export
 - Drawing workspace with generated orthographic views, inferred dimensions, title block, SVG / DXF / PDF export
-- Solid features: extrude, revolve, sweep, loft, shell, rib, split, draft, hole, thread, chamfer, fillet
-- Non-destructive boolean history with visible parent links and recompute when parent meshes change
+- OCC-backed solid features: extrude, revolve, sweep, loft, shell, rib, split, draft, offset faces, hole, thread, chamfer, fillet
+- Topology-aware edge picking for fillet/chamfer with stable anchors, circular-edge support, and live validity checks
+- Profile-aware extrude selection for nested sketch regions, including plates with holes and independent inner profiles
+- Non-destructive boolean history with visible parent links and recompute when source bodies change
 - Mesh repair tools: manifold report, duplicate vertex weld, normal flip, auto-fix, and STL import healing
 - Mesh, surface, construction, inspect, assemble, utilities ribbon areas
 - Component tree, feature timeline, selection filters, visibility controls
@@ -227,7 +225,7 @@ Cindr3D now treats the 3D Printer workspace as a small print-farm controller, no
 | Build | Vite 8 |
 | Tests | Vitest, Testing Library |
 | Quality | ESLint, TypeScript composite builds |
-| Geometry/runtime | WASM assets for selected geometry and slicer operations |
+| Geometry/runtime | OpenCascade WASM for B-rep CAD operations, plus WASM slicer kernels |
 
 ## Quick Start
 
@@ -282,7 +280,7 @@ The browser tab must stay open — tool calls are relayed into the running Cindr
 
 ### 💬 Path 2: BYOK in-app chat panel
 
-For users who prefer not to run Claude Code, the **AI Chat tab** inside Cindr3D provides a streaming chat interface that connects to your own Anthropic, OpenAI, or OpenRouter API key. Set the provider, model, and key in **Global Settings → AI**; the key is stored locally and sent only to your chosen provider.
+For users who prefer not to run Claude Code, the **AI Chat tab** inside Cindr3D provides a streaming chat interface that connects to your own Anthropic, OpenAI, or OpenRouter API key. Set the provider, model, and key in **Global Settings -> AI**; API keys are session-only by design and are sent only to your chosen provider.
 
 ### 🛡️ Safety & Hardening
 
@@ -298,12 +296,14 @@ See [docs/ai-mcp-tools.md](docs/ai-mcp-tools.md) for the tool reference and [doc
 
 Shipped and upcoming phases are tracked in [`TaskLists.txt`](TaskLists.txt). What's next:
 
-| Phase | Theme | What lands |
-|---|---|---|
-| **20** | 🔬 **Printer calibration center** *(planned, XL)* | Closed-loop calibration: card-based wizards for first layer, flow, temperature, retraction, pressure advance, input shaper, dimensional accuracy, and max volumetric speed; pre-built calibration models scaled by nozzle/layer; firmware-specific apply with snapshot/diff/restore safety; camera + AI inspection; rolling 5-result history per printer/material/spool/nozzle/profile. |
-| 18 | 🧩 Plugin system | *Future — captured for planning, not yet scheduled.* |
+| Theme | What lands |
+|---|---|
+| **Public-repo security hardening** | Remove tracked local-only files, tighten credential persistence, pin GitHub Actions, add dependency audit/dependency-review checks, and review hosted CSP profiles. |
+| **Pure OCC selectable-edge service** | Finish the clean edge-topology service so fillet/chamfer hover, selection, rendering, tangent propagation, and edge IDs come directly from OCC topology. |
+| **Camera-assisted calibration** | Attach photos to calibration runs, crop banded regions, align ruler overlays, and add BYOK vision recommendations for first-layer, ringing, and stringing tests. |
+| **Plugin / extension system** | Registry-based extension points for CAD tools, slicer pipeline steps, printer panels, and MCP tool sets. |
 
-Phases 7–17 and 19 (print-farm intelligence, vision/AI, AR overlay, cost & energy, maintenance, scheduling, integrations, operational polish, slicer fundamentals, design workspace, onboarding, dashboard preview) shipped in `v0.2.0` and `v0.3.0`. See [`TaskLists.txt`](TaskLists.txt) for the full shipped log.
+Recent shipped work is condensed in [`TaskLists.txt`](TaskLists.txt), with detailed OCC implementation notes in the project memory files.
 
 > [!TIP]
 > Shipped phases are condensed in [`TaskLists.txt`](TaskLists.txt) with summaries, while active/upcoming phases keep their detailed task lists, effort estimates, file hints, and dependency notes.

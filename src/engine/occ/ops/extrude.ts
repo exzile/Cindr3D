@@ -10,12 +10,16 @@ import { getOcc } from '../loader';
 import type { OccPlaneFrame } from '../plane';
 import { type SketchProfile, sketchProfileToWires, sketchShapeToWires, takeOccOwnedResources, wireToFace } from './sketchToWire';
 import { isOccShapeValid } from './shapeValidity';
+import { runEdgeOpBuild } from './adjacency';
 
 type OccExtrudeApi = OcctRaw & {
   BRepBuilderAPI_Transform_2: new (shape: unknown, trsf: unknown, copy: boolean) => { Shape(): unknown; delete(): void };
   BRepPrimAPI_MakePrism_1: new (shape: unknown, vector: unknown, copy: boolean, canonize: boolean) => { Build(): void; Shape(): unknown; delete(): void };
   BRepAlgoAPI_Fuse_3: new (a: unknown, b: unknown) => { SetNonDestructive?(v: boolean): void; Build(p?: unknown): void; IsDone?(): boolean; HasErrors?(): boolean; Shape(): unknown; delete(): void };
-  BRepOffsetAPI_DraftAngle_1: new (shape: unknown) => { Add(face: unknown, dir: unknown, angle: number, plane: unknown): void; Build(progress: unknown): void; IsDone?(): boolean; HasErrors?(): boolean; Shape(): unknown; delete(): void };
+  // NOTE: ctor is BRepOffsetAPI_DraftAngle_**2**(shape); _1() is the 0-arg ctor.
+  // Add() needs 5 args (trailing Flag required) and Build() is 0-arg in this
+  // build (go through runEdgeOpBuild). Same fixes as draft.ts (OCC-18).
+  BRepOffsetAPI_DraftAngle_2: new (shape: unknown) => { Add(face: unknown, dir: unknown, angle: number, plane: unknown, flag: boolean): void; Build(progress?: unknown): void; IsDone?(): boolean; HasErrors?(): boolean; Shape(): unknown; delete(): void };
   BRepAdaptor_Surface_2: new (face: unknown, restricted: boolean) => { FirstUParameter(): number; LastUParameter(): number; FirstVParameter(): number; LastVParameter(): number; Value(u: number, v: number): { X(): number; Y(): number; Z(): number; delete(): void }; delete(): void };
   Message_ProgressRange_1: new () => { delete?: () => void };
   gp_Dir_4: new (x: number, y: number, z: number) => { delete(): void };
@@ -186,13 +190,19 @@ export function occExtrudeFaceShapeWithInstance(
   function applyDraftAngle(shape: unknown, taperDeg: number, neutralOrigin: THREE.Vector3): unknown {
     if (Math.abs(taperDeg) <= 0.001) return shape;
     const taperRad = THREE.MathUtils.degToRad(taperDeg);
-    const drafter = new occ.BRepOffsetAPI_DraftAngle_1(shape);
+    const drafter = new occ.BRepOffsetAPI_DraftAngle_2(shape);
     const pullDir = new occ.gp_Dir_4(dir.x, dir.y, dir.z);
     const planePnt = new occ.gp_Pnt_3(neutralOrigin.x, neutralOrigin.y, neutralOrigin.z);
     const planeNrm = new occ.gp_Dir_4(dir.x, dir.y, dir.z);
     const neutralPlane = new occ.gp_Pln_3(planePnt, planeNrm);
 
+    // allFaces holds TopoDS.Face_1 VIEWs (never deleted). ownedFaceCopies holds the
+    // explorer.Current() OWNED copies whose memory those VIEWs point into — they
+    // must outlive the drafter Build (the drafter references the faces) and are the
+    // ones we delete at cleanup. Deleting the Current() copy early (as the old code
+    // did) freed the ptr the Face_1 VIEW aliases → use-after-free + later double-free.
     const allFaces: unknown[] = [];
+    const ownedFaceCopies: Array<{ delete(): void }> = [];
     const lateralIndices: number[] = [];
     const explorer = new occ.TopExp_Explorer_2(
       shape,
@@ -202,7 +212,7 @@ export function occExtrudeFaceShapeWithInstance(
     while (explorer.More()) {
       const s = explorer.Current();
       const rawFace = occ.TopoDS.Face_1(s);
-      s.delete();
+      ownedFaceCopies.push(s);
       let dotAbs = 1;
       try {
         const surf = new occ.BRepAdaptor_Surface_2(rawFace, true);
@@ -229,14 +239,15 @@ export function occExtrudeFaceShapeWithInstance(
 
     let addedAny = false;
     for (const idx of lateralIndices) {
-      try { drafter.Add(allFaces[idx], pullDir, taperRad, neutralPlane); addedAny = true; } catch { /* skip face */ }
+      // 5-arg Add (trailing Flag required); allFaces[idx] is a real TopoDS_Face VIEW.
+      try { drafter.Add(allFaces[idx], pullDir, taperRad, neutralPlane, true); addedAny = true; } catch { /* skip face */ }
     }
 
     let resultShape = shape;
     if (addedAny) {
-      const draftProg = new occ.Message_ProgressRange_1();
       try {
-        drafter.Build(draftProg);
+        // Build() is 0-arg in this build — runEdgeOpBuild handles binding variance.
+        runEdgeOpBuild(oc, drafter);
         if (drafter.IsDone?.() !== false && !drafter.HasErrors?.()) {
           resultShape = drafter.Shape();
         } else {
@@ -244,13 +255,12 @@ export function occExtrudeFaceShapeWithInstance(
         }
       } catch (e) {
         console.warn('[occExtrude] DraftAngle threw:', e);
-      } finally {
-        draftProg.delete?.();
       }
     }
 
     drafter.delete();
-    for (const f of allFaces) (f as { delete(): void }).delete();
+    // Delete the OWNED explorer copies, NOT the Face_1 VIEWs in allFaces.
+    for (const f of ownedFaceCopies) f.delete();
     neutralPlane.delete();
     planeNrm.delete();
     planePnt.delete();

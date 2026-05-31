@@ -13,7 +13,7 @@ import { syncConfigurationSuppression } from "./bodyBoolean";
 
 export function createCombineCommitActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
-    commitCombine: (targetFeatureId, toolFeatureId, operation, keepTool) => {
+    commitCombine: (targetFeatureId, toolFeatureId, operation, keepTool, isNewComponent = false) => {
       const { features } = get();
       const toolFeatureIds = Array.isArray(toolFeatureId) ? toolFeatureId : [toolFeatureId];
       const targetFeature = features.find((f) => f.id === targetFeatureId);
@@ -69,6 +69,7 @@ export function createCombineCommitActions({ set, get }: CADSliceContext): Parti
           params: {
             operation,
             keepTools: keepTool,
+            isNewComponent,
             targetId: targetFeatureId,
             toolId: toolFeatureIds[0],
             toolIds: toolFeatureIds,
@@ -83,14 +84,17 @@ export function createCombineCommitActions({ set, get }: CADSliceContext): Parti
         };
         set((state) => {
           const parentIds = [targetFeatureId, ...toolFeatureIds];
+          // isNewComponent: keep all input bodies visible; result is a new body
+          // alongside the originals (mirrors Fusion CombineFeatureInput.isNewComponent).
+          const suppressParents = !keepTool && !isNewComponent;
           const updated = state.features.map((f) =>
-            !keepTool && parentIds.includes(f.id)
+            suppressParents && parentIds.includes(f.id)
               ? { ...f, suppressed: true }
               : f,
           );
           const suppressionEntries: Record<string, boolean> = {
             [combineFeature.id]: false,
-            ...Object.fromEntries(parentIds.map((id) => [id, !keepTool])),
+            ...Object.fromEntries(parentIds.map((id) => [id, suppressParents])),
           };
           return {
             features: [...updated, combineFeature],
@@ -98,10 +102,10 @@ export function createCombineCommitActions({ set, get }: CADSliceContext): Parti
               state,
               suppressionEntries,
             ),
-            statusMessage: `Combine (${operation}) created with ${toolFeatureIds.length} tool bodies (OCC)`,
+            statusMessage: `Combine (${operation}) created with ${toolFeatureIds.length} tool bodies (OCC)${isNewComponent ? ' [new component]' : ''}`,
           };
         });
-        if (!keepTool) {
+        if (!keepTool && !isNewComponent) {
           disposeMeshesDeferred([tgtMesh, ...toolMeshes]);
         }
         return;

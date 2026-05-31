@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import type { OcctRaw } from '../types';
 import { makeBRepBodyFromOccShape, occDeref, type BRepBody } from '../brepBody';
 import { getOcc } from '../loader';
+import { runEdgeOpBuild } from './adjacency';
 
 type OccPatternApi = OcctRaw & {
   BRepBuilderAPI_Transform_2: new (shape: unknown, trsf: unknown, copy: boolean) => { Shape(): unknown; delete(): void };
@@ -196,9 +197,8 @@ function fuseShapes(
   for (let k = 1; k < shapes.length; k++) {
     const fuse = new occ.BRepAlgoAPI_Fuse_3(accumulated, shapes[k]);
     fuse.SetNonDestructive?.(true);
-    const progress = new occ.Message_ProgressRange_1();
     try {
-      fuse.Build(progress);
+      runEdgeOpBuild(oc, fuse);
       if (fuse.IsDone?.() === false || fuse.HasErrors?.()) {
         console.warn(`[occPattern] fuse step ${k} failed — using compound`);
         liveShapes.delete(shapes[k]);
@@ -214,7 +214,6 @@ function fuseShapes(
       liveShapes.delete(shapes[k]);
       releaseOccShape(shapes[k]);
     } finally {
-      progress.delete?.();
       fuse.delete();
     }
   }

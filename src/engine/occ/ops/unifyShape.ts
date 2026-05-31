@@ -18,6 +18,7 @@
  * tessellation is faster.
  */
 import type { OcctRaw } from '../types';
+import { makeBRepBodyFromOccShape, occDeref, type BRepBody } from '../brepBody';
 
 interface OccUnifier {
   Build(): void;
@@ -50,6 +51,31 @@ export interface UnifyShapeOptions {
 }
 
 /**
+ * Apply ShapeUpgrade_UnifySameDomain to a BRepBody (high-level wrapper).
+ * Returns a new BRepBody with merged same-domain faces/edges, or null if the
+ * binding is unavailable or the operation fails.
+ *
+ * The returned body keeps the unifier alive via ownedResources so that the
+ * shape VIEW returned by unifier.Shape() remains valid for the lifetime of the
+ * body.  The caller is responsible for disposing the original body.
+ */
+export function occUnifyBodyWithInstance(
+  oc: OcctRaw,
+  body: BRepBody,
+  options: UnifyShapeOptions & { sourceFeatureId?: string } = {},
+): BRepBody | null {
+  const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
+  const result = unifyRawShape(oc, rawShape, options);
+  if (!result) return null;
+  const newBody = makeBRepBodyFromOccShape(oc, result.rawShape, {
+    sourceFeatureId: options.sourceFeatureId,
+  });
+  // Keep the unifier alive so the shape VIEW stays valid.
+  (newBody.ownedResources ??= []).push(result.unifier);
+  return newBody;
+}
+
+/**
  * Apply ShapeUpgrade_UnifySameDomain to a raw OCC TopoDS_Shape.
  * Returns a NEW raw shape (the unifier's Shape() result) — the caller owns
  * the unifier and must keep it alive while the new shape is used (because
@@ -60,6 +86,7 @@ export interface UnifyShapeOptions {
  *
  * On failure (Build throws), returns null and the unifier is cleaned up.
  */
+
 export function unifyRawShape(
   oc: OcctRaw,
   rawShape: unknown,

@@ -97,6 +97,9 @@ export function shapeFromStep(oc: OcctRaw, stepString: string): OccOperationResu
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const readStatus = (reader as any).ReadFile(TMP_READ);
     if (readStatus !== oc.IFSelect_ReturnStatus.IFSelect_RetDone) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (reader as any)?.delete?.();
+      reader = undefined;
       return occErr(occMessage('error', 'STEP_READ_FAIL', `STEPControl_Reader.ReadFile returned status ${readStatus}`));
     }
     const progress = new oc.Message_ProgressRange_1();

@@ -275,8 +275,9 @@ export interface CADModelingState {
     },
   ) => void;
 
-  // SLD13 — Scale (commit)
-  commitScale: (featureId: string, sx: number, sy: number, sz: number) => void;
+  // SLD13 — Scale (commit). refPoint selects the scale center: 'centroid' (default,
+  // scales the body in place about its bounding-box center) or 'origin' (world origin).
+  commitScale: (featureId: string, sx: number, sy: number, sz: number, refPoint?: 'centroid' | 'origin') => void;
 
   // 3D edge fillet (commit) — rounds edges in filletEdgeIds on the target body.
   // featureId: non-destructive path — store result on the fillet feature node.
@@ -322,6 +323,8 @@ export interface CADModelingState {
     toolFeatureId: string | string[],
     operation: "join" | "cut" | "intersect",
     keepTool: boolean,
+    /** Place result in a new component instead of on the existing target body. Mirrors Fusion isNewComponent. */
+    isNewComponent?: boolean,
   ) => void;
   recommitCombine: (
     featureId: string,
@@ -331,11 +334,19 @@ export interface CADModelingState {
       targetId: string;
       toolId: string;
       toolIds?: string[];
+      isNewComponent?: boolean;
     },
   ) => void;
 
   // SLD17 — Mirror feature (commit)
   commitMirrorFeature: (featureId: string, plane: "XY" | "XZ" | "YZ") => void;
+
+  // OCC-22.1 — Move/Copy body (commit)
+  commitMoveBody: (featureId: string, params: {
+    dx: number; dy: number; dz: number;
+    rx: number; ry: number; rz: number;
+    copy: boolean;
+  }) => void;
 
   // D6 Fillet edge selection + live radius (synced with FilletGizmo drag)
   filletEdgeIds: string[];

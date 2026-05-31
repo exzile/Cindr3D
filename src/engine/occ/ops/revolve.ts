@@ -9,9 +9,10 @@ import { makeBRepBodyFromOccShape, type BRepBody } from '../brepBody';
 import { getOcc } from '../loader';
 import type { OccPlaneFrame } from '../plane';
 import { type SketchProfile, sketchProfileToWires, wireToFace } from './sketchToWire';
+import { runEdgeOpBuild } from './adjacency';
 
 type OccRevolveApi = OcctRaw & {
-  BRepPrimAPI_MakeRevol_2: new (shape: unknown, axis: unknown, angle: number, copy: boolean) => { Build(progress: unknown): void; Shape(): unknown; delete(): void };
+  BRepPrimAPI_MakeRevol_2: new (shape: unknown, axis: unknown, angle: number, copy: boolean) => { Build(progress?: unknown): void; Shape(): unknown; delete(): void };
   BRepAlgoAPI_Fuse_3: new (a: unknown, b: unknown) => { SetNonDestructive?(v: boolean): void; Build(p?: unknown): void; IsDone?(): boolean; HasErrors?(): boolean; Shape(): unknown; delete(): void };
   Message_ProgressRange_1: new () => { delete?: () => void };
 };
@@ -64,13 +65,11 @@ export function occRevolveWithInstance(
   const clampedAngle = THREE.MathUtils.clamp(angleRad, -Math.PI * 2, Math.PI * 2);
 
   const revol = new occ.BRepPrimAPI_MakeRevol_2(face, occAxis, clampedAngle, true);
-  const progress = new occ.Message_ProgressRange_1();
   let resultShape: unknown;
   try {
-    revol.Build(progress);
+    runEdgeOpBuild(oc, revol);
     resultShape = revol.Shape();
   } finally {
-    progress.delete?.();
     revol.delete();
   }
 
@@ -78,13 +77,11 @@ export function occRevolveWithInstance(
   if (options.side2AngleRad !== undefined && Math.abs(options.side2AngleRad) > 1e-6) {
     const clampedAngle2 = THREE.MathUtils.clamp(Math.abs(options.side2AngleRad), 0, Math.PI * 2);
     const revol2 = new occ.BRepPrimAPI_MakeRevol_2(face, occAxis, -clampedAngle2, true);
-    const progress2 = new occ.Message_ProgressRange_1();
     let side2Shape: unknown;
     try {
-      revol2.Build(progress2);
+      runEdgeOpBuild(oc, revol2);
       side2Shape = revol2.Shape();
     } finally {
-      progress2.delete?.();
       revol2.delete();
     }
     const fuse = new occ.BRepAlgoAPI_Fuse_3(resultShape, side2Shape);

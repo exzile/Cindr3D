@@ -195,6 +195,21 @@ function makeFakeOcc() {
       SetVectorialPart() {
         // no-op
       }
+      SetTranslationPart() {
+        // no-op
+      }
+      delete() {}
+    },
+    gp_XYZ_2: class {
+      x: number;
+      y: number;
+      z: number;
+
+      constructor(x: number, y: number, z: number) {
+        this.x = x;
+        this.y = y;
+        this.z = z;
+      }
       delete() {}
     },
     gp_Trsf_1: class {
