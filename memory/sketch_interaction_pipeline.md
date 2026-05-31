@@ -36,6 +36,16 @@ Parallel structure to commit. **32-entry LRU `PREVIEW_FINGERPRINT_CACHE`** keyed
 
 Pointer listeners attach via refs, not reactive state — the ref-sync-in-effect pattern from `r3f_critical_patterns.md`. New listener-read state must mirror to a `useRef` inside `useEffect([state])`, never in deps that would re-attach on every pointermove.
 
+## Shape editing (polygon + rectangle parametric glyphs)
+
+Regular polygons and rectangles are committed as N/4 individual `line` entities, then **grouped** under a marker constraint so they stay editable:
+- `'polygon'` constraint carries `polygonMeta { center, radius, baseAngle, kind }` (radius = cursor distance: circumradius for inscribed, apothem for circumscribed). `'rectangle'` constraint carries `rectangleMeta { center, width, height, rotation }`.
+- These constraint types are **pure grouping markers** — the Newton solver's default case ignores them (no residual). Adding a new shape type to `ConstraintType` is safe as long as the solver doesn't need a residual.
+- `regeneratePolygon(id, sides)` / `regenerateRectangle(id, w, h)` in `store/cad/slices/.../sketchEditing/polygonEditActions.ts` rebuild the member lines from the meta (kind-aware for polygons: inscribed keeps the circumscribing circle, circumscribed keeps the inscribed circle), replace entities, and re-add constraints. `replaceSketchEntities` auto-drops constraints whose entityIds were removed.
+- **`PolygonConstraintOverlay.tsx`** (mounted in `Viewport.tsx`, despite the name handles BOTH shapes) renders a clickable Html glyph at each shape center → inline editor (sides / width×height), auto-focused, Enter/Escape/click-outside closes, delete button. Shared `editingPolygonConstraintId` store field tracks which is open; polygon commits set it for auto-open-on-draw.
+- `SketchConstraintOverlay.tsx` (the THREE-line glyph renderer) **skips** `'polygon'`/`'rectangle'` so the interactive Html glyph isn't doubled by a default dot.
+- Committed **ellipse** render (`sketchRendering.createEllipse`) returns a **Group** (curve + dashed major/minor construction axes); disposal is traverse-based so nested lines are freed.
+
 ## Snap engine — `SketchInteraction.tsx` findSnapCandidate
 
 - Snap radius is **screen-space** (~12 px), computed via camera FOV/depth — NOT a fixed world-space mm. Zoom-invariant.
