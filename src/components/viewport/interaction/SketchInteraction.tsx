@@ -280,7 +280,32 @@ export default function SketchInteraction() {
             }
           }
         }
-      } else if ((e.type === 'circle' || e.type === 'arc' || e.type === 'ellipse' || e.type === 'elliptical-arc') && e.points.length >= 1) {
+      // A5: nearest on-curve snap (lowest priority, above grid).
+      // Projects cursor onto line/arc/circle to find the closest point on the curve.
+      if (e.points.length >= 2 && (e.type === 'line' || e.type === 'construction-line' || e.type === 'centerline')) {
+        if (!snapToEndpoint) { // only run if endpoint snap didn't already cover this
+          const P0 = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
+          const P1 = new THREE.Vector3(e.points[e.points.length - 1].x, e.points[e.points.length - 1].y, e.points[e.points.length - 1].z);
+          const seg = P1.clone().sub(P0);
+          const segLen2 = seg.lengthSq();
+          if (segLen2 > 1e-10) {
+            const t = Math.max(0, Math.min(1, worldPt.clone().sub(P0).dot(seg) / segLen2));
+            const nearest = P0.clone().addScaledVector(seg, t);
+            considerCandidate(nearest, 'nearest');
+          }
+        }
+      } else if ((e.type === 'circle' || e.type === 'arc') && e.points.length >= 1 && (e.radius ?? 0) > 0) {
+        const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
+        const r = e.radius!;
+        const toWorld = worldPt.clone().sub(center);
+        const dist = toWorld.length();
+        if (dist > 1e-6) {
+          const nearest = center.clone().addScaledVector(toWorld, r / dist);
+          considerCandidate(nearest, 'nearest');
+        }
+      }
+
+      if ((e.type === 'circle' || e.type === 'arc' || e.type === 'ellipse' || e.type === 'elliptical-arc') && e.points.length >= 1) {
         // Center snap — A6: include ellipse / elliptical-arc (center = points[0])
         if (snapToCenter) {
           const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);

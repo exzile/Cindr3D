@@ -118,4 +118,43 @@ describe('dimension constraints in ConstraintSolver', () => {
     const r2 = result.updatedScalars.get('c2::radius')!;
     expect(Math.abs(r1 - r2)).toBeCloseTo(0, 3);
   });
+
+  // ── B3.d: coincident with pointIndices bonds the correct endpoints ─────────
+  it('B3: coincident with pointIndices moves the correct endpoint', () => {
+    // Line A: (0,0)→(10,0). Line B: (5,10)→(15,10).
+    // Coincident constraint bonding A.p1 (end, index 1) to B.p0 (start, index 0).
+    // Expect A.p1 and B.p0 to coincide after solve (not A.p0 and B.p0).
+    const result = solveConstraints([
+      line('a', 0, 0, 10, 0),
+      line('b', 5, 10, 15, 10),
+    ], [
+      { type: 'fix', entityIds: ['a'], pointIndices: [0] }, // fix only a.p0
+      { type: 'coincident', entityIds: ['a', 'b'], pointIndices: [1, 0] },
+    ]);
+    expect(result.solved).toBe(true);
+    const a1 = result.updatedPoints.get('a-p1')!;
+    const b0 = result.updatedPoints.get('b-p0')!;
+    expect(Math.abs(a1.x - b0.x)).toBeCloseTo(0, 3);
+    expect(Math.abs(a1.y - b0.y)).toBeCloseTo(0, 3);
+  });
+
+  // ── B4: circle-circle tangent ─────────────────────────────────────────────
+  it('B4: tangent constraint separates two overlapping circles to external tangency', () => {
+    // c2 starts at dist=4 from c1 (r=3 each). External target=6, internal=0.
+    // |4-6|=2 < |4-0|=4, so solver chooses external tangency → dist converges to 6.
+    const result = solveConstraints([
+      circle('c1', 0, 0, 3),
+      circle('c2', 4, 0, 3), // dist=4 → closer to external (6) than internal (0)
+    ], [
+      { type: 'fix', entityIds: ['c1'] },
+      { type: 'tangent', entityIds: ['c1', 'c2'] },
+      { type: 'dimension-radial', entityIds: ['c1'], value: 3 },
+      { type: 'dimension-radial', entityIds: ['c2'], value: 3 },
+    ]);
+    expect(result.solved).toBe(true);
+    const c1 = result.updatedPoints.get('c1-p0')!;
+    const c2 = result.updatedPoints.get('c2-p0')!;
+    const dist = Math.hypot(c2.x - c1.x, c2.y - c1.y);
+    expect(dist).toBeCloseTo(6, 2); // external tangency: rA + rB = 6
+  });
 });

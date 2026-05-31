@@ -207,6 +207,20 @@ export function useSketchConstraintTool({
       const nextSelection = [...currentSelection, entity.id];
       if (usePointIndices) pendingPointIndices.push(hit!.pointIndex);
 
+      // B2.b: for 'equal', reject mixed line+circle pairs with a clear message.
+      if (constraintType === 'equal' && nextSelection.length === 2) {
+        const e0 = activeSketch.entities.find((e) => e.id === nextSelection[0]);
+        const e1 = activeSketch.entities.find((e) => e.id === nextSelection[1]);
+        const isCurveType = (e: SketchEntity) => e.type === 'circle' || e.type === 'arc';
+        const isLineType  = (e: SketchEntity) => e.type === 'line' || e.type === 'construction-line' || e.type === 'centerline';
+        if (e0 && e1 && ((isCurveType(e0) && isLineType(e1)) || (isLineType(e0) && isCurveType(e1)))) {
+          setStatusMessage('equal: pick two of the same kind (line+line or circle+circle)');
+          clearConstraintSelection();
+          pendingPointIndices.length = 0;
+          return;
+        }
+      }
+
       if (nextSelection.length < requiredCount) {
         addToConstraintSelection(entity.id);
         const remaining = requiredCount - nextSelection.length;

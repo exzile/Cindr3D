@@ -872,7 +872,7 @@
 #     intersection. Fix: add analytic line-circle / circle-circle + sampled spline path.
 #     (Overlaps SKETCH-1.15.)
 #
-# [ ] SKETCH-2.A5  `nearest` (on-curve) snap not implemented (BUG). Runtime never emits
+# [x] SKETCH-2.A5  `nearest` (on-curve) snap not implemented (BUG). Runtime never emits
 #     'nearest'. The closest thing is 'perpendicular' (foot onto a straight segment
 #     only, 255-266) — not nearest-point-on-arbitrary-curve. Fix: add closest-point-on-
 #     curve projection for line/arc/circle/ellipse/spline.
@@ -1086,7 +1086,7 @@
 #   Depends on B1. File: ConstraintSolver.ts:368-386 + useSketchConstraintTool.ts.
 #   [x] B2.a  With radius now a DOF, add an equal-radius residual rA - rB == 0 for two
 #             circles/arcs.
-#   [ ] B2.b  In the constraint tool, when the two picked entities are line+circle (or
+#   [x] B2.b  In the constraint tool, when the two picked entities are line+circle (or
 #             arc+line) reject with setStatusMessage('Equal: pick two of the same kind').
 #   [x] B2.c  Test: two circles r=5 and r=9, add equal -> both converge to the same r.
 #
@@ -1101,7 +1101,7 @@
 #             parallel with entityIds and pass them in the addSketchConstraint payload.
 #   [x] B3.c  B8: include pointIndices in the dedupe `exists` key in addSketchConstraint
 #             (constraintAndViewActions.ts:158-161) so p0<->p1 and p1<->p0 are distinct.
-#   [ ] B3.d  Test: two lines; coincident between line A end (idx 1) and line B start
+#   [x] B3.d  Test: two lines; coincident between line A end (idx 1) and line B start
 #             (idx 0) -> solver moves A.p1 to B.p0 (not A.p0<->B.p0).
 #
 # ── P2: C1 — arc-3point picks the CCW side through the middle point ────────────
@@ -1191,7 +1191,7 @@
 #           higher-priority hit within radius wins even if a lower one is slightly closer.
 #   [x] A4  Intersection (:334-381): add line-circle and circle-circle analytic
 #           intersection; sampled fallback for ellipse/spline. (= SKETCH-1.15.)
-#   [ ] A5  Add a 'nearest' on-curve branch: closest-point-on-curve (param projection)
+#   [x] A5  Add a 'nearest' on-curve branch: closest-point-on-curve (param projection)
 #           for line/arc/circle/ellipse/spline, lowest priority above grid.
 #   [x] A6  Center branch (:268): include ellipse + elliptical-arc (center = points[0]).
 #   [x] A7  Midpoint: add arc midpoint = point at angle (startAngle+endAngle)/2.
