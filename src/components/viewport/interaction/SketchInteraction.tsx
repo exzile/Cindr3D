@@ -709,6 +709,15 @@ export default function SketchInteraction() {
   const _inferGuideGeom = useRef<THREE.BufferGeometry | null>(null);
   const _inferGuideLine = useRef<THREE.Line | null>(null);
 
+  // Dispose the lazily-created inference-guide geometry on unmount. The line's
+  // material is the shared inferenceGuideMaterial singleton (disposed above), so
+  // only its BufferGeometry needs cleanup here.
+  useEffect(() => () => {
+    _inferGuideGeom.current?.dispose();
+    _inferGuideGeom.current = null;
+    _inferGuideLine.current = null;
+  }, []);
+
   // Preview of current drawing operation
   useFrame(({ invalidate }) => {
     if (!previewRef.current) return;

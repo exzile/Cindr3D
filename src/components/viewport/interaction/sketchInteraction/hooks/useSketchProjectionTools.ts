@@ -70,9 +70,19 @@ export function useSketchProjectionTools({
     const mouse = new THREE.Vector2();
     const canvas = gl.domElement;
 
+    // Perf: traverse the scene for pickable meshes once per tool activation
+    // instead of on every pointermove. The body set is stable for the duration
+    // of a projection-pick session; the effect re-runs (rebuilding the cache)
+    // whenever activeTool/activeSketch/scene changes.
+    let pickableCache: THREE.Mesh[] | null = null;
+    const getPickableMeshes = (): THREE.Mesh[] => {
+      if (pickableCache === null) pickableCache = collectPickableMeshes(scene);
+      return pickableCache;
+    };
+
     const intersectPickableMeshes = (event: MouseEvent | PointerEvent) => {
       setRayFromPointer(event, canvas, raycaster, camera, mouse);
-      return raycaster.intersectObjects(collectPickableMeshes(scene), false);
+      return raycaster.intersectObjects(getPickableMeshes(), false);
     };
 
     const handleMove = (event: PointerEvent) => {
