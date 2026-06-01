@@ -89,7 +89,9 @@ export interface CADCoreState {
   // Feature timeline
   features: Feature[];
   addFeature: (feature: Feature) => void;
-  addPrimitive: (kind: 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil', params: Record<string, number>) => void;
+  addPrimitive: (kind: 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil', params: Record<string, number | string>) => void;
+  /** PRIM-7: Update params on an existing primitive in-place; clears pre-built mesh so PrimitiveBodies rebuilds. */
+  updatePrimitiveParams: (featureId: string, newParams: Record<string, number | string>) => void;
   /** D194: Insert a fastener from the fastener library as a solid body feature. */
   insertFastener: (params: {
     type: string; size: string;

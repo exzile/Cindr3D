@@ -6,6 +6,8 @@ import '../common/ToolPanel.css';
 // PRIM-9: coil removed — route through CoilDialog (ActiveDialog 'coil' case)
 type PrimitiveKind = 'box' | 'cylinder' | 'sphere' | 'torus';
 
+type FeatureOperation = 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component';
+
 const KIND_COLOR: Record<PrimitiveKind, string> = {
   box: '#4a7c59',
   cylinder: '#2563eb',
@@ -21,42 +23,59 @@ const KIND_TITLE: Record<PrimitiveKind, string> = {
 };
 
 export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClose: () => void }) {
+  const features = useCADStore((s) => s.features);
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
+  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p = editing?.params ?? {};
+
   // PRIM-5: Fusion field labels — stored internally as original keys for PrimitiveBodies compat
   // Box: stored as width/height/depth (mapped from Fusion Length/Width/Height)
-  const [boxLength, setBoxLength] = useState(20);
-  const [boxWidth, setBoxWidth] = useState(20);
-  const [boxHeight, setBoxHeight] = useState(20);
+  const [boxLength, setBoxLength] = useState((p.width as number) || 20);
+  const [boxWidth, setBoxWidth] = useState((p.height as number) || 20);
+  const [boxHeight, setBoxHeight] = useState((p.depth as number) || 20);
 
   // Cylinder: Fusion shows Diameter — stored as radius = diam/2
-  const [cylDiam, setCylDiam] = useState(20);
-  const [cylDiamTop, setCylDiamTop] = useState(20);
-  const [cylHeight, setCylHeight] = useState(20);
+  const [cylDiam, setCylDiam] = useState(((p.radius as number) || 10) * 2);
+  const [cylDiamTop, setCylDiamTop] = useState(((p.radiusTop as number) ?? (p.radius as number) ?? 10) * 2);
+  const [cylHeight, setCylHeight] = useState((p.height as number) || 20);
 
   // Sphere: Fusion shows Diameter — stored as radius = diam/2
-  const [sphDiam, setSphDiam] = useState(20);
+  const [sphDiam, setSphDiam] = useState(((p.radius as number) || 10) * 2);
 
   // Torus: Fusion shows Torus Diameter + Section Diameter — stored as radius/tubeRadius
-  const [torDiam, setTorDiam] = useState(30);
-  const [torSecDiam, setTorSecDiam] = useState(6);
+  const [torDiam, setTorDiam] = useState(((p.radius as number) || 15) * 2);
+  const [torSecDiam, setTorSecDiam] = useState(((p.tubeRadius as number) || 3) * 2);
 
-  const [x, setX] = useState(0);
-  const [y, setY] = useState(0);
-  const [z, setZ] = useState(0);
+  const [x, setX] = useState((p.x as number) || 0);
+  const [y, setY] = useState((p.y as number) || 0);
+  const [z, setZ] = useState((p.z as number) || 0);
+
+  // PRIM-4: Operation field (Fusion FeatureOperations)
+  const [operation, setOperation] = useState<FeatureOperation>(
+    (p.operation as FeatureOperation) ?? 'new-body',
+  );
 
   const addPrimitive = useCADStore((s) => s.addPrimitive);
+  const updatePrimitiveParams = useCADStore((s) => s.updatePrimitiveParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
 
   const handleApply = () => {
-    const params: Record<string, number> =
+    const params: Record<string, number | string> =
       kind === 'box'
-        ? { width: boxLength, height: boxWidth, depth: boxHeight }
+        ? { width: boxLength, height: boxWidth, depth: boxHeight, operation }
         : kind === 'cylinder'
-          ? { radius: cylDiam / 2, radiusTop: cylDiamTop / 2, height: cylHeight }
+          ? { radius: cylDiam / 2, radiusTop: cylDiamTop / 2, height: cylHeight, operation }
           : kind === 'sphere'
-            ? { radius: sphDiam / 2 }
-            : { radius: torDiam / 2, tubeRadius: torSecDiam / 2 };
-    addPrimitive(kind, { ...params, x, y, z });
-    setStatusMessage(`Created ${kind}`);
+            ? { radius: sphDiam / 2, operation }
+            : { radius: torDiam / 2, tubeRadius: torSecDiam / 2, operation };
+
+    if (editing) {
+      updatePrimitiveParams(editing.id, { ...params, x, y, z });
+      setStatusMessage(`Updated ${kind}`);
+    } else {
+      addPrimitive(kind, { ...params, x, y, z });
+      setStatusMessage(`Created ${kind}`);
+    }
     onClose();
   };
 
@@ -67,7 +86,7 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
       <div className="tool-panel" style={{ width: 272 }}>
         <div className="tp-header">
           <div className="tp-header-icon" style={{ background: KIND_COLOR[kind] }} />
-          <span className="tp-header-title">{KIND_TITLE[kind]}</span>
+          <span className="tp-header-title">{editing ? `EDIT ${KIND_TITLE[kind]}` : KIND_TITLE[kind]}</span>
           <button className="tp-close" onClick={onClose} title="Cancel"><X size={14} /></button>
         </div>
 
@@ -173,6 +192,23 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
 
           <div className="tp-divider" />
 
+          {/* PRIM-4: Operation */}
+          <div className="tp-section">
+            <div className="tp-row">
+              <span className="tp-label">Operation</span>
+              <select className="tp-select" value={operation}
+                onChange={(e) => setOperation(e.target.value as FeatureOperation)}>
+                <option value="new-body">New Body</option>
+                <option value="join">Join</option>
+                <option value="cut">Cut</option>
+                <option value="intersect">Intersect</option>
+                <option value="new-component">New Component</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="tp-divider" />
+
           <div className="tp-section">
             <div className="tp-section-title">Position</div>
             <div className="tp-row">
@@ -207,7 +243,7 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
             <X size={13} /> Cancel
           </button>
           <button className="tp-btn tp-btn-ok" onClick={handleApply}>
-            <Check size={13} /> OK
+            <Check size={13} /> {editing ? 'Update' : 'OK'}
           </button>
         </div>
       </div>

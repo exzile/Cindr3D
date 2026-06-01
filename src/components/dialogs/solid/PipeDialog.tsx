@@ -22,9 +22,12 @@ export function PipeDialog({ onClose }: { onClose: () => void }) {
   const [operation, setOperation] = useState<'new-body' | 'join' | 'cut'>(
     (p.operation as 'new-body' | 'join' | 'cut') ?? 'new-body',
   );
+  const [sectionType, setSectionType] = useState<'circular' | 'square' | 'triangular'>(
+    (p.sectionType as 'circular' | 'square' | 'triangular') ?? 'circular',
+  );
 
   const handleApply = () => {
-    const params = { outerDiameter, hollow, wallThickness, operation, pathSketchId };
+    const params = { outerDiameter, hollow, wallThickness, operation, pathSketchId, sectionType };
     if (editing) {
       updatePipeGeometry(editing.id, params);
     } else {
@@ -52,6 +55,16 @@ export function PipeDialog({ onClose }: { onClose: () => void }) {
                   ? <option value="">— no sketches —</option>
                   : sketches.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)
                 }
+              </select>
+            </div>
+
+            <div className="tp-row">
+              <span className="tp-label">Section</span>
+              <select className="tp-select" value={sectionType}
+                onChange={(e) => setSectionType(e.target.value as 'circular' | 'square' | 'triangular')}>
+                <option value="circular">Circular</option>
+                <option value="square">Square</option>
+                <option value="triangular">Triangular</option>
               </select>
             </div>
 

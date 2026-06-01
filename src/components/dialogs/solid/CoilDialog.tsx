@@ -1,8 +1,8 @@
 /**
  * SOL-M5: Coil / Helix generator dialog.
  * Generates a swept tube along a parametric helix curve using THREE.TubeGeometry.
- * Supports three coil types (pitch+height, pitch+revolutions, height+revolutions)
- * and three cross-section shapes (circle, square, triangle).
+ * Supports four coil types (pitch+height, pitch+revolutions, height+revolutions, spiral)
+ * and five cross-section shapes (circle, square, triangle, triangle-external, triangle-internal).
  */
 import { useState, useMemo, useCallback } from 'react';
 import { X, Check } from 'lucide-react';
@@ -22,7 +22,7 @@ import {
 } from './coilGeometry';
 import '../common/ToolPanel.css';
 
-type CoilType = 'pitch-height' | 'pitch-revolutions' | 'height-revolutions';
+type CoilType = 'pitch-height' | 'pitch-revolutions' | 'height-revolutions' | 'spiral';
 
 export function CoilDialog({ onClose }: { onClose: () => void }) {
   const editingFeatureId = useCADStore((s) => s.editingFeatureId);
@@ -52,14 +52,17 @@ export function CoilDialog({ onClose }: { onClose: () => void }) {
         return { label: 'Height', value: (pitch * revolutions).toFixed(2) + ' mm' };
       case 'height-revolutions':
         return { label: 'Pitch', value: revolutions > 0 ? (height / revolutions).toFixed(2) + ' mm' : '—' };
+      case 'spiral':
+        return { label: 'Outer Ø', value: ((coilDiameter / 2 + pitch * revolutions) * 2).toFixed(2) + ' mm' };
     }
-  }, [coilType, pitch, height, revolutions]);
+  }, [coilType, pitch, height, revolutions, coilDiameter]);
 
   const effectiveRevolutions = useMemo(() => {
     switch (coilType) {
       case 'pitch-height': return pitch > 0 ? height / pitch : 0;
       case 'pitch-revolutions': return revolutions;
       case 'height-revolutions': return revolutions;
+      case 'spiral': return revolutions;
     }
   }, [coilType, pitch, height, revolutions]);
 
@@ -68,6 +71,7 @@ export function CoilDialog({ onClose }: { onClose: () => void }) {
       case 'pitch-height': return height;
       case 'pitch-revolutions': return pitch * revolutions;
       case 'height-revolutions': return height;
+      case 'spiral': return 0; // flat spiral — no axial rise
     }
   }, [coilType, pitch, height, revolutions]);
 
@@ -106,13 +110,14 @@ export function CoilDialog({ onClose }: { onClose: () => void }) {
       }
     }
 
-    // ── THREE fallback (square / triangle, or OCC unavailable / failed) ─────
-    const geo = buildCoilGeometry(coilDiameter, pitch, effectiveHeight, effectiveRevolutions, sectionDiameter, section, direction);
+    // ── THREE fallback (square / triangle / spiral, or OCC unavailable / failed) ─────
+    const isSpiral = coilType === 'spiral';
+    const geo = buildCoilGeometry(coilDiameter, pitch, effectiveHeight, effectiveRevolutions, sectionDiameter, section, direction, isSpiral);
     if (!geo) return null;
     return new THREE.Mesh(geo, COIL_MESH_MATERIAL);
-  }, [section, direction, coilDiameter, sectionDiameter, pitch, effectiveRevolutions, effectiveHeight]);
+  }, [section, direction, coilType, coilDiameter, sectionDiameter, pitch, effectiveRevolutions, effectiveHeight]);
 
-  const canApply = effectiveRevolutions > 0.01 && effectiveHeight > 0.001 && coilDiameter > 0 && sectionDiameter > 0;
+  const canApply = effectiveRevolutions > 0.01 && (coilType === 'spiral' || effectiveHeight > 0.001) && coilDiameter > 0 && sectionDiameter > 0;
 
   const handleApply = () => {
     const params: Record<string, number | string | boolean> = {
@@ -163,6 +168,7 @@ export function CoilDialog({ onClose }: { onClose: () => void }) {
               <option value="pitch-height">Pitch + Height</option>
               <option value="pitch-revolutions">Pitch + Revolutions</option>
               <option value="height-revolutions">Height + Revolutions</option>
+              <option value="spiral">Spiral</option>
             </select>
           </div>
 
@@ -170,9 +176,11 @@ export function CoilDialog({ onClose }: { onClose: () => void }) {
           <div className="tp-row">
             <span className="tp-label">Section</span>
             <select className="tp-select" value={section} onChange={(e) => setSection(e.target.value as CoilSection)}>
-              <option value="circle">Circle</option>
+              <option value="circle">Circular</option>
               <option value="square">Square</option>
-              <option value="triangle">Triangle</option>
+              <option value="triangle">Triangular</option>
+              <option value="triangle-external">Triangular (External)</option>
+              <option value="triangle-internal">Triangular (Internal)</option>
             </select>
           </div>
 
@@ -199,8 +207,8 @@ export function CoilDialog({ onClose }: { onClose: () => void }) {
             </div>
           </div>
 
-          {/* Pitch — shown for pitch-height and pitch-revolutions */}
-          {(coilType === 'pitch-height' || coilType === 'pitch-revolutions') && (
+          {/* Pitch — shown for pitch-height, pitch-revolutions, and spiral (radial pitch) */}
+          {(coilType === 'pitch-height' || coilType === 'pitch-revolutions' || coilType === 'spiral') && (
             <div className="tp-row">
               <span className="tp-label">Pitch</span>
               <div className="tp-input-group">
@@ -213,7 +221,7 @@ export function CoilDialog({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          {/* Height — shown for pitch-height and height-revolutions */}
+          {/* Height — shown for pitch-height and height-revolutions (not spiral) */}
           {(coilType === 'pitch-height' || coilType === 'height-revolutions') && (
             <div className="tp-row">
               <span className="tp-label">Height</span>
@@ -227,8 +235,8 @@ export function CoilDialog({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
-          {/* Revolutions — shown for pitch-revolutions and height-revolutions */}
-          {(coilType === 'pitch-revolutions' || coilType === 'height-revolutions') && (
+          {/* Revolutions — shown for pitch-revolutions, height-revolutions, and spiral */}
+          {(coilType === 'pitch-revolutions' || coilType === 'height-revolutions' || coilType === 'spiral') && (
             <div className="tp-row">
               <span className="tp-label">Revolutions</span>
               <div className="tp-input-group">

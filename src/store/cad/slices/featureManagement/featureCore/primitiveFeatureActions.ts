@@ -11,6 +11,7 @@ import { occTorusWithInstance } from '../../../../../engine/occ/ops/torus';
 import { occCoilWithInstance } from '../../../../../engine/occ/ops/helix';
 import { createRegisteredOccMesh } from '../../../../../engine/occ/registeredMesh';
 import { BODY_MATERIAL, FASTENER_MATERIAL } from '../../../../../components/viewport/scene/bodyMaterial';
+import { globalBRepBodyRegistry } from '../../../../../engine/occ/globalRegistry';
 
 export function createPrimitiveFeatureActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -115,6 +116,26 @@ export function createPrimitiveFeatureActions({ set, get }: CADSliceContext): Pa
         features: [...state.features, feature],
         statusMessage: `${label} added`,
       };
+    });
+  },
+
+  updatePrimitiveParams: (featureId, newParams) => {
+    const { features } = get();
+    const existing = features.find((f) => f.id === featureId && f.type === 'primitive');
+    if (!existing) return;
+    get().pushUndo();
+    // Dispose any pre-built OCC mesh (sphere/torus) so PrimitiveBodies rebuilds from new params
+    const oldMesh = existing.mesh;
+    if (oldMesh) {
+      const oldBodyId = (oldMesh as THREE.Mesh).userData?.['brepBodyId'] as string | undefined;
+      if (oldBodyId) globalBRepBodyRegistry.delete(oldBodyId);
+      if (oldMesh instanceof THREE.Mesh) oldMesh.geometry?.dispose();
+    }
+    set({
+      features: features.map((f) =>
+        f.id === featureId ? { ...f, params: { ...f.params, ...newParams }, mesh: undefined } : f,
+      ),
+      statusMessage: 'Primitive updated',
     });
   },
 

@@ -14,7 +14,7 @@ export interface SolverPoint {
 }
 
 export interface SolverConstraint {
-  type: SketchConstraint['type'] | 'dimension-linear' | 'dimension-aligned' | 'dimension-radial' | 'dimension-diameter' | 'dimension-arc-length' | 'dimension-linear-diameter' | 'dimension-ellipse-major' | 'dimension-ellipse-minor' | 'dimension-concentric-gap';
+  type: SketchConstraint['type'] | 'dimension-linear' | 'dimension-aligned' | 'dimension-radial' | 'dimension-diameter' | 'dimension-arc-length' | 'dimension-linear-diameter' | 'dimension-ellipse-major' | 'dimension-ellipse-minor' | 'dimension-concentric-gap' | 'dimension-angular';
   entityIds: string[];
   pointIndices?: number[];
   value?: number;
@@ -349,6 +349,9 @@ export function dimensionsToSolverConstraints(dimensions: SketchDimension[] = []
         case 'concentric-gap':
           // entityIds = [circle1Id, circle2Id]; value = |r2 - r1|
           return [{ type: 'dimension-concentric-gap', entityIds: dimension.entityIds, value: dimension.value }];
+        // SKETCH-1.9: angular dimension — value stored in degrees
+        case 'angular':
+          return [{ type: 'dimension-angular', entityIds: dimension.entityIds, value: dimension.value }];
         default:
           return [];
       }
@@ -800,6 +803,25 @@ function computeResiduals(
         const lp1 = getPoint(ent6.id, ent6.points.length - 1, pointMap);
         const { nu, nv } = c.surfacePlane;
         residuals.push((lp1.x - lp0.x) * nu + (lp1.y - lp0.y) * nv);
+        break;
+      }
+      case 'dimension-angular': {
+        // Enforce angle between two line entities (value stored in degrees)
+        if (c.entityIds.length < 2) break;
+        const eAngA = entityMap.get(c.entityIds[0]);
+        const eAngB = entityMap.get(c.entityIds[1]);
+        if (!eAngA || !eAngB || eAngA.points.length < 2 || eAngB.points.length < 2) break;
+        const a0 = getPoint(eAngA.id, 0, pointMap);
+        const a1 = getPoint(eAngA.id, eAngA.points.length - 1, pointMap);
+        const b0 = getPoint(eAngB.id, 0, pointMap);
+        const b1 = getPoint(eAngB.id, eAngB.points.length - 1, pointMap);
+        const adx = a1.x - a0.x, ady = a1.y - a0.y;
+        const bdx = b1.x - b0.x, bdy = b1.y - b0.y;
+        const aLen = Math.sqrt(adx * adx + ady * ady) || 1;
+        const bLen = Math.sqrt(bdx * bdx + bdy * bdy) || 1;
+        const dot = (adx / aLen) * (bdx / bLen) + (ady / aLen) * (bdy / bLen);
+        const targetCos = Math.cos((c.value ?? 90) * Math.PI / 180);
+        residuals.push(dot - targetCos);
         break;
       }
       case 'horizontal-points': {
