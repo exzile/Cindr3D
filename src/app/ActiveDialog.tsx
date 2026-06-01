@@ -325,7 +325,7 @@ const TOOL_DIALOG_SCOPE = new Set<string>([
   'hole', 'construction-plane', 'construction-plane-angle', 'construction-plane-midplane',
   'thicken', 'rib', 'web', 'emboss', 'rest', 'redefine-sketch-plane', 'base-feature',
   'draft', 'scale', 'primitive-box', 'primitive-cylinder', 'primitive-sphere',
-  'primitive-torus', 'primitive-coil', 'tessellate', 'pattern-on-path', 'thread',
+  'primitive-torus', 'tessellate', 'pattern-on-path', 'thread',
   'mesh-reduce', 'reverse-normal', 'silhouette-split', 'remove-face', 'boundary-fill',
   'offset-surface', 'surface-trim', 'surface-extend', 'stitch', 'unstitch', 'surface-split',
   'offset-face', 'align-dialog', 'fillet', 'chamfer', 'axis-perp-to-face',
@@ -373,7 +373,6 @@ export default function ActiveDialog() {
     case 'primitive-cylinder': return <PrimitivesDialog kind="cylinder" onClose={close} />;
     case 'primitive-sphere': return <PrimitivesDialog kind="sphere" onClose={close} />;
     case 'primitive-torus': return <PrimitivesDialog kind="torus" onClose={close} />;
-    case 'primitive-coil': return <PrimitivesDialog kind="coil" onClose={close} />;
     case 'tessellate': return <TessellateDialog onClose={close} />;
     case 'pattern-on-path': return <PatternOnPathDialog onClose={close} />;
     case 'thread': return <ThreadDialog onClose={close} />;

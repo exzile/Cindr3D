@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GeometryEngine } from '../../../../../../engine/GeometryEngine';
+import { useCADStore } from '../../../../../../store/cadStore';
 import type { SketchPoint } from '../../../../../../types/cad';
 import type { SketchCommitHandler } from '../types';
 
@@ -217,6 +218,81 @@ export const handleLineEditingCommit: SketchCommitHandler = (ctx) => {
         activeSketch.entities.flatMap((e) => (e.id === target!.id ? replacements : [e])),
       );
       setStatusMessage(replacements.length === 0 ? 'Trim: entity removed' : 'Trim: segment trimmed');
+      return true;
+    }
+
+    case 'sketch-offset': {
+      if (!activeSketch) return false;
+      const distance = useCADStore.getState().sketchOffsetDistance;
+      const clickPt = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z);
+      const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+
+      let bestEnt: typeof activeSketch.entities[0] | null = null;
+      let bestDist = Infinity;
+
+      for (const ent of activeSketch.entities) {
+        if (ent.type === 'line' || ent.type === 'construction-line' || ent.type === 'centerline') {
+          if (ent.points.length < 2) continue;
+          const a = new THREE.Vector3(ent.points[0].x, ent.points[0].y, ent.points[0].z);
+          const b = new THREE.Vector3(ent.points[1].x, ent.points[1].y, ent.points[1].z);
+          const ab = b.clone().sub(a);
+          const len2 = ab.lengthSq();
+          if (len2 < 1e-8) continue;
+          const t = Math.max(0, Math.min(1, clickPt.clone().sub(a).dot(ab) / len2));
+          const closest = a.clone().addScaledVector(ab, t);
+          const d = clickPt.distanceTo(closest);
+          if (d < bestDist) { bestDist = d; bestEnt = ent; }
+        } else if ((ent.type === 'circle' || ent.type === 'arc') && ent.radius !== undefined) {
+          const center = new THREE.Vector3(ent.points[0].x, ent.points[0].y, ent.points[0].z);
+          const d = Math.abs(clickPt.distanceTo(center) - ent.radius);
+          if (d < bestDist) { bestDist = d; bestEnt = ent; }
+        }
+      }
+
+      if (!bestEnt || bestDist > 10) {
+        setStatusMessage('Offset: click closer to a line or circle/arc');
+        return true;
+      }
+
+      const ent = bestEnt;
+
+      if (ent.type === 'line' || ent.type === 'construction-line' || ent.type === 'centerline') {
+        const a3 = new THREE.Vector3(ent.points[0].x, ent.points[0].y, ent.points[0].z);
+        const b3 = new THREE.Vector3(ent.points[1].x, ent.points[1].y, ent.points[1].z);
+        const dir = b3.clone().sub(a3).normalize();
+        // In-plane perpendicular: rotate line dir 90° within the sketch plane
+        const t1c = dir.dot(t1);
+        const t2c = dir.dot(t2);
+        const norm = Math.sqrt(t1c * t1c + t2c * t2c) || 1;
+        const perp = t1.clone().multiplyScalar(-t2c / norm).addScaledVector(t2, t1c / norm);
+        const signedDist = clickPt.clone().sub(a3).dot(perp);
+        const side = signedDist >= 0 ? 1 : -1;
+        const offset = perp.clone().multiplyScalar(side * distance);
+        const p0: SketchPoint = { id: crypto.randomUUID(), x: ent.points[0].x + offset.x, y: ent.points[0].y + offset.y, z: ent.points[0].z + offset.z };
+        const p1: SketchPoint = { id: crypto.randomUUID(), x: ent.points[1].x + offset.x, y: ent.points[1].y + offset.y, z: ent.points[1].z + offset.z };
+        addSketchEntity({ id: crypto.randomUUID(), type: ent.type, points: [p0, p1] });
+        setStatusMessage(`Offset: line offset by ${distance.toFixed(2)} mm`);
+      } else if ((ent.type === 'circle' || ent.type === 'arc') && ent.radius !== undefined) {
+        const center = new THREE.Vector3(ent.points[0].x, ent.points[0].y, ent.points[0].z);
+        const distToCenter = clickPt.distanceTo(center);
+        const inside = distToCenter < ent.radius;
+        const newRadius = inside ? ent.radius - distance : ent.radius + distance;
+        if (newRadius < 0.001) {
+          setStatusMessage('Offset: result radius too small — increase offset distance or use outside offset');
+          return true;
+        }
+        const newCenter: SketchPoint = { id: crypto.randomUUID(), x: center.x, y: center.y, z: center.z };
+        addSketchEntity({
+          id: crypto.randomUUID(),
+          type: ent.type,
+          points: [newCenter],
+          radius: newRadius,
+          ...(ent.startAngle !== undefined ? { startAngle: ent.startAngle } : {}),
+          ...(ent.endAngle !== undefined ? { endAngle: ent.endAngle } : {}),
+        });
+        setStatusMessage(`Offset: ${ent.type} radius ${inside ? 'decreased' : 'increased'} by ${distance.toFixed(2)} mm`);
+      }
+
       return true;
     }
 
