@@ -25,6 +25,7 @@ import {
   openDimensionDeleteMenu,
   type DimensionContextMenuEvent,
 } from "./sketchDimensions/dimensionContextMenu";
+import { useCameraIdle } from "../hooks/useCameraIdle";
 
 // ── Per-annotation data collected in useMemo ─────────────────────────────────
 interface AnnData {
@@ -45,6 +46,7 @@ export default function SketchDimensionAnnotations() {
     (s) => s.updateSketchDimEditScreen,
   );
   const { camera, gl } = useThree();
+  const cameraIdle = useCameraIdle();
   const closeContextMenuRef = useRef<(() => void) | null>(null);
   const draggingDimRef = useRef<{
     dimensionId: string;
@@ -979,7 +981,10 @@ export default function SketchDimensionAnnotations() {
             <Html
               position={ann.textPos}
               center
-              style={{ pointerEvents: "auto" }}
+              style={{
+                pointerEvents: cameraIdle ? "auto" : "none",
+                visibility: cameraIdle ? "visible" : "hidden",
+              }}
             >
               <div
                 style={{

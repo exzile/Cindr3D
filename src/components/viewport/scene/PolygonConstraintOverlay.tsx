@@ -5,20 +5,25 @@ import { Hexagon, X, Trash2 } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import { useThemeStore } from '../../../store/themeStore';
 import { useCameraIdle } from '../hooks/useCameraIdle';
-import type { Sketch, SketchConstraint } from '../../../types/cad';
+import type { SketchConstraint } from '../../../types/cad';
 
 /** Center of a shape constraint, from its metadata or the member-line vertices. */
-function shapeCenter(con: SketchConstraint, sketch: Sketch): THREE.Vector3 | null {
+function shapeCenter(
+  con: SketchConstraint,
+  entityMap: Map<string, { points: { x: number; y: number; z: number }[] }>,
+): THREE.Vector3 | null {
   const meta = con.polygonMeta;
   if (meta) return new THREE.Vector3(meta.center.x, meta.center.y, meta.center.z);
-  const verts = con.entityIds
-    .map((id) => sketch.entities.find((e) => e.id === id))
-    .filter((e): e is NonNullable<typeof e> => !!e && e.points.length >= 1)
-    .map((l) => new THREE.Vector3(l.points[0].x, l.points[0].y, l.points[0].z));
-  if (verts.length < 3) return null;
-  const c = new THREE.Vector3();
-  for (const v of verts) c.add(v);
-  return c.divideScalar(verts.length);
+  // Fallback for legacy polygons without metadata — O(sides) via pre-built map.
+  let cx = 0, cy = 0, cz = 0, n = 0;
+  for (const id of con.entityIds) {
+    const e = entityMap.get(id);
+    if (!e || e.points.length < 1) continue;
+    cx += e.points[0].x; cy += e.points[0].y; cz += e.points[0].z;
+    n++;
+  }
+  if (n < 3) return null;
+  return new THREE.Vector3(cx / n, cy / n, cz / n);
 }
 
 /** The popup editor — separate component so mounting it auto-focuses the input. */
@@ -201,10 +206,20 @@ export default function PolygonConstraintOverlay() {
   const editingId = useCADStore((s) => s.editingPolygonConstraintId);
   const setEditingId = useCADStore((s) => s.setEditingPolygonConstraintId);
 
+  // Key on constraints array only — point-only solver updates don't change constraints,
+  // so this avoids rebuilding the glyph list on every drag/solve cycle.
+  const constraints = activeSketch?.constraints;
   const polygonConstraints = useMemo(
-    () => (activeSketch?.constraints ?? []).filter((c) => c.type === 'polygon'),
-    [activeSketch],
+    () => (constraints ?? []).filter((c) => c.type === 'polygon'),
+    [constraints],
   );
+
+  // Build entity map once per constraints change for O(1) center lookup fallback.
+  const entityMap = useMemo(() => {
+    const map = new Map<string, { points: { x: number; y: number; z: number }[] }>();
+    for (const e of activeSketch?.entities ?? []) map.set(e.id, e);
+    return map;
+  }, [activeSketch?.entities]);
 
   // The <Html> glyphs reproject + rewrite DOM every frame; hide them while the
   // camera is moving and bring them back once it settles (no per-frame DOM cost
@@ -216,7 +231,7 @@ export default function PolygonConstraintOverlay() {
   return (
     <group renderOrder={1000}>
       {polygonConstraints.map((con) => {
-        const center = shapeCenter(con, activeSketch);
+        const center = shapeCenter(con, entityMap);
         if (!center) return null;
 
         // The open editor stays visible even mid-move (the user is interacting
@@ -229,11 +244,17 @@ export default function PolygonConstraintOverlay() {
           );
         }
 
-        if (!cameraIdle) return null; // hide idle glyphs during camera movement
-
-        // Idle glyph: screen-facing button, click to edit.
+        // Keep the <Html> portal mounted during camera movement but hide it with CSS —
+        // returning null would unmount/remount the portal on each idle→moving transition,
+        // causing a visible flash. visibility:hidden preserves DOM identity.
         return (
-          <Html key={con.id} position={center} center zIndexRange={[190, 0]} style={{ pointerEvents: 'none' }}>
+          <Html
+            key={con.id}
+            position={center}
+            center
+            zIndexRange={[190, 0]}
+            style={{ pointerEvents: 'none', visibility: cameraIdle ? 'visible' : 'hidden' }}
+          >
             <PolygonGlyph sides={con.entityIds.length} onClick={() => setEditingId(con.id)} />
           </Html>
         );

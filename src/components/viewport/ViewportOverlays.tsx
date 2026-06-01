@@ -1,27 +1,27 @@
-import type * as THREE from 'three';
 import ViewCube from './viewcube/ViewCube';
 import WindowSelectOverlay from './overlays/WindowSelectOverlay';
 import LassoSelectOverlay from './overlays/LassoSelectOverlay';
 import ZoomWindowOverlay from './overlays/ZoomWindowOverlay';
 import FinishEditInPlaceBar from './overlays/FinishEditInPlaceBar';
 import { ViewportContextMenu } from './overlays/ViewportContextMenu';
+import { useViewCubeQuaternion } from './hooks/useViewCubeQuaternion';
 import type { ViewportCtxState } from '../../types/viewport-context-menu.types';
 
 interface ViewportOverlaysProps {
-  camQuat: THREE.Quaternion;
   viewportCtxMenu: ViewportCtxState | null;
   onCloseContextMenu: () => void;
-  onOrientViewCube: (targetQ: THREE.Quaternion) => void;
+  onOrientViewCube: Parameters<typeof ViewCube>[0]['onOrient'];
   onHomeViewCube: () => void;
 }
 
 export function ViewportOverlays({
-  camQuat,
   viewportCtxMenu,
   onCloseContextMenu,
   onOrientViewCube,
   onHomeViewCube,
 }: ViewportOverlaysProps) {
+  const camQuat = useViewCubeQuaternion();
+
   return (
     <>
       <FinishEditInPlaceBar />

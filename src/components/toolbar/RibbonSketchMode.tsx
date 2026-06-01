@@ -135,6 +135,7 @@ export function RibbonSketchMode({
         <ToolButton
           icon={<Waypoints size={20} />}
           label="Spline"
+          active={['spline', 'spline-control'].includes(activeTool)}
           onClick={() => { setActiveTool('spline' as T); setStatusMessage('Spline: click to place fit points, right-click to finish'); }}
           colorClass="icon-blue"
           dropdown={[

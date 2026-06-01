@@ -105,6 +105,40 @@ export function SketchInteractionHud({
     radiusHudPosition = centerVector.clone().add(mousePos).multiplyScalar(0.5);
   }
 
+  // Overall Slot dimensions: length + angle on axis drag, width on perpendicular drag.
+  const isLinearSlotTool =
+    activeTool === 'slot-overall' ||
+    activeTool === 'slot-center' ||
+    activeTool === 'slot' ||
+    activeTool === 'slot-center-point';
+  const showSlotDims = isLinearSlotTool && drawingPoints.length >= 1;
+  let slotHudText = '';
+  let slotHudPosition: THREE.Vector3 | null = null;
+  let slotHintText = '';
+  if (showSlotDims) {
+    const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+    const planeNormal = t1.clone().cross(t2).normalize();
+    if (drawingPoints.length === 1) {
+      const p0 = new THREE.Vector3(drawingPoints[0].x, drawingPoints[0].y, drawingPoints[0].z);
+      const delta = mousePos.clone().sub(p0);
+      // slot-center-point: first click is the midpoint, so full c-to-c = 2× the half-length
+      const displayLen = activeTool === 'slot-center-point' ? delta.length() * 2 : delta.length();
+      const angDeg = (Math.atan2(delta.dot(t2), delta.dot(t1)) * 180) / Math.PI;
+      slotHudText = `${displayLen.toFixed(3)} ${units}   ${Math.abs(angDeg).toFixed(1)} deg`;
+      slotHudPosition = p0.clone().add(mousePos).multiplyScalar(0.5);
+      slotHintText = activeTool === 'slot-center-point' ? 'Select end centre' : 'Select end point';
+    } else if (drawingPoints.length === 2) {
+      const p1 = new THREE.Vector3(drawingPoints[0].x, drawingPoints[0].y, drawingPoints[0].z);
+      const p2 = new THREE.Vector3(drawingPoints[1].x, drawingPoints[1].y, drawingPoints[1].z);
+      const axisDir = p2.clone().sub(p1).normalize();
+      const perpDir = axisDir.clone().cross(planeNormal).normalize();
+      const width = Math.abs(mousePos.clone().sub(p1).dot(perpDir)) * 2;
+      slotHudText = `${width.toFixed(3)} ${units}`;
+      slotHudPosition = mousePos.clone();
+      slotHintText = 'Select width';
+    }
+  }
+
   // Ellipse / elliptical-arc creation dimensions: major-axis length + angle while
   // placing the first axis, then minor-axis length while placing the second.
   const showEllipseDims =
@@ -200,6 +234,17 @@ export function SketchInteractionHud({
         </Html>
       )}
 
+      {showSlotDims && slotHudPosition && (
+        <>
+          <Html position={slotHudPosition} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
+            <div style={lengthLabelStyle}>{slotHudText}</div>
+          </Html>
+          <Html position={mousePos} zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
+            <div style={cursorLabelStyle}>{slotHintText}</div>
+          </Html>
+        </>
+      )}
+
       {showEllipseDims && ellipseHudPosition && (
         <Html position={ellipseHudPosition} center zIndexRange={[100, 0]} style={{ pointerEvents: 'none' }}>
           <div style={lengthLabelStyle}>{ellipseHudText}</div>
@@ -262,7 +307,7 @@ export function SketchInteractionHud({
             width: 0, height: 0,
             borderLeft: '6px solid transparent',
             borderRight: '6px solid transparent',
-            borderBottom: '11px solid rgba(249,115,22,0.4)',
+            borderBottom: '11px solid rgba(194,65,12,0.5)',
             pointerEvents: 'none',
           }} />
         </Html>
@@ -271,18 +316,18 @@ export function SketchInteractionHud({
       {snapTarget && (
         <Html position={mousePos} center zIndexRange={[300, 0]} style={{ pointerEvents: 'none' }}>
           {snapTarget.type === 'endpoint' && (
-            <div style={{ width: 10, height: 10, border: '2px solid #f97316', transform: 'rotate(45deg)', pointerEvents: 'none' }} />
+            <div style={{ width: 10, height: 10, border: '2px solid #c2410c', transform: 'rotate(45deg)', pointerEvents: 'none' }} />
           )}
           {snapTarget.type === 'midpoint' && (
-            <div style={{ width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderBottom: '11px solid #f97316', pointerEvents: 'none' }} />
+            <div style={{ width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderBottom: '11px solid #c2410c', pointerEvents: 'none' }} />
           )}
           {snapTarget.type === 'center' && (
-            <div style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid #f97316', pointerEvents: 'none' }} />
+            <div style={{ width: 10, height: 10, borderRadius: '50%', border: '2px solid #c2410c', pointerEvents: 'none' }} />
           )}
           {snapTarget.type === 'intersection' && (
             <div style={{ width: 12, height: 12, position: 'relative', pointerEvents: 'none' }}>
-              <div style={{ position: 'absolute', top: 5, left: 0, width: 12, height: 2, background: '#f97316', transform: 'rotate(45deg)', transformOrigin: 'center' }} />
-              <div style={{ position: 'absolute', top: 5, left: 0, width: 12, height: 2, background: '#f97316', transform: 'rotate(-45deg)', transformOrigin: 'center' }} />
+              <div style={{ position: 'absolute', top: 5, left: 0, width: 12, height: 2, background: '#c2410c', transform: 'rotate(45deg)', transformOrigin: 'center' }} />
+              <div style={{ position: 'absolute', top: 5, left: 0, width: 12, height: 2, background: '#c2410c', transform: 'rotate(-45deg)', transformOrigin: 'center' }} />
             </div>
           )}
           {snapTarget.type === 'perpendicular' && (

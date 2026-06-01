@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { SketchPoint } from '../../../../../types/cad';
+import { useCADStore } from '../../../../../store/cadStore';
+import type { SketchConstraint, SketchEntity, SketchPoint } from '../../../../../types/cad';
 import { circumcenter2D } from '../helpers';
 import type { SketchCommitHandler } from './types';
 
@@ -41,27 +42,35 @@ export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
           setDrawingPoints([]);
           break;
         }
-        // Four offsets along perpDir
-        const a = (p: SketchPoint, sign: 1 | -1): SketchPoint => ({
+        const off = (p: SketchPoint, sign: 1 | -1): SketchPoint => ({
           id: crypto.randomUUID(),
           x: p.x + perpDir.x * sign * halfWidth,
           y: p.y + perpDir.y * sign * halfWidth,
           z: p.z + perpDir.z * sign * halfWidth,
         });
-        const sideA1 = a(c1, 1);
-        const sideA2 = a(c2, 1);
-        const sideB1 = a(c1, -1);
-        const sideB2 = a(c2, -1);
         // C4: both caps anchored to axisAngle so they face outward from the slot ends.
         const axisAngle = Math.atan2(axisDir.dot(t2), axisDir.dot(t1));
         const lineAId = crypto.randomUUID();
         const lineBId = crypto.randomUUID();
         const arc1Id = crypto.randomUUID();
         const arc2Id = crypto.randomUUID();
-        addSketchEntity({ id: lineAId, type: 'line', points: [sideA1, sideA2] });
-        addSketchEntity({ id: lineBId, type: 'line', points: [sideB1, sideB2] });
-        addSketchEntity({ id: arc1Id, type: 'arc', points: [c1], radius: halfWidth, startAngle: axisAngle + Math.PI / 2, endAngle: axisAngle + (3 * Math.PI) / 2 });
-        addSketchEntity({ id: arc2Id, type: 'arc', points: [c2], radius: halfWidth, startAngle: axisAngle - Math.PI / 2, endAngle: axisAngle + Math.PI / 2 });
+        const centerlineId = crypto.randomUUID();
+        const clC1: SketchPoint = { id: crypto.randomUUID(), x: c1.x, y: c1.y, z: c1.z };
+        const clC2: SketchPoint = { id: crypto.randomUUID(), x: c2.x, y: c2.y, z: c2.z };
+        useCADStore.getState().addSketchEntitiesAndConstraintsBatch([
+          { id: lineAId, type: 'line', points: [off(c1, 1), off(c2, 1)] },
+          { id: lineBId, type: 'line', points: [off(c1, -1), off(c2, -1)] },
+          { id: arc1Id, type: 'arc', points: [c1], radius: halfWidth, startAngle: axisAngle + Math.PI / 2, endAngle: axisAngle + (3 * Math.PI) / 2 },
+          { id: arc2Id, type: 'arc', points: [c2], radius: halfWidth, startAngle: axisAngle - Math.PI / 2, endAngle: axisAngle + Math.PI / 2 },
+          { id: centerlineId, type: 'centerline', points: [clC1, clC2] },
+        ], [
+          { id: crypto.randomUUID(), type: 'equal', entityIds: [arc1Id, arc2Id] },
+          { id: crypto.randomUUID(), type: 'parallel', entityIds: [lineAId, lineBId] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [lineAId, arc1Id] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [lineAId, arc2Id] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [lineBId, arc1Id] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [lineBId, arc2Id] },
+        ], true);
         setStatusMessage(`Slot added (${axisLen.toFixed(2)} × ${(halfWidth * 2).toFixed(2)})`);
         setDrawingPoints([]);
       }
@@ -69,8 +78,7 @@ export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
     }
     case 'slot-overall': {
       // Overall Slot: click 1 = one straight-line end (tip of cap),
-      // click 2 = opposite end tip, click 3 = width. The two straight
-      // sides connect end-to-end at half-width offset from the centre axis.
+      // click 2 = opposite end tip, click 3 = width.
       if (drawingPoints.length === 0) {
         setDrawingPoints([sketchPoint]);
         setStatusMessage('Overall Slot: place first end — click second end');
@@ -110,22 +118,43 @@ export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
           y: p2.y - axisDir.y * halfWidth,
           z: p2.z - axisDir.z * halfWidth,
         };
-        const offset = (p: SketchPoint, sign: 1 | -1): SketchPoint => ({
+        const mkPt = (base: SketchPoint, sign: 1 | -1): SketchPoint => ({
           id: crypto.randomUUID(),
-          x: p.x + perpDir.x * sign * halfWidth,
-          y: p.y + perpDir.y * sign * halfWidth,
-          z: p.z + perpDir.z * sign * halfWidth,
+          x: base.x + perpDir.x * sign * halfWidth,
+          y: base.y + perpDir.y * sign * halfWidth,
+          z: base.z + perpDir.z * sign * halfWidth,
         });
-        const axisLocal = new THREE.Vector3(axisDir.dot(t1), axisDir.dot(t2), 0);
-        const axisAngle = Math.atan2(axisLocal.y, axisLocal.x);
+        const axisAngle = Math.atan2(axisDir.dot(t2), axisDir.dot(t1));
+
         const lineAId = crypto.randomUUID();
         const lineBId = crypto.randomUUID();
         const arc1Id = crypto.randomUUID();
         const arc2Id = crypto.randomUUID();
-        addSketchEntity({ id: lineAId, type: 'line', points: [offset(c1, 1), offset(c2, 1)] });
-        addSketchEntity({ id: lineBId, type: 'line', points: [offset(c1, -1), offset(c2, -1)] });
-        addSketchEntity({ id: arc1Id, type: 'arc', points: [c1], radius: halfWidth, startAngle: axisAngle + Math.PI / 2, endAngle: axisAngle + (3 * Math.PI) / 2 });
-        addSketchEntity({ id: arc2Id, type: 'arc', points: [c2], radius: halfWidth, startAngle: axisAngle - Math.PI / 2, endAngle: axisAngle + Math.PI / 2 });
+        const centerlineId = crypto.randomUUID();
+
+        const batchEntities: SketchEntity[] = [
+          { id: lineAId, type: 'line', points: [mkPt(c1, 1), mkPt(c2, 1)] },
+          { id: lineBId, type: 'line', points: [mkPt(c1, -1), mkPt(c2, -1)] },
+          { id: arc1Id, type: 'arc', points: [c1], radius: halfWidth, startAngle: axisAngle + Math.PI / 2, endAngle: axisAngle + (3 * Math.PI) / 2 },
+          { id: arc2Id, type: 'arc', points: [c2], radius: halfWidth, startAngle: axisAngle - Math.PI / 2, endAngle: axisAngle + Math.PI / 2 },
+          // Construction centerline between arc centres — shown as dashed axis
+          { id: centerlineId, type: 'centerline', points: [c1, c2] },
+        ];
+
+        const batchConstraints: SketchConstraint[] = [
+          // Both caps same radius
+          { id: crypto.randomUUID(), type: 'equal', entityIds: [arc1Id, arc2Id] },
+          // Sides parallel to each other
+          { id: crypto.randomUUID(), type: 'parallel', entityIds: [lineAId, lineBId] },
+          // Tangent joints: each line is tangent to the adjacent cap arc
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [lineAId, arc1Id] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [lineAId, arc2Id] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [lineBId, arc1Id] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [lineBId, arc2Id] },
+        ];
+
+        // Geometry is analytically exact — skip the O(n³) full-sketch re-solve.
+        useCADStore.getState().addSketchEntitiesAndConstraintsBatch(batchEntities, batchConstraints, true);
         setStatusMessage(`Overall Slot added (${overallLen.toFixed(2)} × ${(halfWidth * 2).toFixed(2)})`);
         setDrawingPoints([]);
       }
@@ -160,23 +189,35 @@ export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
           y: mid.y - axisDir.y * halfLen,
           z: mid.z - axisDir.z * halfLen,
         };
-        const off = (p: SketchPoint, sign: 1 | -1): SketchPoint => ({
+        const offCP = (p: SketchPoint, sign: 1 | -1): SketchPoint => ({
           id: crypto.randomUUID(),
           x: p.x + perpDir.x * sign * halfWidth,
           y: p.y + perpDir.y * sign * halfWidth,
           z: p.z + perpDir.z * sign * halfWidth,
         });
-        const axisLocal = new THREE.Vector3(axisDir.dot(t1), axisDir.dot(t2), 0);
-        const axisAngle = Math.atan2(axisLocal.y, axisLocal.x);
+        const axisAngle = Math.atan2(axisDir.dot(t2), axisDir.dot(t1));
         const lineAId = crypto.randomUUID();
         const lineBId = crypto.randomUUID();
         const arc1Id = crypto.randomUUID();
         const arc2Id = crypto.randomUUID();
-        addSketchEntity({ id: lineAId, type: 'line', points: [off(c1, 1), off(c2, 1)] });
-        addSketchEntity({ id: lineBId, type: 'line', points: [off(c1, -1), off(c2, -1)] });
+        const centerlineId = crypto.randomUUID();
+        const clC1: SketchPoint = { id: crypto.randomUUID(), x: c1.x, y: c1.y, z: c1.z };
+        const clC2: SketchPoint = { id: crypto.randomUUID(), x: c2.x, y: c2.y, z: c2.z };
         // c1 = endPt is the "front" (+axisDir) cap; c2 is the "back".
-        addSketchEntity({ id: arc1Id, type: 'arc', points: [c1], radius: halfWidth, startAngle: axisAngle - Math.PI / 2, endAngle: axisAngle + Math.PI / 2 });
-        addSketchEntity({ id: arc2Id, type: 'arc', points: [c2], radius: halfWidth, startAngle: axisAngle + Math.PI / 2, endAngle: axisAngle + (3 * Math.PI) / 2 });
+        useCADStore.getState().addSketchEntitiesAndConstraintsBatch([
+          { id: lineAId, type: 'line', points: [offCP(c1, 1), offCP(c2, 1)] },
+          { id: lineBId, type: 'line', points: [offCP(c1, -1), offCP(c2, -1)] },
+          { id: arc1Id, type: 'arc', points: [c1], radius: halfWidth, startAngle: axisAngle - Math.PI / 2, endAngle: axisAngle + Math.PI / 2 },
+          { id: arc2Id, type: 'arc', points: [c2], radius: halfWidth, startAngle: axisAngle + Math.PI / 2, endAngle: axisAngle + (3 * Math.PI) / 2 },
+          { id: centerlineId, type: 'centerline', points: [clC1, clC2] },
+        ], [
+          { id: crypto.randomUUID(), type: 'equal', entityIds: [arc1Id, arc2Id] },
+          { id: crypto.randomUUID(), type: 'parallel', entityIds: [lineAId, lineBId] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [lineAId, arc1Id] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [lineAId, arc2Id] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [lineBId, arc1Id] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [lineBId, arc2Id] },
+        ], true);
         setStatusMessage(`Center Slot added (${(halfLen * 2).toFixed(2)} × ${(halfWidth * 2).toFixed(2)})`);
         setDrawingPoints([]);
       }
@@ -235,28 +276,37 @@ export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
         // Outer arc (R + halfWidth) and inner arc (R - halfWidth)
         const rOuter = R + halfWidth;
         const rInner = Math.max(0.001, R - halfWidth);
-        addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [{ id: crypto.randomUUID(), x: C.x, y: C.y, z: C.z }], radius: rOuter, startAngle: arcSA, endAngle: arcEA });
-        addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [{ id: crypto.randomUUID(), x: C.x, y: C.y, z: C.z }], radius: rInner, startAngle: arcSA, endAngle: arcEA });
-        // Cap arcs at P0 and P2 ends.
         // C5: derive cap orientation from the actual radial direction of each endpoint,
-        // independent of the arcSA/arcEA swap above.  When p0 is the arc START the cap
-        // faces "backward" (from p0Radial−π to p0Radial); when p0 is the arc END (after
-        // swap) it faces "forward" (from p0Radial to p0Radial+π).
+        // independent of the arcSA/arcEA swap above.
         const capCenter0: SketchPoint = { id: crypto.randomUUID(), x: p0.x, y: p0.y, z: p0.z };
         const capCenter2: SketchPoint = { id: crypto.randomUUID(), x: p2.x, y: p2.y, z: p2.z };
         const toP0vec = new THREE.Vector3(p0.x - C.x, p0.y - C.y, p0.z - C.z);
         const toP2vec = new THREE.Vector3(p2.x - C.x, p2.y - C.y, p2.z - C.z);
         const p0RadialAngle = Math.atan2(toP0vec.dot(t2), toP0vec.dot(t1));
         const p2RadialAngle = Math.atan2(toP2vec.dot(t2), toP2vec.dot(t1));
-        const p0IsStart = midFromStart < endFromStart; // true = arc was NOT swapped
+        const p0IsStart = midFromStart < endFromStart;
         const [cap0SA, cap0EA] = p0IsStart
           ? [p0RadialAngle - Math.PI, p0RadialAngle]
           : [p0RadialAngle, p0RadialAngle + Math.PI];
         const [cap2SA, cap2EA] = p0IsStart
           ? [p2RadialAngle, p2RadialAngle + Math.PI]
           : [p2RadialAngle - Math.PI, p2RadialAngle];
-        addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [capCenter0], radius: halfWidth, startAngle: cap0SA, endAngle: cap0EA });
-        addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [capCenter2], radius: halfWidth, startAngle: cap2SA, endAngle: cap2EA });
+        const outerArcId = crypto.randomUUID();
+        const innerArcId = crypto.randomUUID();
+        const cap0Id = crypto.randomUUID();
+        const cap2Id = crypto.randomUUID();
+        useCADStore.getState().addSketchEntitiesAndConstraintsBatch([
+          { id: outerArcId, type: 'arc', points: [{ id: crypto.randomUUID(), x: C.x, y: C.y, z: C.z }], radius: rOuter, startAngle: arcSA, endAngle: arcEA },
+          { id: innerArcId, type: 'arc', points: [{ id: crypto.randomUUID(), x: C.x, y: C.y, z: C.z }], radius: rInner, startAngle: arcSA, endAngle: arcEA },
+          { id: cap0Id, type: 'arc', points: [capCenter0], radius: halfWidth, startAngle: cap0SA, endAngle: cap0EA },
+          { id: cap2Id, type: 'arc', points: [capCenter2], radius: halfWidth, startAngle: cap2SA, endAngle: cap2EA },
+        ], [
+          { id: crypto.randomUUID(), type: 'equal', entityIds: [cap0Id, cap2Id] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [cap0Id, outerArcId] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [cap0Id, innerArcId] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [cap2Id, outerArcId] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [cap2Id, innerArcId] },
+        ], true);
         setStatusMessage(`Arc Slot added (R=${R.toFixed(2)}, w=${(halfWidth * 2).toFixed(2)})`);
         setDrawingPoints([]);
       }
@@ -293,15 +343,26 @@ export const handleCurveSketchCommit: SketchCommitHandler = (ctx) => {
         if (halfWidth < 0.001) { setStatusMessage('Slot width too small'); setDrawingPoints([]); break; }
         const rOuter = R + halfWidth;
         const rInner = Math.max(0.001, R - halfWidth);
-        const cPt: SketchPoint = { id: crypto.randomUUID(), x: C.x, y: C.y, z: C.z };
-        addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [{ ...cPt, id: crypto.randomUUID() }], radius: rOuter, startAngle, endAngle });
-        addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [{ ...cPt, id: crypto.randomUUID() }], radius: rInner, startAngle, endAngle });
-        // C5: cap at p0 faces backward from arc start (startAngle−π → startAngle);
-        // cap at p2 faces forward from arc end (endAngle → endAngle+π).
         const capCenter0: SketchPoint = { id: crypto.randomUUID(), x: p0.x, y: p0.y, z: p0.z };
         const capCenter2: SketchPoint = { id: crypto.randomUUID(), x: p2.x, y: p2.y, z: p2.z };
-        addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [capCenter0], radius: halfWidth, startAngle: startAngle - Math.PI, endAngle: startAngle });
-        addSketchEntity({ id: crypto.randomUUID(), type: 'arc', points: [capCenter2], radius: halfWidth, startAngle: endAngle, endAngle: endAngle + Math.PI });
+        const outerArcId = crypto.randomUUID();
+        const innerArcId = crypto.randomUUID();
+        const cap0Id = crypto.randomUUID();
+        const cap2Id = crypto.randomUUID();
+        // C5: arc always goes CCW from startAngle (p0) to endAngle (p2).
+        // Cap at p0 faces backward (startAngle−π → startAngle); cap at p2 faces forward.
+        useCADStore.getState().addSketchEntitiesAndConstraintsBatch([
+          { id: outerArcId, type: 'arc', points: [{ id: crypto.randomUUID(), x: C.x, y: C.y, z: C.z }], radius: rOuter, startAngle, endAngle },
+          { id: innerArcId, type: 'arc', points: [{ id: crypto.randomUUID(), x: C.x, y: C.y, z: C.z }], radius: rInner, startAngle, endAngle },
+          { id: cap0Id, type: 'arc', points: [capCenter0], radius: halfWidth, startAngle: startAngle - Math.PI, endAngle: startAngle },
+          { id: cap2Id, type: 'arc', points: [capCenter2], radius: halfWidth, startAngle: endAngle, endAngle: endAngle + Math.PI },
+        ], [
+          { id: crypto.randomUUID(), type: 'equal', entityIds: [cap0Id, cap2Id] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [cap0Id, outerArcId] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [cap0Id, innerArcId] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [cap2Id, outerArcId] },
+          { id: crypto.randomUUID(), type: 'tangent', entityIds: [cap2Id, innerArcId] },
+        ], true);
         setStatusMessage(`Center Arc Slot added (R=${R.toFixed(2)}, w=${(halfWidth * 2).toFixed(2)})`);
         setDrawingPoints([]);
       }

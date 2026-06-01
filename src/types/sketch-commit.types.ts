@@ -23,6 +23,10 @@ export interface SketchCommitCtx {
   tangentCircleRadius: number;
   conicRho: number;
   blendCurveMode: 'g1' | 'g2';
+  /** A10: inference constraint to auto-apply when a line is committed (horizontal/vertical). */
+  inferenceConstraint?: 'horizontal' | 'vertical' | null;
+  /** A10: callback invoked by basic line commit with the new entity's id — used to apply inference constraint. */
+  onEntityCommitted?: (id: string) => void;
 }
 
 export type SketchCommitHandler = (ctx: SketchCommitCtx) => boolean;

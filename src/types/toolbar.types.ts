@@ -27,6 +27,12 @@ export interface ToolButtonProps {
 
 export interface MenuItem {
   icon?: React.ReactNode;
+  ribbonIcon?: React.ReactNode;
+  ribbonLabel?: string;
+  ribbonColorClass?: string;
+  ribbonTool?: import('./cad').Tool;
+  ribbonActiveTools?: import('./cad').Tool[];
+  promoteToRibbon?: boolean;
   label: string;
   shortcut?: string;
   onClick?: () => void;

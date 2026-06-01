@@ -1,5 +1,4 @@
 import { useEffect, useMemo } from 'react';
-import { Grid } from '@react-three/drei';
 import * as THREE from 'three';
 import { useThemeStore } from '../../../store/themeStore';
 import { useCADStore } from '../../../store/cadStore';
@@ -69,24 +68,31 @@ export default function SketchPlaneGrid({
   );
 }
 
-/** Infinite ground-plane grid with fading (shown in 3-D mode only) */
+/** Ground-plane grid shown outside sketch mode. */
 export function GroundPlaneGrid() {
   const themeColors = useThemeStore((s) => s.colors);
+  const gridSize = useCADStore((s) => s.gridSize);
 
-  return (
-    <Grid
-      args={[300, 300]}
-      cellSize={1}
-      cellThickness={0.5}
-      cellColor={themeColors.gridCell}
-      sectionSize={10}
-      sectionThickness={1}
-      sectionColor={themeColors.gridSection}
-      fadeDistance={200}
-      fadeStrength={1.5}
-      fadeFrom={0}
-      followCamera={false}
-      infiniteGrid
-    />
-  );
+  const helper = useMemo(() => {
+    const size = 300;
+    const divisions = Math.max(20, Math.min(150, Math.round(size / Math.max(0.1, gridSize))));
+    const grid = new THREE.GridHelper(size, divisions, themeColors.gridSection, themeColors.gridCell);
+    const materials = Array.isArray(grid.material) ? grid.material : [grid.material];
+    materials.forEach((material) => {
+      material.transparent = true;
+      material.opacity = 0.58;
+      material.depthWrite = false;
+    });
+    return grid;
+  }, [gridSize, themeColors.gridCell, themeColors.gridSection]);
+
+  useEffect(() => {
+    return () => {
+      helper.geometry.dispose();
+      const materials = Array.isArray(helper.material) ? helper.material : [helper.material];
+      materials.forEach((material) => material.dispose());
+    };
+  }, [helper]);
+
+  return <primitive object={helper} />;
 }

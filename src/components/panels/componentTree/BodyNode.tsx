@@ -77,6 +77,7 @@ export function BodyNode({
         ) : (
           <span className="browser-item-label" style={{ opacity: effectiveVisible ? 1 : 0.5 }}>{bodyLabel}</span>
         )}
+        <span className="browser-kind-badge">Body</span>
         {/* background is dynamic (per-body material color) — must stay inline */}
         <div
           className="body-color-dot"

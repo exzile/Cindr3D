@@ -171,6 +171,129 @@ export function renderCurveAndPolygonPreview(activeTool: string, h: SketchPrevie
       return true;
     }
 
+    case 'slot':
+    case 'slot-center': {
+      if (drawingPoints.length === 1) {
+        // Axis preview: c1 → cursor
+        addLine([startV, mousePos]);
+      } else if (drawingPoints.length === 2) {
+        // Full slot outline + dashed centerline
+        const c1 = startV;
+        const c2 = new THREE.Vector3(drawingPoints[1].x, drawingPoints[1].y, drawingPoints[1].z);
+        const axisVec = c2.clone().sub(c1);
+        if (axisVec.length() < 0.001) return true;
+        const axisDir = axisVec.clone().normalize();
+        const planeNormal = t1.clone().cross(t2).normalize();
+        const perpDir = axisDir.clone().cross(planeNormal).normalize();
+        const halfWidth = Math.abs(mousePos.clone().sub(c1).dot(perpDir));
+        if (halfWidth < 0.001) return true;
+        addLine([c1.clone().addScaledVector(perpDir, halfWidth), c2.clone().addScaledVector(perpDir, halfWidth)]);
+        addLine([c1.clone().addScaledVector(perpDir, -halfWidth), c2.clone().addScaledVector(perpDir, -halfWidth)]);
+        const axisAngle = Math.atan2(axisDir.dot(t2), axisDir.dot(t1));
+        const CAP_SEGS = 24;
+        const cap1Pts: THREE.Vector3[] = [];
+        const cap2Pts: THREE.Vector3[] = [];
+        for (let i = 0; i <= CAP_SEGS; i++) {
+          const a1 = axisAngle + Math.PI / 2 + (i / CAP_SEGS) * Math.PI;
+          cap1Pts.push(c1.clone().addScaledVector(t1, Math.cos(a1) * halfWidth).addScaledVector(t2, Math.sin(a1) * halfWidth));
+          const a2 = axisAngle - Math.PI / 2 + (i / CAP_SEGS) * Math.PI;
+          cap2Pts.push(c2.clone().addScaledVector(t1, Math.cos(a2) * halfWidth).addScaledVector(t2, Math.sin(a2) * halfWidth));
+        }
+        addLine(cap1Pts);
+        addLine(cap2Pts);
+        addLine([c1.clone(), c2.clone()], h.centerlineMat);
+      }
+      return true;
+    }
+
+    case 'slot-center-point': {
+      if (drawingPoints.length === 1) {
+        // Show axis from mid → cursor (one half-length)
+        addLine([startV, mousePos]);
+      } else if (drawingPoints.length === 2) {
+        // Full slot outline symmetric about startV, + dashed centerline
+        const mid = startV;
+        const endPt = new THREE.Vector3(drawingPoints[1].x, drawingPoints[1].y, drawingPoints[1].z);
+        const half = endPt.clone().sub(mid);
+        const halfLen = half.length();
+        if (halfLen < 0.001) return true;
+        const axisDir = half.clone().normalize();
+        const planeNormal = t1.clone().cross(t2).normalize();
+        const perpDir = axisDir.clone().cross(planeNormal).normalize();
+        const halfWidth = Math.abs(mousePos.clone().sub(mid).dot(perpDir));
+        if (halfWidth < 0.001) return true;
+        // c1 = endPt (forward cap), c2 = mirror across mid (backward cap)
+        const c1 = endPt.clone();
+        const c2 = mid.clone().addScaledVector(axisDir, -halfLen);
+        addLine([c1.clone().addScaledVector(perpDir, halfWidth), c2.clone().addScaledVector(perpDir, halfWidth)]);
+        addLine([c1.clone().addScaledVector(perpDir, -halfWidth), c2.clone().addScaledVector(perpDir, -halfWidth)]);
+        const axisAngle = Math.atan2(axisDir.dot(t2), axisDir.dot(t1));
+        const CAP_SEGS = 24;
+        const cap1Pts: THREE.Vector3[] = [];
+        const cap2Pts: THREE.Vector3[] = [];
+        for (let i = 0; i <= CAP_SEGS; i++) {
+          // c1 is +axisDir end: cap faces forward (axisAngle-π/2 → axisAngle+π/2)
+          const a1 = axisAngle - Math.PI / 2 + (i / CAP_SEGS) * Math.PI;
+          cap1Pts.push(c1.clone().addScaledVector(t1, Math.cos(a1) * halfWidth).addScaledVector(t2, Math.sin(a1) * halfWidth));
+          // c2 is -axisDir end: cap faces backward (axisAngle+π/2 → axisAngle+3π/2)
+          const a2 = axisAngle + Math.PI / 2 + (i / CAP_SEGS) * Math.PI;
+          cap2Pts.push(c2.clone().addScaledVector(t1, Math.cos(a2) * halfWidth).addScaledVector(t2, Math.sin(a2) * halfWidth));
+        }
+        addLine(cap1Pts);
+        addLine(cap2Pts);
+        addLine([c1.clone(), c2.clone()], h.centerlineMat);
+      }
+      return true;
+    }
+
+    case 'slot-overall': {
+      if (drawingPoints.length === 1) {
+        // Step 1→2: axis line from first end tip to cursor
+        addLine([startV, mousePos]);
+      } else if (drawingPoints.length === 2) {
+        // Step 2→3: full slot outline + dashed centerline
+        const p1 = startV;
+        const p2 = new THREE.Vector3(drawingPoints[1].x, drawingPoints[1].y, drawingPoints[1].z);
+        const axisVec = p2.clone().sub(p1);
+        const overallLen = axisVec.length();
+        if (overallLen < 0.001) return true;
+        const axisDir = axisVec.clone().normalize();
+        const planeNormal = t1.clone().cross(t2).normalize();
+        const perpDir = axisDir.clone().cross(planeNormal).normalize();
+        const toMouse = mousePos.clone().sub(p1);
+        // Cap halfWidth at half overallLen so the preview never inverts
+        const halfWidth = Math.min(Math.abs(toMouse.dot(perpDir)), overallLen * 0.499);
+        if (halfWidth < 0.001) return true;
+        const c1 = p1.clone().addScaledVector(axisDir, halfWidth);
+        const c2 = p2.clone().addScaledVector(axisDir, -halfWidth);
+        // Two straight sides
+        addLine([
+          c1.clone().addScaledVector(perpDir, halfWidth),
+          c2.clone().addScaledVector(perpDir, halfWidth),
+        ]);
+        addLine([
+          c1.clone().addScaledVector(perpDir, -halfWidth),
+          c2.clone().addScaledVector(perpDir, -halfWidth),
+        ]);
+        // Two semicircular caps — 24 segments each
+        const axisAngle = Math.atan2(axisDir.dot(t2), axisDir.dot(t1));
+        const capPts1: THREE.Vector3[] = [];
+        const capPts2: THREE.Vector3[] = [];
+        const CAP_SEGS = 24;
+        for (let i = 0; i <= CAP_SEGS; i++) {
+          const a1 = axisAngle + Math.PI / 2 + (i / CAP_SEGS) * Math.PI;
+          capPts1.push(c1.clone().addScaledVector(t1, Math.cos(a1) * halfWidth).addScaledVector(t2, Math.sin(a1) * halfWidth));
+          const a2 = axisAngle - Math.PI / 2 + (i / CAP_SEGS) * Math.PI;
+          capPts2.push(c2.clone().addScaledVector(t1, Math.cos(a2) * halfWidth).addScaledVector(t2, Math.sin(a2) * halfWidth));
+        }
+        addLine(capPts1);
+        addLine(capPts2);
+        // Dashed construction centerline c1→c2
+        addLine([c1.clone(), c2.clone()], h.centerlineMat);
+      }
+      return true;
+    }
+
     case 'slot-3point-arc': {
       if (drawingPoints.length < 2) {
         const lastPt = drawingPoints[drawingPoints.length - 1];

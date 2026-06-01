@@ -4,6 +4,8 @@ import * as THREE from 'three';
 import { useCADStore } from '../../../../../store/cadStore';
 import { GeometryEngine } from '../../../../../engine/GeometryEngine';
 import { commitSketchTool } from '../commitTool';
+import { computeSketchInference } from '../sketchInference';
+import type { InferenceResult } from '../sketchInference';
 import type { SketchEntity, SketchPoint } from '../../../../../types/cad';
 import { commitDraggedTangentArc, finalizeSplineFromContextMenu } from './sketchEventHelpers';
 import { handleSpecialSketchClick } from './specialSketchClickHandlers';
@@ -107,6 +109,8 @@ interface UseSketchInteractionEventsParams {
   dragScreenStartRef: MutableRefObject<{ x: number; y: number } | null>;
   isDraggingArcRef: MutableRefObject<boolean>;
   dragJustFinishedRef: MutableRefObject<boolean>;
+  /** A10: stores the active inference result so SketchInteraction can render guide lines. */
+  inferenceRef: MutableRefObject<InferenceResult | null>;
 }
 
 export function useSketchInteractionEvents({
@@ -155,6 +159,7 @@ export function useSketchInteractionEvents({
   dragScreenStartRef,
   isDraggingArcRef,
   dragJustFinishedRef,
+  inferenceRef,
 }: UseSketchInteractionEventsParams) {
   const pointDragRef = useRef<SketchPointDragTarget | null>(null);
   const pointDragStartEntitiesRef = useRef<SketchEntity[] | null>(null);
@@ -402,6 +407,40 @@ export function useSketchInteractionEvents({
       } else {
         setSnapTarget(null);
       }
+
+      // A10: compute inference after snap. Inference is only active for drawing tools
+      // with a start point, and only when snap hasn't already locked the position.
+      const isDrawingTool = activeTool !== 'select' && drawingPoints.length >= 1;
+      if (isDrawingTool && activeSketch && !snapCandidate) {
+        // Compute world-units-per-pixel at cursor depth for screen-space thresholds.
+        let wuPerPx = 0.05;
+        const depth = Math.max(rawPoint.clone().sub(camera.position).length(), 0.1);
+        if ((camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
+          const pc = camera as THREE.PerspectiveCamera;
+          const rect = gl.domElement.getBoundingClientRect();
+          wuPerPx = (2 * Math.tan((pc.fov * Math.PI / 180) / 2) * depth) / rect.height;
+        } else if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {
+          const oc = camera as THREE.OrthographicCamera;
+          const rect = gl.domElement.getBoundingClientRect();
+          wuPerPx = (oc.top - oc.bottom) / rect.height;
+        }
+        const inference = computeSketchInference(rawPoint, drawStart, activeSketch, t1, t2, false, wuPerPx);
+        inferenceRef.current = inference;
+        if (inference) {
+          setMousePos(inference.snappedPos.clone());
+          setHoverMidpoints(findHoverMidpoints(rawPoint));
+          // Update status message with inference hint
+          if (inference.constraintType === 'horizontal') {
+            setStatusMessage('Horizontal inference — click to constrain');
+          } else if (inference.constraintType === 'vertical') {
+            setStatusMessage('Vertical inference — click to constrain');
+          }
+          return;
+        }
+      } else {
+        inferenceRef.current = null;
+      }
+
       setMousePos(point);
       setHoverMidpoints(findHoverMidpoints(rawPoint));
 
@@ -529,6 +568,14 @@ export function useSketchInteractionEvents({
         ? (entity) => addSketchEntity({ ...entity, isConstruction: true })
         : addSketchEntity;
 
+      // A10: capture inference constraint to auto-apply after line commit.
+      const activeInference = inferenceRef.current;
+      const inferenceConstraint = activeInference?.constraintType ?? null;
+      let committedEntityId: string | null = null;
+      const onEntityCommitted = inferenceConstraint
+        ? (id: string) => { committedEntityId = id; }
+        : undefined;
+
       commitSketchTool({
         activeTool,
         activeSketch,
@@ -551,7 +598,19 @@ export function useSketchInteractionEvents({
         tangentCircleRadius,
         conicRho,
         blendCurveMode,
+        inferenceConstraint,
+        onEntityCommitted,
       });
+
+      // Auto-apply the inferred H/V constraint on the committed line entity.
+      if (committedEntityId && inferenceConstraint) {
+        addSketchConstraint({
+          id: crypto.randomUUID(),
+          type: inferenceConstraint,
+          entityIds: [committedEntityId],
+        });
+        inferenceRef.current = null;
+      }
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {

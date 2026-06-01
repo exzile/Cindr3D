@@ -5,10 +5,19 @@ import { ChevronDown, ChevronRight, Check, MoreHorizontal } from 'lucide-react';
 import type { MenuItem } from '../../types/toolbar.types';
 import { useCADStore } from '../../store/cadStore';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
+import { ToolButton } from './ToolButton';
 
 // ─── Flyout Sub-Menu Item ─────────────────────────────────────────────────
 
-export function FlyoutMenuItem({ item, onClose }: { item: MenuItem; onClose: () => void }) {
+export function FlyoutMenuItem({
+  item,
+  onClose,
+  onSelectItem,
+}: {
+  item: MenuItem;
+  onClose: () => void;
+  onSelectItem?: (item: MenuItem) => void;
+}) {
   const [submenuOpen, setSubmenuOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -18,6 +27,7 @@ export function FlyoutMenuItem({ item, onClose }: { item: MenuItem; onClose: () 
     if (item.disabled) return;
     if (item.onClick) {
       item.onClick();
+      onSelectItem?.(item);
       onClose();
       return;
     }
@@ -74,7 +84,7 @@ export function FlyoutMenuItem({ item, onClose }: { item: MenuItem; onClose: () 
           {item.submenu.map((sub, i) => (
             <div key={i}>
               {sub.separator && <div className="flyout-menu-separator" />}
-              <FlyoutMenuItem item={sub} onClose={onClose} />
+              <FlyoutMenuItem item={sub} onClose={onClose} onSelectItem={onSelectItem} />
             </div>
           ))}
         </div>,
@@ -100,6 +110,7 @@ export function RibbonSection({ title, children, menuItems, accentColor, maxVisi
   const menuRef = useRef<HTMLDivElement>(null);
   const overflowBtnRef = useRef<HTMLButtonElement>(null);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [promotedMenuKey, setPromotedMenuKey] = useState<string | null>(null);
 
   const activeTool = useCADStore((s) => s.activeTool);
   const hasFlyout = !!menuItems && menuItems.length > 0;
@@ -114,6 +125,29 @@ export function RibbonSection({ title, children, menuItems, accentColor, maxVisi
     if (!isValidElement(child)) return false;
     const props = (child as ReactElement).props as { active?: boolean; tool?: string };
     return props.active === true || (props.tool !== undefined && props.tool === activeTool);
+  };
+
+  const childLabel = (child: unknown): string | undefined => {
+    if (!isValidElement(child)) return undefined;
+    return ((child as ReactElement).props as { label?: string }).label;
+  };
+
+  const childTool = (child: unknown): string | undefined => {
+    if (!isValidElement(child)) return undefined;
+    return ((child as ReactElement).props as { tool?: string }).tool;
+  };
+
+  const menuItemKey = (item: MenuItem): string => item.ribbonTool ?? item.ribbonLabel ?? item.label;
+
+  const findPromotableMenuItem = (items: MenuItem[], key: string): MenuItem | undefined => {
+    for (const item of items) {
+      if (item.promoteToRibbon && menuItemKey(item) === key) return item;
+      if (item.submenu) {
+        const match = findPromotableMenuItem(item.submenu, key);
+        if (match) return match;
+      }
+    }
+    return undefined;
   };
 
   let visibleChildren = hasOverflow ? childArray.slice(0, visibleCount) : childArray;
@@ -131,6 +165,44 @@ export function RibbonSection({ title, children, menuItems, accentColor, maxVisi
     }
   }
 
+  const promotedMenuItem = hasFlyout && promotedMenuKey
+    ? findPromotableMenuItem(menuItems, promotedMenuKey)
+    : undefined;
+
+  if (promotedMenuItem && visibleChildren.length > 0) {
+    const promoted = [...visibleChildren];
+    promoted[promoted.length - 1] = (
+      <ToolButton
+        key={`promoted-${title}-${promotedMenuItem.label}`}
+        icon={promotedMenuItem.ribbonIcon ?? promotedMenuItem.icon}
+        label={promotedMenuItem.ribbonLabel ?? promotedMenuItem.label}
+        tool={promotedMenuItem.ribbonTool}
+        active={
+          promotedMenuItem.ribbonActiveTools
+            ? promotedMenuItem.ribbonActiveTools.includes(activeTool)
+            : promotedMenuItem.ribbonTool
+              ? activeTool === promotedMenuItem.ribbonTool
+              : promotedMenuItem.checked
+        }
+        onClick={promotedMenuItem.onClick}
+        large
+        colorClass={promotedMenuItem.ribbonColorClass}
+      />
+    );
+    visibleChildren = promoted;
+  }
+
+  const handleSelectMenuItem = (item: MenuItem) => {
+    if (item.promoteToRibbon) {
+      const promotedLabel = item.ribbonLabel ?? item.label;
+      const promotedTool = item.ribbonTool;
+      const alreadyVisible = childArray.slice(0, visibleCount).some((child) => (
+        childLabel(child) === promotedLabel || (promotedTool !== undefined && childTool(child) === promotedTool)
+      ));
+      setPromotedMenuKey(alreadyVisible ? null : menuItemKey(item));
+    }
+  };
+
   // Position the flyout portal below whichever trigger was clicked
   const openMenu = (triggerEl: HTMLElement) => {
     const rect = triggerEl.getBoundingClientRect();
@@ -143,9 +215,11 @@ export function RibbonSection({ title, children, menuItems, accentColor, maxVisi
     if (!menuOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
+      const el = target instanceof Element ? target : target.parentElement;
       if (
         sectionRef.current && !sectionRef.current.contains(target) &&
-        menuRef.current && !menuRef.current.contains(target)
+        menuRef.current && !menuRef.current.contains(target) &&
+        !el?.closest('.flyout-submenu')
       ) {
         setMenuOpen(false);
       }
@@ -191,7 +265,7 @@ export function RibbonSection({ title, children, menuItems, accentColor, maxVisi
           {menuItems!.map((item, i) => (
             <div key={i}>
               {item.separator && <div className="flyout-menu-separator" />}
-              <FlyoutMenuItem item={item} onClose={() => setMenuOpen(false)} />
+              <FlyoutMenuItem item={item} onClose={() => setMenuOpen(false)} onSelectItem={handleSelectMenuItem} />
             </div>
           ))}
         </div>,

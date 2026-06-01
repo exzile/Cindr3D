@@ -6,10 +6,11 @@ import { BodyNode } from './BodyNode';
 const EMPTY_IDS: string[] = [];
 
 /**
- * Collapsible "Bodies" folder in the component tree — mirrors SketchesFolder.
- * Renders all bodies from all components in a single folder at the tree root.
+ * Collapsible "Bodies" folder in the component tree.
+ * Components can own bodies, but orphan bodies still appear under the active
+ * component so freeform sketches and bodies remain supported.
  */
-export function BodiesFolder({ componentId }: { componentId?: string }) {
+export function BodiesFolder({ componentId, filterQuery = '' }: { componentId?: string; filterQuery?: string }) {
   const bodies = useComponentStore((s) => s.bodies);
   const components = useComponentStore((s) => s.components);
   const componentBodyIds = useComponentStore((s) => (
@@ -19,7 +20,7 @@ export function BodiesFolder({ componentId }: { componentId?: string }) {
   const toggleVis = useComponentStore((s) => s.toggleBodyVisibility);
   const [expanded, setExpanded] = useState(true);
 
-  const bodyIds = Object.keys(bodies).filter((id) => (
+  const componentScopedBodyIds = Object.keys(bodies).filter((id) => (
     !componentId ||
     bodies[id]?.componentId === componentId ||
     componentBodyIds.includes(id) ||
@@ -27,20 +28,30 @@ export function BodiesFolder({ componentId }: { componentId?: string }) {
       !bodies[id]?.componentId || !components[bodies[id]?.componentId]
     ))
   ));
-  if (bodyIds.length === 0) return null;
-
-  const allVisible = bodyIds.every((id) => bodies[id]?.visible !== false);
-
   const getBodyDisplayName = (id: string, index: number) => {
     const body = bodies[id];
     if (!body) return '';
-    const hasDuplicateName = bodyIds.some((otherId) => otherId !== id && bodies[otherId]?.name === body.name);
+    const hasDuplicateName = componentScopedBodyIds.some((otherId) => otherId !== id && bodies[otherId]?.name === body.name);
     if (!hasDuplicateName) return body.name;
 
     const generatedName = /^(Body|Surface)\s+\d+$/.exec(body.name);
     if (generatedName) return `${generatedName[1]} ${index + 1}`;
     return `${body.name} (${index + 1})`;
   };
+
+  const bodyIds = componentScopedBodyIds.filter((id, index) => {
+    if (!filterQuery) return true;
+    const body = bodies[id];
+    if (!body) return false;
+    return (
+      getBodyDisplayName(id, index).toLowerCase().includes(filterQuery) ||
+      body.material.name.toLowerCase().includes(filterQuery)
+    );
+  });
+  if (bodyIds.length === 0) return null;
+
+  const allVisible = bodyIds.every((id) => bodies[id]?.visible !== false);
+  const shouldShowChildren = expanded || !!filterQuery;
 
   const handleToggleAll = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -71,10 +82,13 @@ export function BodiesFolder({ componentId }: { componentId?: string }) {
           <FolderOpen size={13} />
         </span>
         <span className="browser-item-label">Bodies</span>
+        <span className="browser-count-badge" aria-label={`${bodyIds.length} bodies`}>
+          {bodyIds.length}
+        </span>
       </div>
 
       {/* Body rows */}
-      {expanded && bodyIds.map((id, index) => (
+      {shouldShowChildren && bodyIds.map((id, index) => (
         <BodyNode key={id} bodyId={id} displayName={getBodyDisplayName(id, index)} />
       ))}
     </div>

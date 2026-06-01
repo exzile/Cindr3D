@@ -89,9 +89,10 @@ export function createPolygonEditActions({ set, get }: CADSliceContext): Partial
       for (let i = 1; i < sides; i++) {
         newConstraints.push({ id: crypto.randomUUID(), type: 'equal', entityIds: [newLineIds[0], newLineIds[i]] });
       }
-      const newPolygonConstraintId = crypto.randomUUID();
+      // Reuse the original constraintId so editingPolygonConstraintId stays valid
+      // and the <Html> editor portal keeps its DOM identity — no remount flash.
       newConstraints.push({
-        id: newPolygonConstraintId, type: 'polygon', entityIds: newLineIds,
+        id: constraintId, type: 'polygon', entityIds: newLineIds,
         polygonMeta: { center: { x: center.x, y: center.y, z: center.z }, radius, baseAngle, kind },
       });
 
@@ -104,7 +105,7 @@ export function createPolygonEditActions({ set, get }: CADSliceContext): Partial
       set({
         activeSketch: nextSketch,
         sketches: upsertSketch(sketches, nextSketch),
-        editingPolygonConstraintId: newPolygonConstraintId,
+        editingPolygonConstraintId: constraintId,
         sketchPolygonSides: sides,
         statusMessage: `Polygon updated to ${sides} sides`,
       });

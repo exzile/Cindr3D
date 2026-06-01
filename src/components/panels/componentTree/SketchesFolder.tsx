@@ -8,7 +8,7 @@ import type { SketchCtxMenu } from './SketchContextMenu';
 
 const EMPTY_IDS: string[] = [];
 
-export function SketchesFolder({ componentId }: { componentId?: string }) {
+export function SketchesFolder({ componentId, filterQuery = '' }: { componentId?: string; filterQuery?: string }) {
   // Use `sketches` (completed) + `activeSketch` (currently editing) as source of truth.
   // Previously used features.filter('sketch') which is a secondary index and can lag.
   const activeSketch = useCADStore((s) => s.activeSketch);
@@ -53,7 +53,13 @@ export function SketchesFolder({ componentId }: { componentId?: string }) {
       componentSketchIds.includes(activeSketch.id) ||
       (componentId === activeComponentId && (!activeSketch.componentId || !components[activeSketch.componentId]))
     );
-  const hasAny = visibleSketches.length > 0 || showActiveSketch;
+  const filteredSketches = visibleSketches.filter((sketch) => (
+    !filterQuery || sketch.name.toLowerCase().includes(filterQuery)
+  ));
+  const showFilteredActiveSketch = showActiveSketch &&
+    (!filterQuery || activeSketch?.name.toLowerCase().includes(filterQuery));
+  const sketchCount = filteredSketches.length + (showFilteredActiveSketch ? 1 : 0);
+  const hasAny = sketchCount > 0;
   if (!hasAny) return null;
 
   // Visibility is driven by the actual feature flag, not local state
@@ -65,11 +71,12 @@ export function SketchesFolder({ componentId }: { componentId?: string }) {
     if (feature) toggleFeatureVisibility(feature.id);
   };
 
-  const allVisible = visibleSketches.every((sk) => isVisible(sk.id));
+  const allVisible = filteredSketches.every((sk) => isVisible(sk.id));
+  const shouldShowChildren = expanded || !!filterQuery;
   const toggleFolderVis = (e: React.MouseEvent) => {
     e.stopPropagation();
     const next = !allVisible;
-    visibleSketches.forEach((sk) => {
+    filteredSketches.forEach((sk) => {
       const feature = sketchFeatureMap.get(sk.id);
       if (feature && feature.visible !== next) toggleFeatureVisibility(feature.id);
     });
@@ -111,13 +118,16 @@ export function SketchesFolder({ componentId }: { componentId?: string }) {
           <FolderOpen size={13} />
         </span>
         <span className="browser-item-label">Sketches</span>
+        <span className="browser-count-badge" aria-label={`${sketchCount} sketches`}>
+          {sketchCount}
+        </span>
       </div>
 
       {/* Child rows */}
-      {expanded && (
+      {shouldShowChildren && (
         <>
           {/* Completed sketches */}
-          {visibleSketches.map((sk) => (
+          {filteredSketches.map((sk) => (
             <div
               key={sk.id}
               className="browser-row browser-row-child"
@@ -157,7 +167,7 @@ export function SketchesFolder({ componentId }: { componentId?: string }) {
           ))}
 
           {/* Currently editing sketch — no visibility toggle while active */}
-          {showActiveSketch && activeSketch && (
+          {showFilteredActiveSketch && activeSketch && (
             <div
               className="browser-row browser-row-child browser-row-active-sketch"
               onContextMenu={(e) => openCtx(e, 'active', activeSketch.name)}

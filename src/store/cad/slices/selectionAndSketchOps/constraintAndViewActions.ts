@@ -102,11 +102,14 @@ export function createConstraintAndViewActions({ set, get }: CADSliceContext): P
       set((s) => ({
         activeSketch: s.activeSketch ? { ...s.activeSketch, constraints: [...s.activeSketch.constraints, ...newConstraints] } : null,
       }));
+      // B10: solve after adding so auto constraints actually drive geometry.
+      get().solveSketch();
       get().setStatusMessage(`AutoConstrain: applied ${newConstraints.length} constraint${newConstraints.length === 1 ? '' : 's'}`);
     },
 
     sketchComputeDeferred: false,
     setSketchComputeDeferred: (v) => set({ sketchComputeDeferred: v }),
+    sketchConstrainedEntityIds: [],
     solveSketch: () => {
       const { activeSketch } = get();
       if (!activeSketch) return;
@@ -117,23 +120,78 @@ export function createConstraintAndViewActions({ set, get }: CADSliceContext): P
       // trial over-constraint check in engine/overConstraintCheck.ts can run
       // the exact same assembly — prediction must match reality.
       const { entities: projectedEntities, constraints } = buildSketchSolveInputs(activeSketch);
-      const result = solveConstraints(projectedEntities, constraints);
-      // B6/B7: distinguish genuine over-constraint (rank >= nParams AND residual high → conflict)
-      // from under-constrained non-convergence (rank < nParams → solver just couldn't find it).
-      if (!result.solved) {
-        const isGenuineConflict = result.nParams > 0 && result.rank >= result.nParams;
-        if (isGenuineConflict) {
-          set((s) => ({
-            activeSketch: s.activeSketch ? { ...s.activeSketch, overConstrained: true } : null,
-            statusMessage: `Over-constrained sketch (conflicting constraints, residual ${result.residual.toFixed(3)})`,
-          }));
-          return;
-        }
-        // Under-constrained or non-convergent: still apply best-effort geometry, clear over-constrained flag
+
+      // Plan B: connected-component partitioning. Entities that share no constraint
+      // can be solved independently. For N isolated polygons this reduces complexity
+      // from O((N·k)³) → N × O(k³), keeping per-drag cost flat as the sketch fills.
+      const parent = new Map<string, string>();
+      const find = (x: string): string => {
+        if (!parent.has(x)) parent.set(x, x);
+        let root = x;
+        while (parent.get(root) !== root) root = parent.get(root)!;
+        let cur = x;
+        while (cur !== root) { const nxt = parent.get(cur)!; parent.set(cur, root); cur = nxt; }
+        return root;
+      };
+      const union = (a: string, b: string) => { parent.set(find(a), find(b)); };
+
+      for (const e of projectedEntities) find(e.id);
+      for (const c of constraints) {
+        for (let i = 1; i < c.entityIds.length; i++) union(c.entityIds[0], c.entityIds[i]);
       }
+
+      const compEntities = new Map<string, typeof projectedEntities>();
+      const compConstraints = new Map<string, typeof constraints>();
+      for (const e of projectedEntities) {
+        const root = find(e.id);
+        if (!compEntities.has(root)) { compEntities.set(root, []); compConstraints.set(root, []); }
+        compEntities.get(root)!.push(e);
+      }
+      for (const c of constraints) {
+        if (c.entityIds.length === 0) continue;
+        const root = find(c.entityIds[0]);
+        compConstraints.get(root)?.push(c);
+      }
+
+      // Solve each component; merge results.
+      const allUpdatedPoints = new Map<string, { x: number; y: number }>();
+      const allUpdatedScalars = new Map<string, number>();
+      let anyOverConstrained = false;
+      let anyGenuineConflictResidual = 0;
+      let allFullyConstrained = compEntities.size > 0;
+      // B6.c: track which entity IDs are in fully-constrained components for DOF coloring.
+      const constrainedEntityIds: string[] = [];
+
+      for (const [root, compEnts] of compEntities) {
+        const compCons = compConstraints.get(root) ?? [];
+        const result = solveConstraints(compEnts, compCons);
+        // B6/B7: genuine conflict = rank >= nParams AND residual high
+        if (!result.solved) {
+          const isGenuineConflict = result.nParams > 0 && result.rank >= result.nParams;
+          if (isGenuineConflict) { anyOverConstrained = true; anyGenuineConflictResidual = result.residual; }
+        }
+        const compFullyConstrained = result.nParams > 0 && result.rank >= result.nParams && result.solved;
+        if (!compFullyConstrained) allFullyConstrained = false;
+        // B6.c: entities in fully-constrained components get the constrained color.
+        if (compFullyConstrained) {
+          for (const e of compEnts) constrainedEntityIds.push(e.id);
+        }
+        for (const [k, v] of result.updatedPoints) allUpdatedPoints.set(k, v);
+        for (const [k, v] of result.updatedScalars) allUpdatedScalars.set(k, v);
+      }
+
+      if (anyOverConstrained) {
+        set((s) => ({
+          activeSketch: s.activeSketch ? { ...s.activeSketch, overConstrained: true } : null,
+          sketchConstrainedEntityIds: [],
+          statusMessage: `Over-constrained sketch (conflicting constraints, residual ${anyGenuineConflictResidual.toFixed(3)})`,
+        }));
+        return;
+      }
+
       const updatedEntities = activeSketch.entities.map((e) => {
         const updatedPoints = e.points.map((pt, pi) => {
-          const solvedPt = result.updatedPoints.get(`${e.id}-p${pi}`);
+          const solvedPt = allUpdatedPoints.get(`${e.id}-p${pi}`);
           if (!solvedPt) return pt;
           return {
             ...pt,
@@ -144,21 +202,20 @@ export function createConstraintAndViewActions({ set, get }: CADSliceContext): P
         });
         // B1: apply solved scalar DOFs (radius / startAngle / endAngle) back to the entity.
         let updated: typeof e = { ...e, points: updatedPoints };
-        const newRadius = result.updatedScalars.get(`${e.id}::radius`);
+        const newRadius = allUpdatedScalars.get(`${e.id}::radius`);
         if (newRadius !== undefined && newRadius > 0) updated = { ...updated, radius: newRadius };
-        const newSA = result.updatedScalars.get(`${e.id}::startAngle`);
+        const newSA = allUpdatedScalars.get(`${e.id}::startAngle`);
         if (newSA !== undefined) updated = { ...updated, startAngle: newSA };
-        const newEA = result.updatedScalars.get(`${e.id}::endAngle`);
+        const newEA = allUpdatedScalars.get(`${e.id}::endAngle`);
         if (newEA !== undefined) updated = { ...updated, endAngle: newEA };
         return updated;
       });
-      // B6.b: fullyConstrained = rank >= nParams (Jacobian is full-rank relative to DOFs)
-      const fullyConstrained = result.nParams > 0 && result.rank >= result.nParams;
       set((s) => ({
         activeSketch: s.activeSketch
-          ? { ...s.activeSketch, entities: updatedEntities, overConstrained: false, fullyConstrained }
+          ? { ...s.activeSketch, entities: updatedEntities, overConstrained: false, fullyConstrained: allFullyConstrained }
           : null,
-        statusMessage: `Constraints solved (${result.iterations} iteration${result.iterations === 1 ? '' : 's'})`,
+        sketchConstrainedEntityIds: constrainedEntityIds,
+        statusMessage: 'Constraints solved',
       }));
     },
 
@@ -179,6 +236,57 @@ export function createConstraintAndViewActions({ set, get }: CADSliceContext): P
         (c) => `${c.type}|${c.entityIds.join(',')}|${(c.pointIndices ?? []).join(',')}` === constraintKey,
       );
       if (exists) return;
+
+      // B7.a: trial solve to classify the constraint BEFORE committing.
+      // Build solver inputs for the sketch before and after adding the constraint.
+      const { entities: solverEnts, constraints: consBefore } = buildSketchSolveInputs(activeSketch);
+      const trialSketch = { ...activeSketch, constraints: [...(activeSketch.constraints ?? []), constraint] };
+      const { constraints: consAfter } = buildSketchSolveInputs(trialSketch);
+
+      // Union-find over consAfter to identify the affected component.
+      const trialPar = new Map<string, string>();
+      const trialFind = (x: string): string => {
+        if (!trialPar.has(x)) trialPar.set(x, x);
+        let r = x;
+        while (trialPar.get(r) !== r) r = trialPar.get(r)!;
+        let c = x;
+        while (c !== r) { const n = trialPar.get(c)!; trialPar.set(c, r); c = n; }
+        return r;
+      };
+      for (const e of solverEnts) trialFind(e.id);
+      for (const con of consAfter) {
+        for (let i = 1; i < con.entityIds.length; i++) trialPar.set(trialFind(con.entityIds[0]), trialFind(con.entityIds[i]));
+      }
+
+      // Collect entities in the affected component(s) (those linked to the new constraint's entities).
+      const affectedRoots = new Set(
+        constraint.entityIds.filter(id => solverEnts.some(e => e.id === id)).map(id => trialFind(id)),
+      );
+      if (affectedRoots.size > 0) {
+        const compEnts = solverEnts.filter(e => affectedRoots.has(trialFind(e.id)));
+        const compConsBefore = consBefore.filter(c => c.entityIds.some(id => affectedRoots.has(trialFind(id))));
+        const compConsAfter = consAfter.filter(c => c.entityIds.some(id => affectedRoots.has(trialFind(id))));
+        // forceRank ensures Plan-C's rank-skip doesn't mask redundant/conflict cases.
+        const rBefore = solveConstraints(compEnts, compConsBefore, { forceRank: true });
+        const rAfter = solveConstraints(compEnts, compConsAfter, { forceRank: true });
+
+        if (rAfter.rank === rBefore.rank) {
+          if (rAfter.residual >= 1e-6) {
+            // Constraint is inconsistent with existing constraints — reject it.
+            set({ statusMessage: 'Conflicting constraint — would over-constrain the sketch' });
+            return;
+          }
+          // Constraint is already satisfied (redundant) — warn but allow it through.
+          get().pushUndo();
+          set({
+            activeSketch: { ...activeSketch, constraints: [...(activeSketch.constraints ?? []), constraint] },
+            statusMessage: 'Redundant constraint — already satisfied',
+          });
+          if (!get().sketchComputeDeferred) get().solveSketch();
+          return;
+        }
+      }
+
       get().pushUndo();
       set({
         activeSketch: { ...activeSketch, constraints: [...(activeSketch.constraints ?? []), constraint] },

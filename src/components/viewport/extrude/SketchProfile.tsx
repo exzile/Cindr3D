@@ -5,6 +5,32 @@ import { GeometryEngine } from '../../../engine/GeometryEngine';
 import type { Sketch } from '../../../types/cad';
 import { PROFILE_MATERIAL, PROFILE_HOVER_MATERIAL, PROFILE_SELECTED_MATERIAL } from './materials';
 
+function geometryArea2D(geometry: THREE.BufferGeometry): number {
+  const position = geometry.getAttribute('position') as THREE.BufferAttribute | undefined;
+  if (!position || position.count < 3) return 0;
+
+  const triangleArea = (a: number, b: number, c: number) => {
+    const ax = position.getX(a);
+    const ay = position.getY(a);
+    const bx = position.getX(b);
+    const by = position.getY(b);
+    const cx = position.getX(c);
+    const cy = position.getY(c);
+    return Math.abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) * 0.5;
+  };
+
+  const index = geometry.index;
+  let area = 0;
+  if (index) {
+    for (let i = 0; i < index.count; i += 3) {
+      area += triangleArea(index.getX(i), index.getX(i + 1), index.getX(i + 2));
+    }
+  } else {
+    for (let i = 0; i < position.count; i += 3) area += triangleArea(i, i + 1, i + 2);
+  }
+  return area;
+}
+
 /**
  * Renders a single sketch profile as a translucent fill mesh.
  *
@@ -49,6 +75,7 @@ export default function SketchProfile({
       created.userData.sketchId = sketch.id;
       created.userData.profileIndex = profileIndex;
       created.userData.profileKey = profileIndex === undefined ? sketch.id : `${sketch.id}::${profileIndex}`;
+      created.userData.profileArea = geometryArea2D(created.geometry);
     }
     return created;
   }, [sketch, animatedMaterial, profileIndex]);

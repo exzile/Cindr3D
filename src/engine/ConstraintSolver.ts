@@ -852,7 +852,7 @@ function computeJacobian(
 export function solveConstraints(
   entities: SketchEntity[],
   constraints: SolverConstraint[],
-  options?: { maxIterations?: number; tolerance?: number; stepSize?: number }
+  options?: { maxIterations?: number; tolerance?: number; stepSize?: number; forceRank?: boolean }
 ): SolverResult {
   const maxIterations = options?.maxIterations ?? 100;
   const tolerance = options?.tolerance ?? 1e-6;
@@ -922,9 +922,15 @@ export function solveConstraints(
   applyParams(params, paramIndex, pointMap);
 
   // B6: compute Jacobian rank at the final solution for DOF/over-constraint detection.
-  const finalJ = computeJacobian(params, paramIndex, constraints, entityMap, pointMap);
-  const finalRank = rankOfMatrix(finalJ);
+  // Skip when the geometry was already within tolerance before any Newton step — the
+  // system is self-consistent so it cannot be over-constrained, and the O(n³) rank
+  // computation would dominate commit time for large exactly-placed shapes (Plan C).
   const nParams = params.length;
+  let finalRank = 0;
+  if (finalIter > 0 || finalResidual >= tolerance || options?.forceRank) {
+    const finalJ = computeJacobian(params, paramIndex, constraints, entityMap, pointMap);
+    finalRank = rankOfMatrix(finalJ);
+  }
 
   const updatedPoints = new Map<string, { x: number; y: number }>();
   const updatedScalars = new Map<string, number>();

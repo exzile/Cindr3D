@@ -407,18 +407,215 @@
 .sketch-ctx-menu {
   position: fixed;
   z-index: 9999;
-  background: var(--bg-panel, #1e2128);
-  border: 1px solid var(--border, #333);
-  border-radius: 6px;
-  padding: 4px;
+  transform-origin: top center;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-panel, #1e2128) 94%, white 6%), var(--bg-panel, #1e2128));
+  border: 1px solid color-mix(in srgb, var(--border, #333) 78%, var(--text-muted) 22%);
+  border-radius: 8px;
+  padding: 5px;
   min-width: 240px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 14px 34px rgba(0, 0, 0, 0.42);
   font-size: 12px;
+  animation: sketchCtxUnfurl 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.sketch-ctx-menu.closing {
+  pointer-events: none;
+  animation: sketchCtxFoldAway 120ms ease-in both;
+}
+
+.sketch-ctx-menu.closing > *,
+.sketch-ctx-menu.closing::after {
+  animation: none;
+}
+
+.sketch-ctx-menu::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  top: 5px;
+  height: 30px;
+  border-radius: 6px;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.16),
+    rgba(255, 255, 255, 0)
+  );
+  mix-blend-mode: screen;
+  opacity: 0;
+  animation: sketchCtxPaperSheen 340ms ease-out both;
+}
+
+.sketch-ctx-menu > * {
+  animation: sketchCtxInkIn 160ms ease-out both;
+}
+
+.sketch-ctx-menu > *:nth-child(1) { animation-delay: 44ms; }
+.sketch-ctx-menu > *:nth-child(2) { animation-delay: 58ms; }
+.sketch-ctx-menu > *:nth-child(3) { animation-delay: 72ms; }
+.sketch-ctx-menu > *:nth-child(4) { animation-delay: 86ms; }
+.sketch-ctx-menu > *:nth-child(5) { animation-delay: 100ms; }
+.sketch-ctx-menu > *:nth-child(n + 6) { animation-delay: 112ms; }
+
+@keyframes sketchCtxUnfurl {
+  0% {
+    opacity: 0;
+    clip-path: inset(0 0 92% 0 round 8px);
+    transform: translateY(-5px) scaleY(0.96);
+  }
+  58% {
+    opacity: 1;
+    clip-path: inset(0 0 8% 0 round 8px);
+    transform: translateY(0) scaleY(1.01);
+  }
+  100% {
+    opacity: 1;
+    clip-path: inset(0 0 0 0 round 8px);
+    transform: translateY(0) scaleY(1);
+  }
+}
+
+@keyframes sketchCtxPaperSheen {
+  0% {
+    opacity: 0.65;
+    transform: translateY(-12px);
+  }
+  70% {
+    opacity: 0.28;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(42px);
+  }
+}
+
+@keyframes sketchCtxInkIn {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sketchCtxFoldAway {
+  from {
+    opacity: 1;
+    clip-path: inset(0 0 0 0 round 8px);
+    transform: translateY(0) scaleY(1);
+  }
+  to {
+    opacity: 0;
+    clip-path: inset(0 0 82% 0 round 8px);
+    transform: translateY(-3px) scaleY(0.98);
+  }
+}
+
+.sketch-ctx-menu::-webkit-scrollbar {
+  width: 7px;
+}
+
+.sketch-ctx-menu::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-muted) 38%, transparent);
+  background-clip: padding-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sketch-ctx-menu,
+  .sketch-ctx-menu::after,
+  .sketch-ctx-menu > *,
+  .sketch-ctx-menu.closing {
+    animation: none;
+  }
+}
+
+.sketch-ctx-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px 8px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border-light, rgba(255, 255, 255, 0.07));
+}
+
+.sketch-ctx-title-icon {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, #5eead4 45%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, #5eead4 12%, transparent);
+  color: #5eead4;
+}
+
+.sketch-ctx-title-icon-body {
+  border-color: color-mix(in srgb, #38bdf8 42%, transparent);
+  background: color-mix(in srgb, #38bdf8 12%, transparent);
+  color: #38bdf8;
+}
+
+.sketch-ctx-title-icon-canvas {
+  border-color: color-mix(in srgb, #a78bfa 42%, transparent);
+  background: color-mix(in srgb, #a78bfa 12%, transparent);
+  color: #a78bfa;
+}
+
+.sketch-ctx-title-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sketch-ctx-title-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.1;
+}
+
+.sketch-ctx-title-kind {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.sketch-ctx-heading {
+  padding: 7px 10px 3px;
+  color: var(--text-muted);
+  font-size: 9px;
+  font-weight: 750;
+  line-height: 1;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
 }
 
 .sketch-ctx-item {
+  --ctx-accent: var(--text-dim);
   display: flex;
   align-items: center;
+  position: relative;
   width: 100%;
   padding: 5px 10px;
   border: none;
@@ -427,13 +624,44 @@
   color: var(--text-secondary);
   cursor: pointer;
   text-align: left;
-  transition: background 0.1s;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    transform 0.12s ease;
   gap: 8px;
 }
 
-.sketch-ctx-item:hover {
-  background: var(--bg-hover);
+.sketch-ctx-item:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--ctx-accent) 64%, transparent);
+  outline-offset: -1px;
+  background: color-mix(in srgb, var(--ctx-accent) 12%, var(--bg-hover));
   color: var(--text-primary);
+}
+
+.sketch-ctx-item.sketch-ctx-has-tone {
+  padding-left: 12px;
+}
+
+.sketch-ctx-item.sketch-ctx-has-tone::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--ctx-accent);
+  opacity: 0.55;
+}
+
+.sketch-ctx-item:hover {
+  background: color-mix(in srgb, var(--ctx-accent) 10%, var(--bg-hover));
+  color: var(--text-primary);
+  transform: translateX(1px);
+}
+
+.sketch-ctx-item:hover::before {
+  opacity: 0.95;
 }
 
 .sketch-ctx-item.danger {
@@ -441,7 +669,13 @@
 }
 
 .sketch-ctx-item.danger:hover {
-  background: rgba(244, 67, 54, 0.1);
+  background: color-mix(in srgb, var(--error, #f44336) 14%, transparent);
+}
+
+.sketch-ctx-item.sketch-ctx-danger-zone {
+  margin-top: 2px;
+  border-top: 1px solid color-mix(in srgb, var(--error, #f44336) 22%, transparent);
+  border-radius: 4px;
 }
 
 .sketch-ctx-icon {
@@ -449,17 +683,62 @@
   align-items: center;
   width: 18px;
   flex-shrink: 0;
-  color: var(--text-dim);
+  color: var(--ctx-accent);
+  opacity: 0.88;
+}
+
+.sketch-ctx-item:hover .sketch-ctx-icon {
+  opacity: 1;
+}
+
+.sketch-ctx-tone-organize {
+  --ctx-accent: #7c8aa6;
+}
+
+.sketch-ctx-tone-create {
+  --ctx-accent: #38bdf8;
+}
+
+.sketch-ctx-tone-edit {
+  --ctx-accent: #5eead4;
+}
+
+.sketch-ctx-tone-display {
+  --ctx-accent: #fbbf24;
+}
+
+.sketch-ctx-tone-locate {
+  --ctx-accent: #a78bfa;
+}
+
+.sketch-ctx-tone-danger {
+  --ctx-accent: var(--error, #f44336);
 }
 
 .sketch-ctx-label {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sketch-ctx-shortcut {
-  font-size: 11px;
-  color: var(--text-dim);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 17px;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--ctx-accent) 22%, var(--border-light));
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-secondary, transparent) 72%, transparent);
+  color: color-mix(in srgb, var(--ctx-accent) 55%, var(--text-dim));
   margin-left: auto;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .sketch-ctx-sep {
@@ -503,6 +782,27 @@
   color: var(--accent);
 }
 
+.sketch-ctx-item.active::after,
+.sketch-ctx-item.toggled-on::after {
+  content: '✓';
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 3px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ctx-accent) 16%, transparent);
+  color: var(--ctx-accent);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .sketch-ctx-item.toggled-on .sketch-ctx-icon {
-  color: var(--accent);
+  color: var(--ctx-accent);
+}
+
+.sketch-ctx-item.toggled-on {
+  background: color-mix(in srgb, var(--ctx-accent) 8%, transparent);
 }

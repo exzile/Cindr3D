@@ -53,6 +53,7 @@ import type { MenuItem } from '../../types/toolbar.types';
 import type { DesignMenuDeps } from './menuBuilderTypes';
 
 const MI = 16;
+const RIBBON_ICON = 28;
 
 export function buildDesignMenus({
   activeComponent,
@@ -94,12 +95,12 @@ export function buildDesignMenus({
     { icon: <Package size={MI} />, label: 'New Component', onClick: handleNewComponent },
     { icon: <Package size={MI} />, label: 'Create Base Feature', onClick: () => setActiveDialog('base-feature') },
     { icon: <PenTool size={MI} />, label: 'Create Sketch', shortcut: 'S', onClick: () => useCADStore.getState().setSketchPlaneSelecting(true) },
-    { separator: true, icon: <ArrowUpFromLine size={MI} />, label: 'Extrude', shortcut: 'E', onClick: handleExtrude },
-    { icon: <RotateCcw size={MI} />, label: 'Revolve', onClick: handleRevolve },
-    { icon: <Spline size={MI} />, label: 'Sweep', onClick: startSweepTool },
-    { icon: <Layers size={MI} />, label: 'Loft', onClick: startLoftTool },
-    { icon: <Diamond size={MI} />, label: 'Patch', onClick: startPatchTool },
-    { icon: <Minus size={MI} />, label: 'Rib', onClick: startRibTool },
+    { separator: true, icon: <ArrowUpFromLine size={MI} />, ribbonIcon: <ArrowUpFromLine size={RIBBON_ICON} />, ribbonColorClass: 'icon-blue', ribbonTool: 'extrude', promoteToRibbon: true, label: 'Extrude', shortcut: 'E', onClick: handleExtrude },
+    { icon: <RotateCcw size={MI} />, ribbonIcon: <RotateCcw size={RIBBON_ICON} />, ribbonColorClass: 'icon-blue', ribbonTool: 'revolve', promoteToRibbon: true, label: 'Revolve', onClick: handleRevolve },
+    { icon: <Spline size={MI} />, ribbonIcon: <Spline size={RIBBON_ICON} />, ribbonColorClass: 'icon-blue', ribbonTool: 'sweep', promoteToRibbon: true, label: 'Sweep', onClick: startSweepTool },
+    { icon: <Layers size={MI} />, ribbonIcon: <Layers size={RIBBON_ICON} />, ribbonColorClass: 'icon-blue', ribbonTool: 'loft', promoteToRibbon: true, label: 'Loft', onClick: startLoftTool },
+    { icon: <Diamond size={MI} />, ribbonIcon: <Diamond size={RIBBON_ICON} />, ribbonColorClass: 'icon-blue', ribbonTool: 'patch', promoteToRibbon: true, label: 'Patch', onClick: startPatchTool },
+    { icon: <Minus size={MI} />, ribbonIcon: <Minus size={RIBBON_ICON} />, ribbonColorClass: 'icon-blue', ribbonTool: 'rib', promoteToRibbon: true, label: 'Rib', onClick: startRibTool },
     { icon: <Move size={MI} />, label: 'Web', onClick: () => setActiveDialog('web') },
     { icon: <ArrowUp size={MI} />, label: 'Emboss', onClick: () => setActiveDialog('emboss') },
     { icon: <AlignCenter size={MI} />, label: 'Rest', onClick: () => setActiveDialog('rest') },

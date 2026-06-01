@@ -1,11 +1,15 @@
 /* ===== Flyout Section Menus (Fusion 360 style) ===== */
 
 .ribbon-section-label.flyout-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   cursor: pointer;
   user-select: none;
-  border-radius: 2px;
-  transition: background 0.15s, color 0.15s;
-  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  padding: 2px 7px;
+  border-top-color: transparent;
 }
 
 .ribbon-section-label.flyout-trigger:hover {
@@ -14,7 +18,27 @@
 }
 
 .ribbon-section-label.flyout-open {
-  border-radius: 2px 2px 0 0;
+  border-radius: 4px 4px 0 0;
+}
+
+.ribbon-section-chevron {
+  width: 11px;
+  height: 11px;
+  padding: 1px;
+  border-radius: 3px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--bg-primary) 70%, transparent);
+  transition: transform 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.ribbon-section-label.flyout-trigger:hover .ribbon-section-chevron,
+.ribbon-section-label.flyout-open .ribbon-section-chevron {
+  color: currentColor;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.ribbon-section-label.flyout-open .ribbon-section-chevron {
+  transform: rotate(180deg);
 }
 
 .flyout-menu {

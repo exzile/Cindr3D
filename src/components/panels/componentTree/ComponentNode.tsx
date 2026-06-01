@@ -72,7 +72,15 @@ function OriginFolder() {
   );
 }
 
-export function ComponentNode({ componentId, depth = 0 }: { componentId: string; depth?: number }) {
+export function ComponentNode({
+  componentId,
+  depth = 0,
+  filterQuery = '',
+}: {
+  componentId: string;
+  depth?: number;
+  filterQuery?: string;
+}) {
   const component = useComponentStore((s) => s.components[componentId]);
   const expandedIds = useComponentStore((s) => s.expandedIds);
   const toggleExpanded = useComponentStore((s) => s.toggleExpanded);
@@ -100,6 +108,11 @@ export function ComponentNode({ componentId, depth = 0 }: { componentId: string;
   const isExpanded = expandedIds.has(componentId);
   const isActive = activeComponentId === componentId;
   const isRoot = component.parentId === null;
+  const shouldShowChildren = isExpanded || !!filterQuery;
+  const componentMatchesFilter = !filterQuery || component.name.toLowerCase().includes(filterQuery);
+  const componentBodyCount = component.bodyIds.length;
+  const componentSketchCount = component.sketchIds.length;
+  const componentChildCount = component.childIds.length;
   const hasChildren = isActive ||
                       component.childIds.length > 0 ||
                       component.bodyIds.length > 0 ||
@@ -185,7 +198,13 @@ export function ComponentNode({ componentId, depth = 0 }: { componentId: string;
     /* --depth is a dynamic CSS custom property for indent — must stay inline */
     <div className="tree-node" style={{ '--depth': depth } as React.CSSProperties}>
       <div
-        className={`tree-item component-item ${isActive ? 'active' : ''}`}
+        className={[
+          'tree-item',
+          'component-item',
+          isRoot ? 'component-item--root' : '',
+          isActive ? 'active' : '',
+          componentMatchesFilter ? '' : 'browser-filter-context',
+        ].filter(Boolean).join(' ')}
         onClick={() => {
           const adopted = adoptAssemblyContents();
           setActiveComponentId(componentId);
@@ -234,6 +253,12 @@ export function ComponentNode({ componentId, depth = 0 }: { componentId: string;
         )}
 
         {component.grounded && <Anchor size={10} className="grounded-icon" />}
+
+        <div className="browser-meta-group" aria-hidden="true">
+          {componentChildCount > 0 && <span className="browser-count-badge">C {componentChildCount}</span>}
+          {componentBodyCount > 0 && <span className="browser-count-badge">B {componentBodyCount}</span>}
+          {componentSketchCount > 0 && <span className="browser-count-badge">S {componentSketchCount}</span>}
+        </div>
 
         <div className="tree-item-actions">
           <button
@@ -301,27 +326,27 @@ export function ComponentNode({ componentId, depth = 0 }: { componentId: string;
       )}
 
       {/* Children */}
-      {isExpanded && (
+      {shouldShowChildren && (
         <div className="tree-children">
           {/* CORR-15: Full origin entities folder (always shown for active component) */}
-          {isActive && <OriginFolder />}
+          {isActive && !filterQuery && <OriginFolder />}
 
           {/* Construction geometry */}
-          {component.constructionIds.map((id) => (
+          {!filterQuery && component.constructionIds.map((id) => (
             <ConstructionNode key={id} id={id} />
           ))}
 
-          <BodiesFolder componentId={componentId} />
-          <SketchesFolder componentId={componentId} />
+          <BodiesFolder componentId={componentId} filterQuery={filterQuery} />
+          <SketchesFolder componentId={componentId} filterQuery={filterQuery} />
 
           {/* Joints */}
-          {component.jointIds.map((id) => (
+          {!filterQuery && component.jointIds.map((id) => (
             <JointNode key={id} id={id} />
           ))}
 
           {/* Child components */}
           {component.childIds.map((id) => (
-            <ComponentNode key={id} componentId={id} depth={depth + 1} />
+            <ComponentNode key={id} componentId={id} depth={depth + 1} filterQuery={filterQuery} />
           ))}
         </div>
       )}

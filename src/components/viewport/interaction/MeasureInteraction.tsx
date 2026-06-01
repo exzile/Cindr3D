@@ -23,12 +23,12 @@ export default function MeasureInteraction() {
 
   const [mousePos, setMousePos] = useState<THREE.Vector3 | null>(null);
   const previewRef = useRef<THREE.Group>(null);
-  const matRef = useRef(new THREE.LineBasicMaterial({ color: 0xffaa00, linewidth: 2 }));
-  const dashedRef = useRef(new THREE.LineDashedMaterial({ color: 0xffaa00, linewidth: 1, dashSize: 1, gapSize: 0.5 }));
+  const matRef = useRef(new THREE.LineBasicMaterial({ color: 0xc2410c, linewidth: 2 }));
+  const dashedRef = useRef(new THREE.LineDashedMaterial({ color: 0xc2410c, linewidth: 1, dashSize: 1, gapSize: 0.5 }));
 
   // Reusable dot geometry + material — created once, never reallocated
   const dotGeoRef = useRef(new THREE.SphereGeometry(0.3, 8, 8));
-  const dotMatRef = useRef(new THREE.MeshBasicMaterial({ color: 0xffaa00, depthTest: false }));
+  const dotMatRef = useRef(new THREE.MeshBasicMaterial({ color: 0xc2410c, depthTest: false }));
   // Two reusable sphere meshes (at most 2 dots are shown at a time)
   const dot1Ref = useRef<THREE.Mesh>(new THREE.Mesh());
   const dot2Ref = useRef<THREE.Mesh>(new THREE.Mesh());

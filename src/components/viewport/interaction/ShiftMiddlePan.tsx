@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 
@@ -6,14 +6,19 @@ import * as THREE from 'three';
 // OrbitControls maps middle button to dolly. This component intercepts
 // Shift+Middle drag and converts it to panning (moves camera + target together).
 export default function ShiftMiddlePan() {
-  const { gl, camera } = useThree();
+  const { gl, camera, invalidate } = useThree();
   const controls = useThree((s) => s.controls) as { target: THREE.Vector3; update: () => void; enabled: boolean } | null;
+  const rightRef = useRef(new THREE.Vector3());
+  const upRef = useRef(new THREE.Vector3());
+  const panRef = useRef(new THREE.Vector3());
+  const originRef = useRef(new THREE.Vector3());
 
   useEffect(() => {
     const canvas = gl.domElement;
     let panning = false;
     let lastX = 0;
     let lastY = 0;
+    let rectHeight = 1;
 
     const onPointerDown = (e: PointerEvent) => {
       if (e.button === 1 && e.shiftKey) {
@@ -22,6 +27,7 @@ export default function ShiftMiddlePan() {
         panning = true;
         lastX = e.clientX;
         lastY = e.clientY;
+        rectHeight = canvas.getBoundingClientRect().height || 1;
         try { canvas.setPointerCapture(e.pointerId); } catch { /* ignore */ }
         if (controls) controls.enabled = false;
       }
@@ -34,27 +40,25 @@ export default function ShiftMiddlePan() {
       lastX = e.clientX;
       lastY = e.clientY;
 
-      const rect = canvas.getBoundingClientRect();
-      const target = controls ? controls.target : new THREE.Vector3();
+      const target = controls ? controls.target : originRef.current.set(0, 0, 0);
       const dist = camera.position.distanceTo(target);
       // Scale pan speed with distance so it feels consistent at any zoom level
-      const scale = (dist / rect.height) * 2;
+      const scale = (dist / rectHeight) * 2;
 
       // Build right/up vectors from camera orientation
-      const right = new THREE.Vector3();
-      right.setFromMatrixColumn(camera.matrixWorld, 0);
-      const up = new THREE.Vector3();
-      up.setFromMatrixColumn(camera.matrixWorld, 1);
-
-      const pan = right.multiplyScalar(-dx * scale).add(
-        up.multiplyScalar(dy * scale)
-      );
+      const right = rightRef.current.setFromMatrixColumn(camera.matrixWorld, 0);
+      const up = upRef.current.setFromMatrixColumn(camera.matrixWorld, 1);
+      const pan = panRef.current
+        .copy(right)
+        .multiplyScalar(-dx * scale)
+        .addScaledVector(up, dy * scale);
 
       camera.position.add(pan);
       if (controls) {
         controls.target.add(pan);
         controls.update();
       }
+      invalidate();
     };
 
     const onPointerUp = (e: PointerEvent) => {
@@ -74,7 +78,7 @@ export default function ShiftMiddlePan() {
       window.removeEventListener('pointerup', onPointerUp);
       if (controls) controls.enabled = true;
     };
-  }, [gl, camera, controls]);
+  }, [gl, camera, controls, invalidate]);
 
   return null;
 }

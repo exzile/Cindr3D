@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { Check, Download, Plus, Save, Trash2, X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import '../common/ToolPanel.css';
@@ -17,6 +17,17 @@ export function DesignConfigurationsDialog({ onClose }: { onClose: () => void })
   const activeConfiguration = designConfigurations.find((configuration) => configuration.id === activeDesignConfigurationId);
   const [newName, setNewName] = useState('');
   const [renameValue, setRenameValue] = useState(activeConfiguration?.name ?? '');
+  const panelRef = useRef<HTMLDivElement>(null);
+  const dragStateRef = useRef<{
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
     let disposed = false;
@@ -42,13 +53,74 @@ export function DesignConfigurationsDialog({ onClose }: { onClose: () => void })
     renameDesignConfiguration(activeConfiguration.id, renameValue);
   };
 
+  const clampPanelPosition = useCallback((x: number, y: number, width: number, height: number) => {
+    const margin = 8;
+    const maxX = Math.max(margin, window.innerWidth - width - margin);
+    const maxY = Math.max(margin, window.innerHeight - height - margin);
+    return {
+      x: Math.min(Math.max(margin, x), maxX),
+      y: Math.min(Math.max(margin, y), maxY),
+    };
+  }, []);
+
+  const handleHeaderPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const rect = panelRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    event.preventDefault();
+    const origin = clampPanelPosition(rect.left, rect.top, rect.width, rect.height);
+    dragStateRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: origin.x,
+      originY: origin.y,
+      width: rect.width,
+      height: rect.height,
+    };
+    setPanelPosition(origin);
+    setDragging(true);
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const state = dragStateRef.current;
+      if (!state) return;
+      const next = clampPanelPosition(
+        state.originX + moveEvent.clientX - state.startX,
+        state.originY + moveEvent.clientY - state.startY,
+        state.width,
+        state.height,
+      );
+      setPanelPosition(next);
+    };
+
+    const handlePointerUp = () => {
+      dragStateRef.current = null;
+      setDragging(false);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+  }, [clampPanelPosition]);
+
+  const panelStyle: CSSProperties = panelPosition
+    ? { width: 360, left: panelPosition.x, top: panelPosition.y, right: 'auto', transform: 'none' }
+    : { width: 360 };
+
   return (
-    <div className="tool-panel-overlay">
-      <div className="tool-panel design-configurations-panel" style={{ width: 360 }}>
-        <div className="tp-header">
+    <div className="tool-panel-overlay design-configurations-overlay">
+      <div
+        ref={panelRef}
+        className={`tool-panel design-configurations-panel${dragging ? ' is-dragging' : ''}`}
+        style={panelStyle}
+      >
+        <div className="tp-header" onPointerDown={handleHeaderPointerDown}>
           <div className="tp-header-icon"><Check size={12} /></div>
           <span className="tp-header-title">Design Configurations</span>
-          <button className="tp-close" onClick={onClose} title="Close"><X size={14} /></button>
+          <button className="tp-close" onPointerDown={(event) => event.stopPropagation()} onClick={onClose} title="Close"><X size={14} /></button>
         </div>
 
         <div className="tp-body">

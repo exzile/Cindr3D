@@ -86,8 +86,9 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
   const {
     activeTool, activeSketch, sketchPoint, drawingPoints, setDrawingPoints,
     t1, t2, projectToPlane,
-    addSketchEntity, addSketchConstraint, setStatusMessage,
+    addSketchEntity, setStatusMessage,
     polygonSides, conicRho,
+    onEntityCommitted,
   } = ctx;
   switch (activeTool) {
     case 'line':
@@ -115,6 +116,7 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
           points: [p0, sketchPoint],
         };
         addSketchEntity(entity);
+        onEntityCommitted?.(entity.id);
         setDrawingPoints([sketchPoint]); // Chain lines — next start = this end
         setStatusMessage(`${lineLabel} added — click to continue, right-click or Escape to stop`);
       }
@@ -192,19 +194,21 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
         });
         const corners = [toWorld(u1, v1), toWorld(u2, v1), toWorld(u2, v2), toWorld(u1, v2)];
         const lineIds: string[] = [];
+        const batchEntities: SketchEntity[] = [];
+        const batchConstraints: SketchConstraint[] = [];
         for (let i = 0; i < 4; i++) {
           const eid = crypto.randomUUID();
           lineIds.push(eid);
-          addSketchEntity({ id: eid, type: 'line', points: [corners[i], corners[(i + 1) % 4]] });
+          batchEntities.push({ id: eid, type: 'line', points: [corners[i], corners[(i + 1) % 4]] });
         }
-        // Add coincident constraints connecting adjacent corner endpoints
         for (let i = 0; i < 4; i++) {
-          addSketchConstraint({
+          batchConstraints.push({
             id: crypto.randomUUID(), type: 'coincident',
             entityIds: [lineIds[i], lineIds[(i + 1) % 4]],
             pointIndices: [1, 0],
           });
         }
+        useCADStore.getState().addSketchEntitiesAndConstraintsBatch(batchEntities, batchConstraints, true);
         setDrawingPoints([]);
         setStatusMessage('Rectangle added');
       }
@@ -257,11 +261,13 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
         const radius = d.length();
         if (radius > 0.001) {
           const sides = polygonSides;
-          // Cursor angle drives rotation so a vertex sits exactly under the cursor (Fusion parity).
           const baseAngle = Math.atan2(d.dot(t2), d.dot(t1));
           const verts = polygonVertexPositions(centerV, radius, sides, baseAngle, 'inscribed', t1, t2);
-          const lineIds = emitPolygonLines(verts, addSketchEntity);
-          const polyId = applyPolygonConstraints(lineIds, addSketchConstraint, polygonMetaFrom(centerV, verts[0], t1, t2));
+          const batchEntities: SketchEntity[] = [];
+          const batchConstraints: SketchConstraint[] = [];
+          const lineIds = emitPolygonLines(verts, (e) => batchEntities.push(e));
+          const polyId = applyPolygonConstraints(lineIds, (c) => batchConstraints.push(c), polygonMetaFrom(centerV, verts[0], t1, t2));
+          useCADStore.getState().addSketchEntitiesAndConstraintsBatch(batchEntities, batchConstraints, true);
           if (polyId) useCADStore.getState().setEditingPolygonConstraintId(polyId);
           setStatusMessage(`${sides}-gon (inscribed) added (vertex r=${radius.toFixed(2)})`);
         } else { setStatusMessage('Polygon too small — try again'); }
@@ -281,18 +287,18 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
         const apothem = d.length();
         const sides = polygonSides;
         if (apothem > 0.001) {
-          // Cursor angle drives rotation so an edge midpoint sits under the cursor (Fusion parity).
           const baseAngle = Math.atan2(d.dot(t2), d.dot(t1));
           const verts = polygonVertexPositions(centerV, apothem, sides, baseAngle, 'circumscribed', t1, t2);
-          const lineIds = emitPolygonLines(verts, addSketchEntity);
-          // Store the cursor params (apothem + edge-midpoint angle) so editing the
-          // side count keeps the inscribed circle fixed — true circumscribed behaviour.
-          const polyId = applyPolygonConstraints(lineIds, addSketchConstraint, {
+          const batchEntities: SketchEntity[] = [];
+          const batchConstraints: SketchConstraint[] = [];
+          const lineIds = emitPolygonLines(verts, (e) => batchEntities.push(e));
+          const polyId = applyPolygonConstraints(lineIds, (c) => batchConstraints.push(c), {
             center: { x: centerV.x, y: centerV.y, z: centerV.z },
             radius: apothem,
             baseAngle,
             kind: 'circumscribed',
           });
+          useCADStore.getState().addSketchEntitiesAndConstraintsBatch(batchEntities, batchConstraints, true);
           if (polyId) useCADStore.getState().setEditingPolygonConstraintId(polyId);
           setStatusMessage(`${sides}-gon (circumscribed) added (apothem=${apothem.toFixed(2)})`);
         } else { setStatusMessage('Polygon too small — try again'); }
@@ -323,6 +329,8 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
           const centerPt = new THREE.Vector3(midX + perpDir.x * apothem, midY + perpDir.y * apothem, midZ + perpDir.z * apothem);
           const toP1 = new THREE.Vector3(p1.x - centerPt.x, p1.y - centerPt.y, p1.z - centerPt.z);
           const startAngle = Math.atan2(toP1.dot(t2), toP1.dot(t1));
+          const batchEntities: SketchEntity[] = [];
+          const batchConstraints: SketchConstraint[] = [];
           const lineIds: string[] = [];
           for (let i = 0; i < sides; i++) {
             const a1 = startAngle + (i / sides) * Math.PI * 2;
@@ -331,13 +339,14 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
             const v2: SketchPoint = { id: crypto.randomUUID(), x: centerPt.x + t1.x * Math.cos(a2) * radius + t2.x * Math.sin(a2) * radius, y: centerPt.y + t1.y * Math.cos(a2) * radius + t2.y * Math.sin(a2) * radius, z: centerPt.z + t1.z * Math.cos(a2) * radius + t2.z * Math.sin(a2) * radius };
             const eid = crypto.randomUUID();
             lineIds.push(eid);
-            addSketchEntity({ id: eid, type: 'line', points: [v1, v2] });
+            batchEntities.push({ id: eid, type: 'line', points: [v1, v2] });
           }
           // First vertex sits at p1 (angle = startAngle); record meta for editing.
           const polyId = applyPolygonConstraints(
-            lineIds, addSketchConstraint,
+            lineIds, (c) => batchConstraints.push(c),
             polygonMetaFrom(centerPt, new THREE.Vector3(p1.x, p1.y, p1.z), t1, t2),
           );
+          useCADStore.getState().addSketchEntitiesAndConstraintsBatch(batchEntities, batchConstraints, true);
           if (polyId) useCADStore.getState().setEditingPolygonConstraintId(polyId);
           setStatusMessage(`${sides}-gon (edge) added (side=${sideLen.toFixed(2)})`);
         } else { setStatusMessage('Edge too small — try again'); }
@@ -361,14 +370,17 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
         });
         const corners = [corner(-du, -dv), corner(du, -dv), corner(du, dv), corner(-du, dv)];
         const lineIds: string[] = [];
+        const batchEntities: SketchEntity[] = [];
+        const batchConstraints: SketchConstraint[] = [];
         for (let i = 0; i < 4; i++) {
           const eid = crypto.randomUUID();
           lineIds.push(eid);
-          addSketchEntity({ id: eid, type: 'line', points: [corners[i], corners[(i + 1) % 4]] });
+          batchEntities.push({ id: eid, type: 'line', points: [corners[i], corners[(i + 1) % 4]] });
         }
         for (let i = 0; i < 4; i++) {
-          addSketchConstraint({ id: crypto.randomUUID(), type: 'coincident', entityIds: [lineIds[i], lineIds[(i + 1) % 4]], pointIndices: [1, 0] });
+          batchConstraints.push({ id: crypto.randomUUID(), type: 'coincident', entityIds: [lineIds[i], lineIds[(i + 1) % 4]], pointIndices: [1, 0] });
         }
+        useCADStore.getState().addSketchEntitiesAndConstraintsBatch(batchEntities, batchConstraints, true);
         setDrawingPoints([]);
         setStatusMessage('Center rectangle added');
       }
