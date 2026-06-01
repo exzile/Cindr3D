@@ -58,13 +58,6 @@
     <line x1="1000" y1="0" x2="1000" y2="220"/>
   </g>
 
-  <!-- Scanning shimmer sweep -->
-  <g clip-path="url(#clip)">
-    <rect x="-320" y="0" width="260" height="220" fill="white" opacity="0.025" rx="8">
-      <animate attributeName="x" values="-320;1340" dur="8s" repeatCount="indefinite"/>
-    </rect>
-  </g>
-
   <!-- Main title with glow -->
   <text x="600" y="118" text-anchor="middle"
     font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
