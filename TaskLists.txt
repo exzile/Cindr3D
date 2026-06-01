@@ -461,12 +461,10 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #             primitive, matching the Create-menu icon colors, like CoilDialog's.
 
 # ── P2: Fusion parameter + operation parity ─────────────────────────────────
-# [ ] PRIM-4  Implement real primitive operations for Box/Cylinder/Sphere/Torus:
+# [x] PRIM-4  Implement real primitive operations for Box/Cylinder/Sphere/Torus:
 #             New Body / Join / Cut / Intersect / New Component (Fusion
-#             FeatureOperations). Do not expose this control in primitive dialogs
-#             until addPrimitive/PrimitiveBodies actually route the operation through
-#             boolean placement or component creation. Current primitive dialogs are
-#             intentionally New Body only to avoid misleading success messages.
+#             FeatureOperations). addPrimitive now routes Join/Cut/Intersect through
+#             OCC boolean placement and New Component through the component store.
 # [x] PRIM-5  Rename fields to Fusion conventions and switch radius→diameter:
 #             Box Width/Height/Depth → Length/Width/Height; Cylinder
 #             Radius Bottom/Top → Diameter (+ Height); Sphere Radius → Diameter;
