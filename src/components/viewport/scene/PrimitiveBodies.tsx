@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useThree, type ThreeEvent } from '@react-three/fiber';
+import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
+import { useThemeStore } from '../../../store/themeStore';
 import { useComponentStore } from '../../../store/componentStore';
 import { BODY_MATERIAL, DIM_MATERIAL, componentColorMaterial } from './bodyMaterial';
 import { isComponentVisible } from './componentVisibility';
@@ -16,6 +19,14 @@ import { parseOccEdgeSelection, storedEdgeIds } from '../../../utils/occEdgeUtil
 import type { BRepBody } from '../../../engine/occ/brepBody';
 import type { OcctRaw } from '../../../engine/occ/types';
 import type { Feature } from '../../../types/cad';
+import { emitCylinderPrimitiveDrag } from '../../../utils/primitivePreviewEvents';
+import {
+  CYLINDER_HEIGHT_ARROW_LINE_MATERIAL,
+  CYLINDER_HEIGHT_ARROW_MATERIAL,
+  CYLINDER_RADIUS_ARROW_LINE_MATERIAL,
+  CYLINDER_RADIUS_ARROW_MATERIAL,
+} from '../gizmos/arrowMaterials';
+import { setGizmoDragging } from './gizmoDragGuard';
 
 /** Primitive solid bodies — Box / Cylinder / Sphere / Torus
  *
@@ -174,6 +185,249 @@ function disposeOccPrimitiveBuildDeferred(result: OccPrimitiveBuildResult): void
   setTimeout(() => disposeOccPrimitiveBuild(result), 0);
 }
 
+const _primitiveNdc = new THREE.Vector2();
+const _primitiveRay = new THREE.Ray();
+const _primitiveW0 = new THREE.Vector3();
+const _primitiveConeUp = new THREE.Vector3(0, 1, 0);
+
+type CylinderHandleKind = 'height' | 'radius';
+
+interface CylinderDimensionHandleProps {
+  kind: CylinderHandleKind;
+  center: THREE.Vector3;
+  radius: number;
+  height: number;
+  onChange: (next: { radius?: number; height?: number }) => void;
+}
+
+function CylinderDimensionHandle({ kind, center, radius, height, onChange }: CylinderDimensionHandleProps) {
+  const camera = useThree((s) => s.camera);
+  const gl = useThree((s) => s.gl);
+  const controls = useThree((s) => s.controls as { enabled: boolean } | null);
+  const themeColors = useThemeStore((s) => s.colors);
+  const colorCss = kind === 'height' ? '#00d4ff' : '#ff8a00';
+  const draggingRef = useRef(false);
+  const dragOffsetRef = useRef(0);
+  const latestValueRef = useRef(kind === 'height' ? height : radius);
+  const [inputValue, setInputValue] = useState(() =>
+    (kind === 'height' ? height : radius * 2).toFixed(2),
+  );
+
+  useEffect(() => {
+    latestValueRef.current = kind === 'height' ? height : radius;
+  }, [height, kind, radius]);
+
+  // Sync label from props when not dragging (e.g. user typed in the panel dialog)
+  useEffect(() => {
+    if (draggingRef.current) return;
+    setInputValue((kind === 'height' ? height : radius * 2).toFixed(2));
+  }, [height, kind, radius]);
+
+  const axis = useMemo(
+    () => kind === 'height' ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0),
+    [kind],
+  );
+
+  const lineMat = useMemo(
+    () => kind === 'height' ? CYLINDER_HEIGHT_ARROW_LINE_MATERIAL : CYLINDER_RADIUS_ARROW_LINE_MATERIAL,
+    [kind],
+  );
+  const handleMat = useMemo(
+    () => kind === 'height' ? CYLINDER_HEIGHT_ARROW_MATERIAL : CYLINDER_RADIUS_ARROW_MATERIAL,
+    [kind],
+  );
+  const handleScale = useMemo(
+    () => kind === 'height' ? new THREE.Vector3(1, 1, 1) : new THREE.Vector3(1.08, 1.08, 1.08),
+    [kind],
+  );
+
+  const scalar = kind === 'height' ? height / 2 : radius;
+  const handleGap = kind === 'height' ? 4 : 4.5;
+  const tip = useMemo(() => center.clone().add(axis.clone().multiplyScalar(scalar + handleGap)), [axis, center, handleGap, scalar]);
+  const lineGeometry = useMemo(() => {
+    const start = center.clone().add(axis.clone().multiplyScalar(kind === 'height' ? height / 2 : 0));
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute([
+      start.x, start.y, start.z,
+      tip.x, tip.y, tip.z,
+    ], 3));
+    return geometry;
+  }, [axis, center, height, kind, tip]);
+  useEffect(() => () => { lineGeometry.dispose(); }, [lineGeometry]);
+  const lineObj = useMemo(() => new THREE.Line(lineGeometry, lineMat), [lineGeometry, lineMat]);
+  const handleQuaternion = useMemo(() => new THREE.Quaternion().setFromUnitVectors(_primitiveConeUp, axis), [axis]);
+
+  const rayToAxis = useCallback((ndc: THREE.Vector2): number | null => {
+    _primitiveRay.origin.setFromMatrixPosition(camera.matrixWorld);
+    _primitiveRay.direction.set(ndc.x, ndc.y, 0.5).unproject(camera).sub(_primitiveRay.origin).normalize();
+    const w0 = _primitiveW0.copy(_primitiveRay.origin).sub(center);
+    const b = _primitiveRay.direction.dot(axis);
+    const d = _primitiveRay.direction.dot(w0);
+    const e = axis.dot(w0);
+    const denom = 1 - b * b;
+    if (Math.abs(denom) < 1e-4) return null;
+    return (e - b * d) / denom;
+  }, [axis, camera, center]);
+
+  const updateNdc = useCallback((event: { clientX: number; clientY: number }) => {
+    const rect = gl.domElement.getBoundingClientRect();
+    _primitiveNdc.set(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+  }, [gl]);
+
+  const commitValue = useCallback((axisScalar: number) => {
+    if (kind === 'height') {
+      const nextHeight = Math.max(0.1, Math.round(Math.abs(axisScalar) * 200) / 100);
+      latestValueRef.current = nextHeight;
+      setInputValue(nextHeight.toFixed(2));
+      onChange({ height: nextHeight });
+      return;
+    }
+    const nextRadius = Math.max(0.05, Math.round(Math.abs(axisScalar) * 100) / 100);
+    latestValueRef.current = nextRadius;
+    setInputValue((nextRadius * 2).toFixed(2));
+    onChange({ radius: nextRadius });
+  }, [kind, onChange]);
+
+  const handleInputCommit = useCallback((raw: string) => {
+    const v = parseFloat(raw);
+    if (Number.isNaN(v) || v <= 0) return;
+    if (kind === 'height') {
+      onChange({ height: Math.max(0.1, v) });
+    } else {
+      onChange({ radius: Math.max(0.05, v / 2) });
+    }
+  }, [kind, onChange]);
+
+  const handlePointerDown = useCallback((event: ThreeEvent<PointerEvent>) => {
+    event.stopPropagation();
+    event.nativeEvent.preventDefault();
+    event.nativeEvent.stopPropagation();
+    updateNdc(event);
+    const axisScalar = rayToAxis(_primitiveNdc);
+    if (axisScalar === null) return;
+    draggingRef.current = true;
+    setGizmoDragging(true);
+    dragOffsetRef.current = scalar - axisScalar;
+    if (controls) controls.enabled = false;
+    gl.domElement.style.cursor = kind === 'height' ? 'ns-resize' : 'ew-resize';
+  }, [controls, gl, kind, rayToAxis, scalar, updateNdc]);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      if (!draggingRef.current) return;
+      updateNdc(event);
+      const axisScalar = rayToAxis(_primitiveNdc);
+      if (axisScalar === null) return;
+      commitValue(axisScalar + dragOffsetRef.current);
+    };
+
+    const finishDrag = () => {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      if (controls) controls.enabled = true;
+      gl.domElement.style.cursor = '';
+      window.setTimeout(() => setGizmoDragging(false), 0);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', finishDrag);
+    window.addEventListener('pointercancel', finishDrag);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', finishDrag);
+      window.removeEventListener('pointercancel', finishDrag);
+      if (!draggingRef.current) return;
+      if (controls) controls.enabled = true;
+      gl.domElement.style.cursor = '';
+    };
+  }, [commitValue, controls, gl, rayToAxis, updateNdc]);
+
+  useEffect(() => () => {
+    if (controls) controls.enabled = true;
+    gl.domElement.style.cursor = '';
+    setGizmoDragging(false);
+  }, [controls, gl]);
+
+  return (
+    <group renderOrder={1500}>
+      <primitive object={lineObj} />
+      <mesh
+        position={tip}
+        quaternion={handleQuaternion}
+        scale={handleScale}
+        onPointerDown={handlePointerDown}
+        onPointerOver={() => { gl.domElement.style.cursor = kind === 'height' ? 'ns-resize' : 'ew-resize'; }}
+        onPointerOut={() => { if (!draggingRef.current) gl.domElement.style.cursor = ''; }}
+      >
+        <coneGeometry args={[1.1, 3.4, 18]} />
+        <primitive object={handleMat} attach="material" />
+      </mesh>
+      <Html position={tip} zIndexRange={[600, 0]} style={{ pointerEvents: 'none', overflow: 'visible' }}>
+        <div style={{ position: 'relative', width: 0, height: 0 }}>
+          <div
+            style={{ position: 'absolute', left: 8, top: -14, pointerEvents: 'auto' }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '2px',
+              padding: '2px 6px 2px 5px',
+              background: themeColors.bgPanel,
+              border: `1.5px solid ${colorCss}`,
+              borderRadius: '3px',
+              boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
+              whiteSpace: 'nowrap',
+              fontFamily: 'system-ui,-apple-system,"Segoe UI",sans-serif',
+              fontSize: '11px',
+              fontWeight: 600,
+              color: themeColors.textPrimary,
+              userSelect: 'none',
+            }}>
+              {kind === 'radius' && (
+                <span style={{ color: colorCss, fontSize: '11px', fontWeight: 700, marginRight: '1px' }}>Ø</span>
+              )}
+              <input
+                type="number"
+                min={0.1}
+                step={0.5}
+                value={inputValue}
+                onChange={(e) => {
+                  setInputValue(e.target.value);
+                  handleInputCommit(e.target.value);
+                }}
+                onKeyDown={(e) => {
+                  e.stopPropagation();
+                  if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur();
+                }}
+                onFocus={(e) => e.currentTarget.select()}
+                style={{
+                  width: '52px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  textAlign: 'right',
+                  color: themeColors.textPrimary,
+                  background: 'transparent',
+                  border: 'none',
+                  padding: '1px 0',
+                  outline: 'none',
+                  pointerEvents: 'auto',
+                  MozAppearance: 'textfield',
+                }}
+              />
+              <span style={{ color: themeColors.textSecondary, fontSize: '10px', marginLeft: '1px' }}>mm</span>
+            </div>
+          </div>
+        </div>
+      </Html>
+    </group>
+  );
+}
+
 interface PrimitiveMeshProps {
   spec: PrimitiveSpec;
   isDimmed: boolean;
@@ -270,6 +524,7 @@ function PrimitiveMesh({ spec, isDimmed, componentMaterial, hidden }: PrimitiveM
 /** PRIM-8: Ghost mesh shown while a primitive dialog is open. */
 export function PrimitivePreview() {
   const preview = useCADStore((s) => s.primitivePreviewParams);
+  const setPrimitivePreview = useCADStore((s) => s.setPrimitivePreview);
   const ghostMaterial = useMemo(() => {
     const m = new THREE.MeshStandardMaterial({
       color: 0x5b9bd5,
@@ -295,13 +550,53 @@ export function PrimitivePreview() {
   useEffect(() => () => { geo?.dispose(); }, [geo]);
 
   if (!preview || !geo) return null;
+  const position = [preview.params.x ?? 0, preview.params.y ?? 0, preview.params.z ?? 0] as [number, number, number];
+  const cylinderCenter = new THREE.Vector3(position[0], position[1], position[2]);
+  const cylinderRadius = preview.params.radius ?? 10;
+  const cylinderHeight = preview.params.height ?? 20;
+  const updateCylinderPreview = (next: { radius?: number; height?: number }) => {
+    if (preview.kind !== 'cylinder') return;
+    const nextRadius = next.radius ?? cylinderRadius;
+    const nextHeight = next.height ?? cylinderHeight;
+    setPrimitivePreview({
+      kind: 'cylinder',
+      params: {
+        ...preview.params,
+        radius: nextRadius,
+        radiusTop: nextRadius,
+        height: nextHeight,
+      },
+    });
+    emitCylinderPrimitiveDrag({ radius: nextRadius, height: nextHeight });
+  };
+
   return (
-    <mesh
-      geometry={geo}
-      material={ghostMaterial}
-      position={[preview.params.x ?? 0, preview.params.y ?? 0, preview.params.z ?? 0]}
-      userData={{ shared: true }}
-    />
+    <group>
+      <mesh
+        geometry={geo}
+        material={ghostMaterial}
+        position={position}
+        userData={{ shared: true }}
+      />
+      {preview.kind === 'cylinder' && (
+        <>
+          <CylinderDimensionHandle
+            kind="height"
+            center={cylinderCenter}
+            radius={cylinderRadius}
+            height={cylinderHeight}
+            onChange={updateCylinderPreview}
+          />
+          <CylinderDimensionHandle
+            kind="radius"
+            center={cylinderCenter}
+            radius={cylinderRadius}
+            height={cylinderHeight}
+            onChange={updateCylinderPreview}
+          />
+        </>
+      )}
+    </group>
   );
 }
 
