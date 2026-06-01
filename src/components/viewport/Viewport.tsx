@@ -20,7 +20,7 @@ import PolygonConstraintOverlay from './scene/PolygonConstraintOverlay';
 import SketchDimensionAnnotations from './scene/SketchDimensionAnnotations';
 import SketchDimensionPreview from './scene/SketchDimensionPreview';
 import SketchSplineHandles from './scene/SketchSplineHandles';
-import PrimitiveBodies from './scene/PrimitiveBodies';
+import PrimitiveBodies, { PrimitivePreview } from './scene/PrimitiveBodies';
 import FastenerBodies from './scene/FastenerBodies';
 import ExtrudedBodies from './scene/ExtrudedBodies';
 import ImportedModels from './scene/ImportedModels';
@@ -257,6 +257,7 @@ export default function Viewport() {
         )}
         <ExtrudedBodies />
         <PrimitiveBodies />
+        <PrimitivePreview />
         <FastenerBodies />
         <ImportedModels />
         <CanvasReferences />

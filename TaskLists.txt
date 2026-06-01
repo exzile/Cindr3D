@@ -106,7 +106,7 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #     Add ConstraintType 'horizontal-points' / 'vertical-points'; solver residuals
 #     p1.u == p2.u and p1.v == p2.v respectively.
 #
-# [ ] SKETCH-1.8 Parametric Pattern constraints
+# [skip] SKETCH-1.8 Parametric Pattern constraints
 #     (CircularPatternConstraint.h, RectangularPatternConstraint.h) — Fusion's sketch
 #     patterns create copies AND a constraint that keeps them synchronized. Editing one
 #     copy propagates to all others via the solver. Our sketch patterns (commitSketchRect
@@ -131,7 +131,7 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #     solver residual: distance between parallel curve centroids == value.
 #     Implement AFTER SKETCH-1.4 is done.
 #
-# [ ] SKETCH-1.11 Tangent Distance Dimension (SketchTangentDistanceDimension.h) —
+# [x] SKETCH-1.11 Tangent Distance Dimension (SketchTangentDistanceDimension.h) —
 #     distance from a point to a tangent line of a circle. Niche. Low priority.
 #
 # ── VISUAL / UX GAPS ──────────────────────────────────────────────────────────
@@ -178,7 +178,7 @@ Keep this file focused on active work. Open task sections retain their detailed 
 # All snap logic is in ONE file: SketchInteraction.tsx (findSnapCandidate 214-384,
 # snapToGrid 192-207). No separate engine, no inference/alignment guides.
 #
-# [ ] SKETCH-2.A10  No inference / alignment guide lines anywhere (GAP, major Fusion miss).
+# [skip] SKETCH-2.A10  No inference / alignment guide lines anywhere (GAP, major Fusion miss).
 #     No dashed H/V/parallel/perpendicular/collinear guides as the cursor moves. Only
 #     static snap glyphs exist. Fix: inference engine testing cursor alignment vs
 #     existing geometry + dashed guide rendering + auto-constrain on commit.
@@ -190,7 +190,7 @@ Keep this file focused on active work. Open task sections retain their detailed 
 # .ts:31-48 t1/t2, un-project constraintAndViewActions.ts:135-137) is CORRECT. The bugs
 # are about missing DOFs, entity ordering, and pointIndices.
 #
-# [ ] SKETCH-2.B10  No live constraint inference while drawing; AutoConstrain doesn't
+# [x] SKETCH-2.B10  No live constraint inference while drawing; AutoConstrain doesn't
 #     re-solve (BUG/GAP). Only polygon/rectangle commit auto-adds constraints. autoConstrain
 #     Sketch (constraintAndViewActions.ts:10-106) is a manual batch pass that never calls
 #     solveSketch, so its constraints don't move geometry until something else solves.
@@ -436,7 +436,7 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #             use editingFeatureId). Needs an updatePrimitiveParams store action
 #             that rebuilds the OCC body in place (PrimitiveBodies already rebuilds
 #             on paramKey change, so this may just be a params patch + re-render).
-# [ ] PRIM-8  Live in-canvas preview while the dialog is open (Fusion updates the
+# [x] PRIM-8  Live in-canvas preview while the dialog is open (Fusion updates the
 #             primitive live as fields change). Render a ghosted preview body keyed
 #             off the current dialog params before commit.
 
@@ -459,7 +459,7 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #             Triangular (we only do circular) and Pipe input exposes section
 #             SIZE + distanceOne/distanceTwo (partial-path sweep) + Intersect/
 #             New Component ops. Add section-type select + a path-extent control.
-# [ ] PRIM-12 Placement parity (largest item): Fusion places primitives by picking
+# [skip] PRIM-12 Placement parity (largest item): Fusion places primitives by picking
 #             a base plane/face then click-dragging in the canvas, not by typing
 #             X/Y/Z. addPrimitive + PrimitiveBodies already support x/y/z + rx/ry/rz
 #             (rotation never surfaced in the dialog). Add a plane/point pick step

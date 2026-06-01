@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { X, Check } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import '../common/ToolPanel.css';
@@ -58,6 +58,21 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
   const addPrimitive = useCADStore((s) => s.addPrimitive);
   const updatePrimitiveParams = useCADStore((s) => s.updatePrimitiveParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
+  const setPrimitivePreview = useCADStore((s) => s.setPrimitivePreview);
+
+  // PRIM-8: build and push a ghost preview whenever any param changes
+  const buildPreviewParams = useCallback((): Record<string, number> => {
+    if (kind === 'box') return { width: boxLength, height: boxWidth, depth: boxHeight, x, y, z };
+    if (kind === 'cylinder') return { radius: cylDiam / 2, radiusTop: cylDiamTop / 2, height: cylHeight, x, y, z };
+    if (kind === 'sphere') return { radius: sphDiam / 2, x, y, z };
+    return { radius: torDiam / 2, tubeRadius: torSecDiam / 2, x, y, z };
+  }, [kind, boxLength, boxWidth, boxHeight, cylDiam, cylDiamTop, cylHeight, sphDiam, torDiam, torSecDiam, x, y, z]);
+
+  useEffect(() => {
+    setPrimitivePreview({ kind, params: buildPreviewParams() });
+    return () => { setPrimitivePreview(null); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, boxLength, boxWidth, boxHeight, cylDiam, cylDiamTop, cylHeight, sphDiam, torDiam, torSecDiam, x, y, z]);
 
   const handleApply = () => {
     const params: Record<string, number | string> =
@@ -69,6 +84,7 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
             ? { radius: sphDiam / 2, operation }
             : { radius: torDiam / 2, tubeRadius: torSecDiam / 2, operation };
 
+    setPrimitivePreview(null);
     if (editing) {
       updatePrimitiveParams(editing.id, { ...params, x, y, z });
       setStatusMessage(`Updated ${kind}`);

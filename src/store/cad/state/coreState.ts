@@ -92,6 +92,9 @@ export interface CADCoreState {
   addPrimitive: (kind: 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil', params: Record<string, number | string>) => void;
   /** PRIM-7: Update params on an existing primitive in-place; clears pre-built mesh so PrimitiveBodies rebuilds. */
   updatePrimitiveParams: (featureId: string, newParams: Record<string, number | string>) => void;
+  /** PRIM-8: Live ghost preview while a primitive dialog is open. null = no preview. */
+  primitivePreviewParams: { kind: 'box' | 'cylinder' | 'sphere' | 'torus'; params: Record<string, number> } | null;
+  setPrimitivePreview: (spec: { kind: 'box' | 'cylinder' | 'sphere' | 'torus'; params: Record<string, number> } | null) => void;
   /** D194: Insert a fastener from the fastener library as a solid body feature. */
   insertFastener: (params: {
     type: string; size: string;

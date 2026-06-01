@@ -14,7 +14,7 @@ export interface SolverPoint {
 }
 
 export interface SolverConstraint {
-  type: SketchConstraint['type'] | 'dimension-linear' | 'dimension-aligned' | 'dimension-radial' | 'dimension-diameter' | 'dimension-arc-length' | 'dimension-linear-diameter' | 'dimension-ellipse-major' | 'dimension-ellipse-minor' | 'dimension-concentric-gap' | 'dimension-angular' | 'dimension-offset-curves';
+  type: SketchConstraint['type'] | 'dimension-linear' | 'dimension-aligned' | 'dimension-radial' | 'dimension-diameter' | 'dimension-arc-length' | 'dimension-linear-diameter' | 'dimension-ellipse-major' | 'dimension-ellipse-minor' | 'dimension-concentric-gap' | 'dimension-angular' | 'dimension-offset-curves' | 'dimension-tangent-distance';
   entityIds: string[];
   pointIndices?: number[];
   value?: number;
@@ -355,6 +355,9 @@ export function dimensionsToSolverConstraints(dimensions: SketchDimension[] = []
         // SKETCH-1.10: offset-curves dimension — perpendicular distance between parallel entities
         case 'offset-curves':
           return [{ type: 'dimension-offset-curves', entityIds: dimension.entityIds, value: dimension.value }];
+        // SKETCH-1.11: tangent-distance dimension — sqrt(dist(P,C)^2 - r^2) = value
+        case 'tangent-distance':
+          return [{ type: 'dimension-tangent-distance', entityIds: dimension.entityIds, value: dimension.value }];
         default:
           return [];
       }
@@ -859,6 +862,24 @@ function computeResiduals(
         // Signed distance from A0 to B0 along perpendicular
         const ocSignedDist = (ocB0.x - ocA0.x) * ocPerpX + (ocB0.y - ocA0.y) * ocPerpY;
         residuals.push(Math.abs(ocSignedDist) - targetDist);
+        break;
+      }
+      case 'dimension-tangent-distance': {
+        // SKETCH-1.11: distance from a point to the tangent of a circle
+        // entityIds = [pointEntityId, circleEntityId]; value = tangent length = sqrt(dist^2 - r^2)
+        if (c.entityIds.length < 2) break;
+        const eTDPt = entityMap.get(c.entityIds[0]);
+        const eTDCirc = entityMap.get(c.entityIds[1]);
+        if (!eTDPt || !eTDCirc || eTDCirc.radius === undefined) break;
+        const ptPos = getPoint(eTDPt.id, 0, pointMap);
+        const ctrPos = getPoint(eTDCirc.id, 0, pointMap);
+        const scalarR = pointMap.get(`${eTDCirc.id}::radius`);
+        const r = scalarR ? scalarR.x : eTDCirc.radius;
+        const dist2 = (ptPos.x - ctrPos.x) ** 2 + (ptPos.y - ctrPos.y) ** 2;
+        const tangentLen2 = dist2 - r * r;
+        const targetLen = c.value ?? 0;
+        // residual: tangent_len^2 - value^2 = 0 (avoids sqrt near singularity)
+        residuals.push(tangentLen2 - targetLen * targetLen);
         break;
       }
       case 'horizontal-points': {

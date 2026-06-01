@@ -267,6 +267,44 @@ function PrimitiveMesh({ spec, isDimmed, componentMaterial, hidden }: PrimitiveM
   );
 }
 
+/** PRIM-8: Ghost mesh shown while a primitive dialog is open. */
+export function PrimitivePreview() {
+  const preview = useCADStore((s) => s.primitivePreviewParams);
+  const ghostMaterial = useMemo(() => {
+    const m = new THREE.MeshStandardMaterial({
+      color: 0x5b9bd5,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    return m;
+  }, []);
+  useEffect(() => () => ghostMaterial.dispose(), [ghostMaterial]);
+
+  const geo = useMemo(() => {
+    if (!preview) return null;
+    const p = preview.params;
+    const k = preview.kind;
+    if (k === 'box') return new THREE.BoxGeometry(p.width ?? 20, p.height ?? 20, p.depth ?? 20);
+    if (k === 'cylinder') return new THREE.CylinderGeometry(p.radiusTop ?? p.radius ?? 10, p.radius ?? 10, p.height ?? 20, 48);
+    if (k === 'sphere') return new THREE.SphereGeometry(p.radius ?? 10, 48, 32);
+    if (k === 'torus') return new THREE.TorusGeometry(p.radius ?? 15, p.tubeRadius ?? 3, 24, 48);
+    return null;
+  }, [preview]);
+  useEffect(() => () => { geo?.dispose(); }, [geo]);
+
+  if (!preview || !geo) return null;
+  return (
+    <mesh
+      geometry={geo}
+      material={ghostMaterial}
+      position={[preview.params.x ?? 0, preview.params.y ?? 0, preview.params.z ?? 0]}
+      userData={{ shared: true }}
+    />
+  );
+}
+
 export default function PrimitiveBodies() {
   const features = useCADStore((s) => s.features);
   const rollbackIndex = useCADStore((s) => s.rollbackIndex);

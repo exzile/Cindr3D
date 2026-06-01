@@ -139,6 +139,9 @@ export function createPrimitiveFeatureActions({ set, get }: CADSliceContext): Pa
     });
   },
 
+  primitivePreviewParams: null,
+  setPrimitivePreview: (spec) => set({ primitivePreviewParams: spec }),
+
   insertFastener: (params) => {
     get().pushUndo();
     const { features, units } = get();
