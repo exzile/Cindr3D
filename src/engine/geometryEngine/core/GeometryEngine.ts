@@ -308,8 +308,9 @@ export class GeometryEngine {
     outerDiameter: number,
     hollow: boolean,
     wallThickness: number,
+    sectionType: 'circular' | 'square' | 'triangular' = 'circular',
   ): Promise<THREE.BufferGeometry> {
-    return pipeGeometryImpl(points, outerDiameter, hollow, wallThickness);
+    return pipeGeometryImpl(points, outerDiameter, hollow, wallThickness, sectionType);
   }
 
   static async snapFitGeometry(

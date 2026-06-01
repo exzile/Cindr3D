@@ -22,7 +22,7 @@ export function getEntityEndpoints(
   entity: SketchEntity,
   project: (p: SketchPoint) => { u: number; v: number },
 ): [{ u: number; v: number }, { u: number; v: number }] | null {
-  if (entity.type === 'line' || entity.type === 'spline') {
+  if (entity.type === 'line' || entity.type === 'spline' || entity.type === 'fixed-spline') {
     if (entity.points.length < 2) return null;
     return [project(entity.points[0]), project(entity.points[entity.points.length - 1])];
   }

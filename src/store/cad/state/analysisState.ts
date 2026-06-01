@@ -193,6 +193,7 @@ export interface CADAnalysisState {
     wallThickness: number;
     operation: 'new-body' | 'join' | 'cut';
     pathSketchId: string;
+    sectionType?: 'circular' | 'square' | 'triangular';
   }): void;
 
   // ── SLD — Snap Fit ───────────────────────────────────────────────────────
@@ -244,6 +245,7 @@ export interface CADAnalysisState {
     wallThickness: number;
     operation: 'new-body' | 'join' | 'cut';
     pathSketchId: string;
+    sectionType?: 'circular' | 'square' | 'triangular';
   }): void;
 
   updateRibGeometry(featureId: string, sketchId: string, thickness: number, height: number, extras?: Record<string, unknown>): void;

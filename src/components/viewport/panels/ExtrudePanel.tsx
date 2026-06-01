@@ -94,13 +94,13 @@ export default function ExtrudePanel() {
     () => getExtrudeProfileUsage(features, editingFeatureId),
     [features, editingFeatureId],
   );
-  const extrudable = sketches.filter(
+  const extrudable = useMemo(() => sketches.filter(
     (sketch) =>
       sketch.entities.length > 0 &&
       timelineSketchNames.has(sketch.id) &&
       !profileUsage.fullyUsedSketchIds.has(sketch.id) &&
       !sketch.name.startsWith('Press Pull Profile'),
-  );
+  ), [sketches, timelineSketchNames, profileUsage.fullyUsedSketchIds]);
   const profileOptions = useMemo(() => getExtrudeProfileOptions({
     extrudable,
     sketches,
@@ -109,7 +109,9 @@ export default function ExtrudePanel() {
     consumedProfileIds: profileUsage.consumedProfileIds,
   }), [extrudable, profileUsage.consumedProfileIds, selectedIds, sketches, timelineSketchNames]);
 
-  const selectedProfileSketches = selectedIds
+  // Perf: createProfileSketch tessellates the profile — memoize so the panel's
+  // many re-renders during a distance/taper drag don't rebuild it every frame.
+  const selectedProfileSketches = useMemo(() => selectedIds
     .map((id) => {
       const [sketchId, rawIndex] = id.split('::');
       const sketch = sketches.find((item) => item.id === sketchId);
@@ -120,10 +122,13 @@ export default function ExtrudePanel() {
         ? GeometryEngine.createProfileSketch(sketch, profileIndex)
         : null;
     })
-    .filter(Boolean) as typeof extrudable;
+    .filter(Boolean) as typeof extrudable, [selectedIds, sketches]);
 
   const baseFeatureContainers = features.filter((feature) => feature.isBaseFeatureContainer);
-  const allClosedProfiles = selectedProfileSketches.length > 0 && selectedProfileSketches.every((sketch) => GeometryEngine.isSketchClosedProfile(sketch));
+  const allClosedProfiles = useMemo(
+    () => selectedProfileSketches.length > 0 && selectedProfileSketches.every((sketch) => GeometryEngine.isSketchClosedProfile(sketch)),
+    [selectedProfileSketches],
+  );
   const isCutMode = operation === 'cut';
   const effectiveBodyKind: 'solid' | 'surface' = isCutMode || operation === 'intersect'
     ? 'solid'

@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { X, Check } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
-import { DialogShell } from '../common/DialogShell';
+import '../common/ToolPanel.css';
 
 export function PipeDialog({ onClose }: { onClose: () => void }) {
   const sketches = useCADStore((s) => s.sketches);
@@ -21,9 +22,12 @@ export function PipeDialog({ onClose }: { onClose: () => void }) {
   const [operation, setOperation] = useState<'new-body' | 'join' | 'cut'>(
     (p.operation as 'new-body' | 'join' | 'cut') ?? 'new-body',
   );
+  const [sectionType, setSectionType] = useState<'circular' | 'square' | 'triangular'>(
+    (p.sectionType as 'circular' | 'square' | 'triangular') ?? 'circular',
+  );
 
   const handleApply = () => {
-    const params = { outerDiameter, hollow, wallThickness, operation, pathSketchId };
+    const params = { outerDiameter, hollow, wallThickness, operation, pathSketchId, sectionType };
     if (editing) {
       updatePipeGeometry(editing.id, params);
     } else {
@@ -33,56 +37,98 @@ export function PipeDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <DialogShell
-      title={editing ? 'Edit Pipe' : 'Pipe'}
-      onClose={onClose}
-      size="sm"
-      onConfirm={handleApply}
-      confirmLabel={editing ? 'Update' : 'OK'}
-    >
-      <div className="form-group">
-        <label>Path Sketch</label>
-        <select value={pathSketchId} onChange={(e) => setPathSketchId(e.target.value)}>
-          {sketches.length === 0
-            ? <option value="">— no sketches —</option>
-            : sketches.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)
-          }
-        </select>
-      </div>
-      <div className="form-group">
-        <label>Outer Diameter (mm)</label>
-        <input
-          type="number"
-          value={outerDiameter}
-          onChange={(e) => setOuterDiameter(Math.max(0.1, parseFloat(e.target.value) || 10))}
-          step={0.5}
-          min={0.1}
-        />
-      </div>
-      <label className="checkbox-label">
-        <input type="checkbox" checked={hollow} onChange={(e) => setHollow(e.target.checked)} />
-        Hollow
-      </label>
-      {hollow && (
-        <div className="form-group">
-          <label>Wall Thickness (mm)</label>
-          <input
-            type="number"
-            value={wallThickness}
-            onChange={(e) => setWallThickness(Math.max(0.01, parseFloat(e.target.value) || 1))}
-            step={0.1}
-            min={0.01}
-          />
+    <div className="tool-panel-overlay">
+      <div className="tool-panel" style={{ width: 272 }}>
+        <div className="tp-header">
+          <div className="tp-header-icon" style={{ background: '#0891b2' }} />
+          <span className="tp-header-title">{editing ? 'EDIT PIPE' : 'PIPE'}</span>
+          <button className="tp-close" onClick={onClose} title="Cancel"><X size={14} /></button>
         </div>
-      )}
-      <div className="form-group">
-        <label>Operation</label>
-        <select value={operation} onChange={(e) => setOperation(e.target.value as 'new-body' | 'join' | 'cut')}>
-          <option value="new-body">New Body</option>
-          <option value="join">Join</option>
-          <option value="cut">Cut</option>
-        </select>
+
+        <div className="tp-body">
+          <div className="tp-section">
+            <div className="tp-row">
+              <span className="tp-label">Path Sketch</span>
+              <select className="tp-select" value={pathSketchId}
+                onChange={(e) => setPathSketchId(e.target.value)}>
+                {sketches.length === 0
+                  ? <option value="">— no sketches —</option>
+                  : sketches.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)
+                }
+              </select>
+            </div>
+
+            <div className="tp-row">
+              <span className="tp-label">Section</span>
+              <select className="tp-select" value={sectionType}
+                onChange={(e) => setSectionType(e.target.value as 'circular' | 'square' | 'triangular')}>
+                <option value="circular">Circular</option>
+                <option value="square">Square</option>
+                <option value="triangular">Triangular</option>
+              </select>
+            </div>
+
+            <div className="tp-row">
+              <span className="tp-label">Outer Ø</span>
+              <div className="tp-input-group">
+                <input
+                  type="number"
+                  value={outerDiameter}
+                  step={0.5}
+                  min={0.1}
+                  onChange={(e) => setOuterDiameter(Math.max(0.1, parseFloat(e.target.value) || 10))}
+                />
+                <span className="tp-unit">mm</span>
+              </div>
+            </div>
+
+            <div className="tp-row">
+              <span className="tp-label">Hollow</span>
+              <label className="tp-toggle">
+                <input type="checkbox" checked={hollow} onChange={(e) => setHollow(e.target.checked)} />
+                <span className="tp-toggle-track" />
+              </label>
+            </div>
+
+            {hollow && (
+              <div className="tp-row">
+                <span className="tp-label">Wall</span>
+                <div className="tp-input-group">
+                  <input
+                    type="number"
+                    value={wallThickness}
+                    step={0.1}
+                    min={0.01}
+                    onChange={(e) => setWallThickness(Math.max(0.01, parseFloat(e.target.value) || 1))}
+                  />
+                  <span className="tp-unit">mm</span>
+                </div>
+              </div>
+            )}
+
+            <div className="tp-divider" />
+
+            <div className="tp-row">
+              <span className="tp-label">Operation</span>
+              <select className="tp-select" value={operation}
+                onChange={(e) => setOperation(e.target.value as 'new-body' | 'join' | 'cut')}>
+                <option value="new-body">New Body</option>
+                <option value="join">Join</option>
+                <option value="cut">Cut</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div className="tp-actions">
+          <button className="tp-btn tp-btn-cancel" onClick={onClose}>
+            <X size={13} /> Cancel
+          </button>
+          <button className="tp-btn tp-btn-ok" onClick={handleApply}>
+            <Check size={13} /> {editing ? 'Update' : 'OK'}
+          </button>
+        </div>
       </div>
-    </DialogShell>
+    </div>
   );
 }

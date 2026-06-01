@@ -56,6 +56,37 @@ function circleProfile(radius: number, segments: number): SketchProfile {
   return { outer, holes: [] };
 }
 
+/** Square profile: circumradius = half of outerDiameter. */
+function squareProfile(radius: number): SketchProfile {
+  const s = radius; // half-side diagonal = radius when corner-to-corner = diameter
+  const h = s * Math.SQRT1_2; // half-side length: h = r / sqrt(2) → edge = r*sqrt(2)
+  return {
+    outer: [
+      new THREE.Vector2(-h, -h),
+      new THREE.Vector2(h, -h),
+      new THREE.Vector2(h, h),
+      new THREE.Vector2(-h, h),
+    ],
+    holes: [],
+  };
+}
+
+/** Equilateral triangle profile: circumradius = radius. */
+function triangleProfile(radius: number): SketchProfile {
+  const outer: THREE.Vector2[] = [];
+  for (let i = 0; i < 3; i++) {
+    const theta = (i / 3) * Math.PI * 2 - Math.PI / 2;
+    outer.push(new THREE.Vector2(Math.cos(theta) * radius, Math.sin(theta) * radius));
+  }
+  return { outer, holes: [] };
+}
+
+function buildSectionProfile(outerRadius: number, sectionType: 'circular' | 'square' | 'triangular'): SketchProfile {
+  if (sectionType === 'square') return squareProfile(outerRadius);
+  if (sectionType === 'triangular') return triangleProfile(outerRadius);
+  return circleProfile(outerRadius, 32);
+}
+
 /** Remove consecutive path points closer than 1 µm. */
 function dedupePath(points: THREE.Vector3[]): THREE.Vector3[] {
   const out: THREE.Vector3[] = [points[0].clone()];
@@ -95,6 +126,7 @@ export async function pipeGeometry(
   outerDiameter: number,
   hollow: boolean,
   wallThickness: number,
+  sectionType: 'circular' | 'square' | 'triangular' = 'circular',
 ): Promise<THREE.BufferGeometry> {
   const { oc } = await getOcc();
 
@@ -124,7 +156,7 @@ export async function pipeGeometry(
   // Profile frame: origin at path start, normal = start tangent (sweep direction).
   // createOccPlaneFrame auto-picks a perpendicular uDir when no uHint is given.
   const outerFrame = createOccPlaneFrame(sampled[0], startTangent);
-  const outerProfile = circleProfile(outerRadius, 32);
+  const outerProfile = buildSectionProfile(outerRadius, sectionType);
 
   const outerBody = occSweepFromPathWireWithInstance(oc, outerProfile, outerFrame, outerPathWire);
   outerPathWire.delete();

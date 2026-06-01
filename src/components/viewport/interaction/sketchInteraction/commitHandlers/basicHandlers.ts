@@ -105,7 +105,22 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
         setStatusMessage(`${lineLabel} start placed — click to set end point (right-click to cancel)`);
       } else {
         const p0 = drawingPoints[0];
-        const dx = sketchPoint.x - p0.x, dy = sketchPoint.y - p0.y, dz = sketchPoint.z - p0.z;
+
+        // SKETCH-1.14: closing-gap world-space snap — if end point lands within 0.5 mm of
+        // any existing sketch endpoint, snap to it exactly to prevent invisible loop gaps.
+        const CLOSE_MM = 0.5;
+        let snappedEnd = sketchPoint;
+        for (const ent of activeSketch.entities) {
+          for (const ep of ent.points) {
+            const ddx = sketchPoint.x - ep.x, ddy = sketchPoint.y - ep.y, ddz = sketchPoint.z - ep.z;
+            if (Math.sqrt(ddx * ddx + ddy * ddy + ddz * ddz) < CLOSE_MM) {
+              snappedEnd = ep;
+              break;
+            }
+          }
+        }
+
+        const dx = snappedEnd.x - p0.x, dy = snappedEnd.y - p0.y, dz = snappedEnd.z - p0.z;
         if (Math.sqrt(dx * dx + dy * dy + dz * dz) < 1e-6) {
           setStatusMessage('Line too short — click a different location');
           break;
@@ -113,12 +128,18 @@ export const handleBasicSketchCommit: SketchCommitHandler = (ctx) => {
         const entity: SketchEntity = {
           id: crypto.randomUUID(),
           type: activeTool,
-          points: [p0, sketchPoint],
+          points: [p0, snappedEnd],
         };
         addSketchEntity(entity);
         onEntityCommitted?.(entity.id);
-        setDrawingPoints([sketchPoint]); // Chain lines — next start = this end
-        setStatusMessage(`${lineLabel} added — click to continue, right-click or Escape to stop`);
+        // If we snapped to an existing point, stop chaining (loop closed)
+        if (snappedEnd !== sketchPoint) {
+          setDrawingPoints([]);
+          setStatusMessage(`${lineLabel} added — loop closed`);
+        } else {
+          setDrawingPoints([snappedEnd]); // Chain lines — next start = this end
+          setStatusMessage(`${lineLabel} added — click to continue, right-click or Escape to stop`);
+        }
       }
       break;
     }

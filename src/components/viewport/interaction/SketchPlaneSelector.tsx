@@ -40,6 +40,13 @@ const FACE_RING_POSITIONS = (() => {
   return new Float32Array(pts);
 })();
 
+// Scratch objects reused for the face-hover highlight transform. R3F copies the
+// values out of the `position` / `quaternion` props, so reusing these across
+// renders is safe and avoids per-hover allocations.
+const _Z_AXIS = new THREE.Vector3(0, 0, 1);
+const _hoverQuat = new THREE.Quaternion();
+const _hoverPos = new THREE.Vector3();
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 interface PlaneConfig {
@@ -283,11 +290,8 @@ export default function SketchPlaneSelector() {
 
       {/* Face hover highlight */}
       {faceHit && (() => {
-        const q = new THREE.Quaternion().setFromUnitVectors(
-          new THREE.Vector3(0, 0, 1),
-          faceHit.normal,
-        );
-        const pos = faceHit.point.clone().add(faceHit.normal.clone().multiplyScalar(0.05));
+        const q = _hoverQuat.setFromUnitVectors(_Z_AXIS, faceHit.normal);
+        const pos = _hoverPos.copy(faceHit.point).addScaledVector(faceHit.normal, 0.05);
         return (
           <group position={pos} quaternion={q}>
             <mesh>

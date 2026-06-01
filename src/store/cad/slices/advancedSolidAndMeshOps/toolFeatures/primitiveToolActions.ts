@@ -36,7 +36,7 @@ export function createPrimitiveToolActions({ set, get }: CADSliceContext): Parti
   return {
   commitPipe: async (params) => {
     const { features, sketches } = get();
-    const { outerDiameter, hollow, wallThickness, operation, pathSketchId } = params;
+    const { outerDiameter, hollow, wallThickness, operation, pathSketchId, sectionType = 'circular' } = params;
     if (!Number.isFinite(outerDiameter) || outerDiameter <= 0) {
       get().setStatusMessage('Pipe: outer diameter must be a positive number');
       return;
@@ -58,6 +58,7 @@ export function createPrimitiveToolActions({ set, get }: CADSliceContext): Parti
             hollow,
             wallThickness,
             featureId,
+            sectionType,
           );
         } catch (err) {
           console.warn(`[commitPipe] OCC sweep failed (${errorMessage(err, 'unknown')}), falling back to mesh`);
@@ -69,7 +70,7 @@ export function createPrimitiveToolActions({ set, get }: CADSliceContext): Parti
     // ── THREE mesh fallback ───────────────────────────────────────────────
     if (!mesh) {
       const pathPoints = collectPipePathPoints(sketch);
-      const geom = await GeometryEngine.pipeGeometry(pathPoints, outerDiameter, hollow, wallThickness);
+      const geom = await GeometryEngine.pipeGeometry(pathPoints, outerDiameter, hollow, wallThickness, sectionType);
       mesh = new THREE.Mesh(geom);
     }
 
@@ -83,7 +84,7 @@ export function createPrimitiveToolActions({ set, get }: CADSliceContext): Parti
       name: `Pipe ${n} (⌀${outerDiameter}mm)`,
       type: 'pipe',
       sketchId: sketch ? pathSketchId : undefined,
-      params: { isPipe: true, outerDiameter, hollow, wallThickness, operation, pathSketchId },
+      params: { isPipe: true, outerDiameter, hollow, wallThickness, operation, pathSketchId, sectionType },
       mesh,
       bodyKind: 'solid',
       visible: true,
@@ -240,7 +241,7 @@ export function createPrimitiveToolActions({ set, get }: CADSliceContext): Parti
 
   updatePipeGeometry: async (featureId, params) => {
     const { features, sketches } = get();
-    const { outerDiameter, hollow, wallThickness, operation, pathSketchId } = params;
+    const { outerDiameter, hollow, wallThickness, operation, pathSketchId, sectionType = 'circular' } = params;
     const existing = features.find((f) => f.id === featureId);
     if (!existing) { get().setStatusMessage('Pipe: feature not found'); return; }
     const sketch = sketches.find((s) => s.id === pathSketchId);
@@ -257,6 +258,7 @@ export function createPrimitiveToolActions({ set, get }: CADSliceContext): Parti
             hollow,
             wallThickness,
             featureId,
+            sectionType,
           );
           if (occMesh) {
             // Capture old body id before replay so we can evict it from the registry after.
@@ -277,7 +279,7 @@ export function createPrimitiveToolActions({ set, get }: CADSliceContext): Parti
                         mesh,
                         name: `Pipe (⌀${outerDiameter}mm)`,
                         sketchId: pathSketchId,
-                        params: { ...f.params, outerDiameter, hollow, wallThickness, operation, pathSketchId },
+                        params: { ...f.params, outerDiameter, hollow, wallThickness, operation, pathSketchId, sectionType },
                       }
                     : f,
                 ),
@@ -296,7 +298,7 @@ export function createPrimitiveToolActions({ set, get }: CADSliceContext): Parti
 
     // ── THREE mesh fallback ───────────────────────────────────────────────
     const pathPoints = collectPipePathPoints(sketch);
-    const geom = await GeometryEngine.pipeGeometry(pathPoints, outerDiameter, hollow, wallThickness);
+    const geom = await GeometryEngine.pipeGeometry(pathPoints, outerDiameter, hollow, wallThickness, sectionType);
     const toolMesh = new THREE.Mesh(geom);
     toolMesh.castShadow = true;
     toolMesh.receiveShadow = true;

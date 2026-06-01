@@ -1,139 +1,268 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { X, Check } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
-import { DialogShell } from '../common/DialogShell';
+import '../common/ToolPanel.css';
 
-type PrimitiveKind = 'box' | 'cylinder' | 'sphere' | 'torus' | 'coil';
+// PRIM-9: coil removed — route through CoilDialog (ActiveDialog 'coil' case)
+type PrimitiveKind = 'box' | 'cylinder' | 'sphere' | 'torus';
+type FeatureOperation = 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component';
+
+const KIND_COLOR: Record<PrimitiveKind, string> = {
+  box: '#4a7c59',
+  cylinder: '#2563eb',
+  sphere: '#d97706',
+  torus: '#7c3aed',
+};
+
+const KIND_TITLE: Record<PrimitiveKind, string> = {
+  box: 'BOX',
+  cylinder: 'CYLINDER',
+  sphere: 'SPHERE',
+  torus: 'TORUS',
+};
 
 export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClose: () => void }) {
-  const [boxW, setBoxW] = useState(20);
-  const [boxH, setBoxH] = useState(20);
-  const [boxD, setBoxD] = useState(20);
-  const [cylRadius, setCylRadius] = useState(10);
-  const [cylHeight, setCylHeight] = useState(20);
-  const [cylRadiusTop, setCylRadiusTop] = useState(10);
-  const [sphRadius, setSphRadius] = useState(10);
-  const [torRadius, setTorRadius] = useState(15);
-  const [torTube, setTorTube] = useState(3);
-  const [coilOuterRadius, setCoilOuterRadius] = useState(15);
-  const [coilWireRadius, setCoilWireRadius] = useState(2);
-  const [coilPitch, setCoilPitch] = useState(10);
-  const [coilTurns, setCoilTurns] = useState(5);
-  const [x, setX] = useState(0);
-  const [y, setY] = useState(0);
-  const [z, setZ] = useState(0);
+  const features = useCADStore((s) => s.features);
+  const editingFeatureId = useCADStore((s) => s.editingFeatureId);
+  const editing = editingFeatureId ? features.find((f) => f.id === editingFeatureId) : null;
+  const p = editing?.params ?? {};
+
+  // PRIM-5: Fusion field labels — stored internally as original keys for PrimitiveBodies compat
+  // Box: stored as width/height/depth (mapped from Fusion Length/Width/Height)
+  const [boxLength, setBoxLength] = useState((p.width as number) || 20);
+  const [boxWidth, setBoxWidth] = useState((p.height as number) || 20);
+  const [boxHeight, setBoxHeight] = useState((p.depth as number) || 20);
+
+  // Cylinder: Fusion shows Diameter — stored as radius = diam/2
+  const [cylDiam, setCylDiam] = useState(((p.radius as number) || 10) * 2);
+  const [cylDiamTop, setCylDiamTop] = useState(((p.radiusTop as number) ?? (p.radius as number) ?? 10) * 2);
+  const [cylHeight, setCylHeight] = useState((p.height as number) || 20);
+
+  // Sphere: Fusion shows Diameter — stored as radius = diam/2
+  const [sphDiam, setSphDiam] = useState(((p.radius as number) || 10) * 2);
+
+  // Torus: Fusion shows Torus Diameter + Section Diameter — stored as radius/tubeRadius
+  const [torDiam, setTorDiam] = useState(((p.radius as number) || 15) * 2);
+  const [torSecDiam, setTorSecDiam] = useState(((p.tubeRadius as number) || 3) * 2);
+
+  const [x, setX] = useState((p.x as number) || 0);
+  const [y, setY] = useState((p.y as number) || 0);
+  const [z, setZ] = useState((p.z as number) || 0);
+  const [operation, setOperation] = useState<FeatureOperation>(
+    (p.operation as FeatureOperation) ?? 'new-body',
+  );
 
   const addPrimitive = useCADStore((s) => s.addPrimitive);
+  const updatePrimitiveParams = useCADStore((s) => s.updatePrimitiveParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
+  const setPrimitivePreview = useCADStore((s) => s.setPrimitivePreview);
+
+  // PRIM-8: build and push a ghost preview whenever any param changes
+  const buildPreviewParams = useCallback((): Record<string, number> => {
+    if (kind === 'box') return { width: boxLength, height: boxWidth, depth: boxHeight, x, y, z };
+    if (kind === 'cylinder') return { radius: cylDiam / 2, radiusTop: cylDiamTop / 2, height: cylHeight, x, y, z };
+    if (kind === 'sphere') return { radius: sphDiam / 2, x, y, z };
+    return { radius: torDiam / 2, tubeRadius: torSecDiam / 2, x, y, z };
+  }, [kind, boxLength, boxWidth, boxHeight, cylDiam, cylDiamTop, cylHeight, sphDiam, torDiam, torSecDiam, x, y, z]);
+
+  // Update the ghost preview in place when any param changes. The unmount-only
+  // cleanup below clears it — keeping these separate avoids a null→value flicker
+  // (and a double geometry dispose/recreate) on every keystroke.
+  useEffect(() => {
+    setPrimitivePreview({ kind, params: buildPreviewParams() });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kind, boxLength, boxWidth, boxHeight, cylDiam, cylDiamTop, cylHeight, sphDiam, torDiam, torSecDiam, x, y, z]);
+
+  useEffect(() => () => { setPrimitivePreview(null); }, [setPrimitivePreview]);
 
   const handleApply = () => {
-    const params: Record<string, number> = kind === 'box'
-      ? { width: boxW, height: boxH, depth: boxD }
-      : kind === 'cylinder'
-        ? { radius: cylRadius, radiusTop: cylRadiusTop, height: cylHeight }
-        : kind === 'sphere'
-          ? { radius: sphRadius }
-          : kind === 'coil'
-            ? { outerRadius: coilOuterRadius, wireRadius: coilWireRadius, pitch: coilPitch, turns: coilTurns }
-            : { radius: torRadius, tubeRadius: torTube };
-    addPrimitive(kind, { ...params, x, y, z });
-    setStatusMessage(`Created ${kind}`);
+    const params: Record<string, number | string> =
+      kind === 'box'
+        ? { width: boxLength, height: boxWidth, depth: boxHeight, operation }
+        : kind === 'cylinder'
+          ? { radius: cylDiam / 2, radiusTop: cylDiamTop / 2, height: cylHeight, operation }
+          : kind === 'sphere'
+            ? { radius: sphDiam / 2, operation }
+            : { radius: torDiam / 2, tubeRadius: torSecDiam / 2, operation };
+
+    setPrimitivePreview(null);
+    if (editing) {
+      updatePrimitiveParams(editing.id, { ...params, x, y, z });
+      setStatusMessage(`Updated ${kind}`);
+    } else {
+      addPrimitive(kind, { ...params, x, y, z });
+      setStatusMessage(`Created ${kind}`);
+    }
     onClose();
   };
 
-  const titles: Record<PrimitiveKind, string> = {
-    box: 'Box',
-    cylinder: 'Cylinder',
-    sphere: 'Sphere',
-    torus: 'Torus',
-    coil: 'Coil',
-  };
+  const cylTapered = kind === 'cylinder' && Math.abs(cylDiam - cylDiamTop) > 0.001;
 
   return (
-    <DialogShell title={titles[kind]} onClose={onClose} size="sm" onConfirm={handleApply}>
-      {kind === 'box' && (
-        <div className="settings-grid">
-          <div className="form-group">
-            <label>Width (mm)</label>
-            <input type="number" value={boxW} onChange={(e) => setBoxW(Math.max(0.1, parseFloat(e.target.value) || 20))} step={1} min={0.1} />
+    <div className="tool-panel-overlay">
+      <div className="tool-panel" style={{ width: 272 }}>
+        <div className="tp-header">
+          <div className="tp-header-icon" style={{ background: KIND_COLOR[kind] }} />
+          <span className="tp-header-title">{editing ? `EDIT ${KIND_TITLE[kind]}` : KIND_TITLE[kind]}</span>
+          <button className="tp-close" onClick={onClose} title="Cancel"><X size={14} /></button>
+        </div>
+
+        <div className="tp-body">
+          {kind === 'box' && (
+            <div className="tp-section">
+              <div className="tp-row">
+                <span className="tp-label">Length</span>
+                <div className="tp-input-group">
+                  <input type="number" value={boxLength} step={1} min={0.1}
+                    onChange={(e) => setBoxLength(Math.max(0.1, parseFloat(e.target.value) || 20))} />
+                  <span className="tp-unit">mm</span>
+                </div>
+              </div>
+              <div className="tp-row">
+                <span className="tp-label">Width</span>
+                <div className="tp-input-group">
+                  <input type="number" value={boxWidth} step={1} min={0.1}
+                    onChange={(e) => setBoxWidth(Math.max(0.1, parseFloat(e.target.value) || 20))} />
+                  <span className="tp-unit">mm</span>
+                </div>
+              </div>
+              <div className="tp-row">
+                <span className="tp-label">Height</span>
+                <div className="tp-input-group">
+                  <input type="number" value={boxHeight} step={1} min={0.1}
+                    onChange={(e) => setBoxHeight(Math.max(0.1, parseFloat(e.target.value) || 20))} />
+                  <span className="tp-unit">mm</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {kind === 'cylinder' && (
+            <div className="tp-section">
+              <div className="tp-row">
+                <span className="tp-label">Diameter</span>
+                <div className="tp-input-group">
+                  <input type="number" value={cylDiam} step={1} min={0.1}
+                    onChange={(e) => setCylDiam(Math.max(0.1, parseFloat(e.target.value) || 20))} />
+                  <span className="tp-unit">mm</span>
+                </div>
+              </div>
+              <div className="tp-row">
+                <span className="tp-label">Height</span>
+                <div className="tp-input-group">
+                  <input type="number" value={cylHeight} step={1} min={0.1}
+                    onChange={(e) => setCylHeight(Math.max(0.1, parseFloat(e.target.value) || 20))} />
+                  <span className="tp-unit">mm</span>
+                </div>
+              </div>
+              <div className="tp-divider" />
+              <div className="tp-row">
+                <span className="tp-label">Top Ø</span>
+                <div className="tp-input-group">
+                  <input type="number" value={cylDiamTop} step={1} min={0}
+                    onChange={(e) => setCylDiamTop(Math.max(0, parseFloat(e.target.value) || 20))} />
+                  <span className="tp-unit">mm</span>
+                </div>
+              </div>
+              {cylTapered && (
+                <div className="tp-row" style={{ opacity: 0.55 }}>
+                  <span className="tp-label" style={{ fontSize: 10 }}>Taper active (Cindr3D ext.)</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {kind === 'sphere' && (
+            <div className="tp-section">
+              <div className="tp-row">
+                <span className="tp-label">Diameter</span>
+                <div className="tp-input-group">
+                  <input type="number" value={sphDiam} step={1} min={0.1}
+                    onChange={(e) => setSphDiam(Math.max(0.1, parseFloat(e.target.value) || 20))} />
+                  <span className="tp-unit">mm</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {kind === 'torus' && (
+            <div className="tp-section">
+              <div className="tp-row">
+                <span className="tp-label">Torus Ø</span>
+                <div className="tp-input-group">
+                  <input type="number" value={torDiam} step={1} min={0.2}
+                    onChange={(e) => setTorDiam(Math.max(0.2, parseFloat(e.target.value) || 30))} />
+                  <span className="tp-unit">mm</span>
+                </div>
+              </div>
+              <div className="tp-row">
+                <span className="tp-label">Section Ø</span>
+                <div className="tp-input-group">
+                  <input type="number" value={torSecDiam} step={0.5} min={0.1}
+                    onChange={(e) =>
+                      setTorSecDiam(Math.max(0.1, Math.min(torDiam - 0.1, parseFloat(e.target.value) || 6)))} />
+                  <span className="tp-unit">mm</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="tp-divider" />
+
+          <div className="tp-section">
+            <div className="tp-row">
+              <span className="tp-label">Operation</span>
+              <select className="tp-select" value={operation}
+                onChange={(e) => setOperation(e.target.value as FeatureOperation)}>
+                <option value="new-body">New Body</option>
+                <option value="join">Join</option>
+                <option value="cut">Cut</option>
+                <option value="intersect">Intersect</option>
+                <option value="new-component">New Component</option>
+              </select>
+            </div>
           </div>
-          <div className="form-group">
-            <label>Height (mm)</label>
-            <input type="number" value={boxH} onChange={(e) => setBoxH(Math.max(0.1, parseFloat(e.target.value) || 20))} step={1} min={0.1} />
-          </div>
-          <div className="form-group">
-            <label>Depth (mm)</label>
-            <input type="number" value={boxD} onChange={(e) => setBoxD(Math.max(0.1, parseFloat(e.target.value) || 20))} step={1} min={0.1} />
+
+          <div className="tp-divider" />
+
+          <div className="tp-section">
+            <div className="tp-section-title">Position</div>
+            <div className="tp-row">
+              <span className="tp-label">X</span>
+              <div className="tp-input-group">
+                <input type="number" value={x} step={1}
+                  onChange={(e) => setX(parseFloat(e.target.value) || 0)} />
+                <span className="tp-unit">mm</span>
+              </div>
+            </div>
+            <div className="tp-row">
+              <span className="tp-label">Y</span>
+              <div className="tp-input-group">
+                <input type="number" value={y} step={1}
+                  onChange={(e) => setY(parseFloat(e.target.value) || 0)} />
+                <span className="tp-unit">mm</span>
+              </div>
+            </div>
+            <div className="tp-row">
+              <span className="tp-label">Z</span>
+              <div className="tp-input-group">
+                <input type="number" value={z} step={1}
+                  onChange={(e) => setZ(parseFloat(e.target.value) || 0)} />
+                <span className="tp-unit">mm</span>
+              </div>
+            </div>
           </div>
         </div>
-      )}
-      {kind === 'cylinder' && (
-        <div className="settings-grid">
-          <div className="form-group">
-            <label>Radius Bottom (mm)</label>
-            <input type="number" value={cylRadius} onChange={(e) => setCylRadius(Math.max(0.1, parseFloat(e.target.value) || 10))} step={0.5} min={0.1} />
-          </div>
-          <div className="form-group">
-            <label>Radius Top (mm)</label>
-            <input type="number" value={cylRadiusTop} onChange={(e) => setCylRadiusTop(Math.max(0, parseFloat(e.target.value) || 10))} step={0.5} min={0} />
-          </div>
-          <div className="form-group">
-            <label>Height (mm)</label>
-            <input type="number" value={cylHeight} onChange={(e) => setCylHeight(Math.max(0.1, parseFloat(e.target.value) || 20))} step={1} min={0.1} />
-          </div>
-        </div>
-      )}
-      {kind === 'sphere' && (
-        <div className="form-group">
-          <label>Radius (mm)</label>
-          <input type="number" value={sphRadius} onChange={(e) => setSphRadius(Math.max(0.1, parseFloat(e.target.value) || 10))} step={0.5} min={0.1} />
-        </div>
-      )}
-      {kind === 'torus' && (
-        <div className="settings-grid">
-          <div className="form-group">
-            <label>Major Radius (mm)</label>
-            <input type="number" value={torRadius} onChange={(e) => setTorRadius(Math.max(0.1, parseFloat(e.target.value) || 15))} step={0.5} min={0.1} />
-          </div>
-          <div className="form-group">
-            <label>Tube Radius (mm)</label>
-            <input type="number" value={torTube} onChange={(e) => setTorTube(Math.max(0.1, Math.min(torRadius - 0.01, parseFloat(e.target.value) || 3)))} step={0.5} min={0.1} />
-          </div>
-        </div>
-      )}
-      {kind === 'coil' && (
-        <div className="settings-grid">
-          <div className="form-group">
-            <label>Outer Radius (mm)</label>
-            <input type="number" value={coilOuterRadius} onChange={(e) => setCoilOuterRadius(Math.max(0.1, parseFloat(e.target.value) || 15))} step={0.5} min={0.1} />
-          </div>
-          <div className="form-group">
-            <label>Wire Radius (mm)</label>
-            <input type="number" value={coilWireRadius} onChange={(e) => setCoilWireRadius(Math.max(0.1, Math.min(coilOuterRadius - 0.01, parseFloat(e.target.value) || 2)))} step={0.1} min={0.1} />
-          </div>
-          <div className="form-group">
-            <label>Pitch (mm/turn)</label>
-            <input type="number" value={coilPitch} onChange={(e) => setCoilPitch(Math.max(0.1, parseFloat(e.target.value) || 10))} step={0.5} min={0.1} />
-          </div>
-          <div className="form-group">
-            <label>Turns</label>
-            <input type="number" value={coilTurns} onChange={(e) => setCoilTurns(Math.max(0.25, parseFloat(e.target.value) || 5))} step={0.25} min={0.25} />
-          </div>
-        </div>
-      )}
-      <div className="settings-grid">
-        <div className="form-group">
-          <label>X Position (mm)</label>
-          <input type="number" value={x} onChange={(e) => setX(parseFloat(e.target.value) || 0)} step={1} />
-        </div>
-        <div className="form-group">
-          <label>Y Position (mm)</label>
-          <input type="number" value={y} onChange={(e) => setY(parseFloat(e.target.value) || 0)} step={1} />
-        </div>
-        <div className="form-group">
-          <label>Z Position (mm)</label>
-          <input type="number" value={z} onChange={(e) => setZ(parseFloat(e.target.value) || 0)} step={1} />
+
+        <div className="tp-actions">
+          <button className="tp-btn tp-btn-cancel" onClick={onClose}>
+            <X size={13} /> Cancel
+          </button>
+          <button className="tp-btn tp-btn-ok" onClick={handleApply}>
+            <Check size={13} /> {editing ? 'Update' : 'OK'}
+          </button>
         </div>
       </div>
-    </DialogShell>
+    </div>
   );
 }

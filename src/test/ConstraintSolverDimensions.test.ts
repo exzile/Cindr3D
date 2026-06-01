@@ -18,6 +18,12 @@ const circle = (id: string, x: number, y: number, radius: number): SketchEntity 
   radius,
 });
 
+const point = (id: string, x: number, y: number): SketchEntity => ({
+  id,
+  type: 'point',
+  points: [{ id: `${id}-0`, x, y, z: 0 }],
+});
+
 describe('dimension constraints in ConstraintSolver', () => {
   it('solves a driving aligned line dimension after geometry is moved', () => {
     const entities = [line('line-a', 0, 0, 14, 0)];
@@ -156,5 +162,67 @@ describe('dimension constraints in ConstraintSolver', () => {
     const c2 = result.updatedPoints.get('c2-p0')!;
     const dist = Math.hypot(c2.x - c1.x, c2.y - c1.y);
     expect(dist).toBeCloseTo(6, 2); // external tangency: rA + rB = 6
+  });
+
+  // ── SKETCH-1.9: angular dimension between two lines ────────────────────────
+  it('SKETCH-1.9: angular dimension rotates a line to the target angle', () => {
+    // Line A fixed along +X; line B pinned at the origin so it rotates around it.
+    // Apply a 90° angular dimension and expect B to become perpendicular to A.
+    const result = solveConstraints([
+      line('a', 0, 0, 10, 0),
+      line('b', 0, 0, 10, 1),
+    ], [
+      { type: 'fix', entityIds: ['a'] },
+      { type: 'fix', entityIds: ['b'], pointIndices: [0] },
+      ...dimensionsToSolverConstraints([{
+        id: 'd', type: 'angular', entityIds: ['a', 'b'], value: 90,
+        position: { x: 0, y: 0 }, driven: false,
+      }]),
+    ]);
+    expect(result.solved).toBe(true);
+    const b0 = result.updatedPoints.get('b-p0')!;
+    const b1 = result.updatedPoints.get('b-p1')!;
+    const bdx = b1.x - b0.x, bdy = b1.y - b0.y;
+    const cos = bdx / Math.hypot(bdx, bdy); // A dir = (1,0) ⇒ cos = bdx/|b|
+    expect(Math.abs(cos)).toBeCloseTo(0, 3); // 90° ⇒ cos 0
+  });
+
+  // ── SKETCH-1.10: offset-curves dimension between two parallel lines ────────
+  it('SKETCH-1.10: offset-curves dimension drives the gap between parallel lines', () => {
+    const result = solveConstraints([
+      line('a', 0, 0, 10, 0),
+      line('b', 0, 5, 10, 5),
+    ], [
+      { type: 'fix', entityIds: ['a'] },
+      { type: 'parallel', entityIds: ['a', 'b'] },
+      ...dimensionsToSolverConstraints([{
+        id: 'd', type: 'offset-curves', entityIds: ['a', 'b'], value: 8,
+        position: { x: 0, y: 0 }, driven: false,
+      }]),
+    ]);
+    expect(result.solved).toBe(true);
+    const b0 = result.updatedPoints.get('b-p0')!;
+    // Line A lies on y=0, so the perpendicular gap to B is |b0.y|.
+    expect(Math.abs(b0.y)).toBeCloseTo(8, 2);
+  });
+
+  // ── SKETCH-1.11: tangent-distance dimension from a point to a circle ───────
+  it('SKETCH-1.11: tangent-distance dimension positions a point off a circle', () => {
+    // Pin the circle (center + radius 3); a tangent length of 4 means the point
+    // must sit at center-distance sqrt(4² + 3²) = 5.
+    const result = solveConstraints([
+      point('pt', 10, 0),
+      circle('c', 0, 0, 3),
+    ], [
+      { type: 'fix', entityIds: ['c'] },
+      { type: 'dimension-radial', entityIds: ['c'], value: 3 },
+      ...dimensionsToSolverConstraints([{
+        id: 'd', type: 'tangent-distance', entityIds: ['pt', 'c'], value: 4,
+        position: { x: 0, y: 0 }, driven: false,
+      }]),
+    ]);
+    expect(result.solved).toBe(true);
+    const pt = result.updatedPoints.get('pt-p0')!;
+    expect(Math.hypot(pt.x, pt.y)).toBeCloseTo(5, 2);
   });
 });

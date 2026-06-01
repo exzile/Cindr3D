@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { findBlendEndpoint, sampleCubicBezier } from '../../helpers';
+import { findBlendEndpoint, sampleCubicBezier, sampleQuinticBezierG2, getArcCurvatureAtPoint } from '../../helpers';
+import { GeometryEngine } from '../../../../../../engine/GeometryEngine';
 import type { SketchPoint } from '../../../../../../types/cad';
 import type { SketchCommitHandler } from '../types';
 
@@ -47,7 +48,15 @@ export const handleCurveEditingCommit: SketchCommitHandler = (ctx) => {
         const tangentA = tanRef.clone().sub(p0).normalize();
         const p3 = hit.endpoint;
         const tangentB = hit.tangent;
-        const samples = sampleCubicBezier(p0, tangentA, p3, tangentB, 32);
+        let samples: THREE.Vector3[];
+        if (blendCurveMode === 'g2') {
+          const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+          const curvA = getArcCurvatureAtPoint(activeSketch, p0, t1, t2);
+          const curvB = getArcCurvatureAtPoint(activeSketch, p3, t1, t2);
+          samples = sampleQuinticBezierG2(p0, tangentA, curvA, p3, tangentB, curvB, 32);
+        } else {
+          samples = sampleCubicBezier(p0, tangentA, p3, tangentB, 32);
+        }
         addSketchEntity({
           id: crypto.randomUUID(),
           type: 'spline',

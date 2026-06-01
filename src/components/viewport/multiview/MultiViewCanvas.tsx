@@ -7,7 +7,7 @@ import {
   OrthographicCamera,
   PerspectiveCamera,
 } from '@react-three/drei';
-import PrimitiveBodies from '../scene/PrimitiveBodies';
+import PrimitiveBodies, { PrimitivePreview } from '../scene/PrimitiveBodies';
 import ExtrudedBodies from '../scene/ExtrudedBodies';
 import FormBodies from '../scene/FormBodies';
 import ImportedModels from '../scene/ImportedModels';
@@ -45,6 +45,7 @@ function SharedScene() {
       <ambientLight intensity={0.6} />
       <directionalLight position={[50, 80, 50]} intensity={1.0} />
       <PrimitiveBodies />
+      <PrimitivePreview />
       <ExtrudedBodies />
       <FormBodies />
       <ImportedModels />

@@ -14,7 +14,7 @@ export interface SolverPoint {
 }
 
 export interface SolverConstraint {
-  type: SketchConstraint['type'] | 'dimension-linear' | 'dimension-aligned' | 'dimension-radial' | 'dimension-diameter' | 'dimension-arc-length' | 'dimension-linear-diameter' | 'dimension-ellipse-major' | 'dimension-ellipse-minor' | 'dimension-concentric-gap';
+  type: SketchConstraint['type'] | 'dimension-linear' | 'dimension-aligned' | 'dimension-radial' | 'dimension-diameter' | 'dimension-arc-length' | 'dimension-linear-diameter' | 'dimension-ellipse-major' | 'dimension-ellipse-minor' | 'dimension-concentric-gap' | 'dimension-angular' | 'dimension-offset-curves' | 'dimension-tangent-distance';
   entityIds: string[];
   pointIndices?: number[];
   value?: number;
@@ -349,6 +349,15 @@ export function dimensionsToSolverConstraints(dimensions: SketchDimension[] = []
         case 'concentric-gap':
           // entityIds = [circle1Id, circle2Id]; value = |r2 - r1|
           return [{ type: 'dimension-concentric-gap', entityIds: dimension.entityIds, value: dimension.value }];
+        // SKETCH-1.9: angular dimension — value stored in degrees
+        case 'angular':
+          return [{ type: 'dimension-angular', entityIds: dimension.entityIds, value: dimension.value }];
+        // SKETCH-1.10: offset-curves dimension — perpendicular distance between parallel entities
+        case 'offset-curves':
+          return [{ type: 'dimension-offset-curves', entityIds: dimension.entityIds, value: dimension.value }];
+        // SKETCH-1.11: tangent-distance dimension — sqrt(dist(P,C)^2 - r^2) = value
+        case 'tangent-distance':
+          return [{ type: 'dimension-tangent-distance', entityIds: dimension.entityIds, value: dimension.value }];
         default:
           return [];
       }
@@ -584,8 +593,10 @@ function computeResiduals(
         residuals.push(aLen > 1e-10 ? crossBA / aLen - (c.value ?? 0) : crossBA - (c.value ?? 0));
         break;
       }
+      case 'smooth':
       case 'curvature': {
         // G2 curvature continuity between two spline entities at their junction.
+        // 'smooth' adds collinear curvature vector constraint (same as G2 for planar curves).
         // entityIds: [entityAId, entityBId]  (A's end meets B's start)
         if (c.entityIds.length < 2) break;
         const entityA = entityMap.get(c.entityIds[0]);
@@ -593,7 +604,7 @@ function computeResiduals(
         if (!entityA || !entityB) break;
 
         // For non-spline entities curvature is zero — no constraint needed.
-        if (entityA.type !== 'spline' || entityB.type !== 'spline') {
+        if ((entityA.type !== 'spline' && entityA.type !== 'fixed-spline') || (entityB.type !== 'spline' && entityB.type !== 'fixed-spline')) {
           residuals.push(0);
           break;
         }
@@ -802,6 +813,97 @@ function computeResiduals(
         residuals.push((lp1.x - lp0.x) * nu + (lp1.y - lp0.y) * nv);
         break;
       }
+      case 'dimension-angular': {
+        // Enforce angle between two line entities (value stored in degrees)
+        if (c.entityIds.length < 2) break;
+        const eAngA = entityMap.get(c.entityIds[0]);
+        const eAngB = entityMap.get(c.entityIds[1]);
+        if (!eAngA || !eAngB || eAngA.points.length < 2 || eAngB.points.length < 2) break;
+        const a0 = getPoint(eAngA.id, 0, pointMap);
+        const a1 = getPoint(eAngA.id, eAngA.points.length - 1, pointMap);
+        const b0 = getPoint(eAngB.id, 0, pointMap);
+        const b1 = getPoint(eAngB.id, eAngB.points.length - 1, pointMap);
+        const adx = a1.x - a0.x, ady = a1.y - a0.y;
+        const bdx = b1.x - b0.x, bdy = b1.y - b0.y;
+        const aLen = Math.sqrt(adx * adx + ady * ady) || 1;
+        const bLen = Math.sqrt(bdx * bdx + bdy * bdy) || 1;
+        const dot = (adx / aLen) * (bdx / bLen) + (ady / aLen) * (bdy / bLen);
+        const targetCos = Math.cos((c.value ?? 90) * Math.PI / 180);
+        residuals.push(dot - targetCos);
+        break;
+      }
+      case 'dimension-offset-curves': {
+        // SKETCH-1.10: perpendicular distance between two parallel entities (or radius diff for circles)
+        if (c.entityIds.length < 2) break;
+        const eOCA = entityMap.get(c.entityIds[0]);
+        const eOCB = entityMap.get(c.entityIds[1]);
+        if (!eOCA || !eOCB) break;
+        const targetDist = c.value ?? 0;
+        // Circle/arc case: enforce |rB - rA| = value
+        if ((eOCA.type === 'circle' || eOCA.type === 'arc') && (eOCB.type === 'circle' || eOCB.type === 'arc')
+            && eOCA.radius !== undefined && eOCB.radius !== undefined) {
+          const scalarA = pointMap.get(`${eOCA.id}::radius`);
+          const scalarB = pointMap.get(`${eOCB.id}::radius`);
+          const rA = scalarA ? scalarA.x : eOCA.radius;
+          const rB = scalarB ? scalarB.x : eOCB.radius;
+          residuals.push(Math.abs(rB - rA) - targetDist);
+          break;
+        }
+        // Line case: perpendicular distance between the two parallel lines
+        if (eOCA.points.length < 2 || eOCB.points.length < 2) break;
+        const ocA0 = getPoint(eOCA.id, 0, pointMap);
+        const ocA1 = getPoint(eOCA.id, eOCA.points.length - 1, pointMap);
+        const ocB0 = getPoint(eOCB.id, 0, pointMap);
+        // Direction of line A (normalized in 2D solver space)
+        const ocDx = ocA1.x - ocA0.x, ocDy = ocA1.y - ocA0.y;
+        const ocLen = Math.sqrt(ocDx * ocDx + ocDy * ocDy) || 1;
+        // Perpendicular to line A: (-dy, dx) / len
+        const ocPerpX = -ocDy / ocLen, ocPerpY = ocDx / ocLen;
+        // Signed distance from A0 to B0 along perpendicular
+        const ocSignedDist = (ocB0.x - ocA0.x) * ocPerpX + (ocB0.y - ocA0.y) * ocPerpY;
+        residuals.push(Math.abs(ocSignedDist) - targetDist);
+        break;
+      }
+      case 'dimension-tangent-distance': {
+        // SKETCH-1.11: distance from a point to the tangent of a circle
+        // entityIds = [pointEntityId, circleEntityId]; value = tangent length = sqrt(dist^2 - r^2)
+        if (c.entityIds.length < 2) break;
+        const eTDPt = entityMap.get(c.entityIds[0]);
+        const eTDCirc = entityMap.get(c.entityIds[1]);
+        if (!eTDPt || !eTDCirc || eTDCirc.radius === undefined) break;
+        const ptPos = getPoint(eTDPt.id, 0, pointMap);
+        const ctrPos = getPoint(eTDCirc.id, 0, pointMap);
+        const scalarR = pointMap.get(`${eTDCirc.id}::radius`);
+        const r = scalarR ? scalarR.x : eTDCirc.radius;
+        const dist2 = (ptPos.x - ctrPos.x) ** 2 + (ptPos.y - ctrPos.y) ** 2;
+        const tangentLen2 = dist2 - r * r;
+        const targetLen = c.value ?? 0;
+        // residual: tangent_len^2 - value^2 = 0 (avoids sqrt near singularity)
+        residuals.push(tangentLen2 - targetLen * targetLen);
+        break;
+      }
+      case 'horizontal-points': {
+        // SKETCH-1.7: two arbitrary points share the same U coordinate (p1.u == p2.u)
+        if (c.entityIds.length < 2) break;
+        const ehpA = entityMap.get(c.entityIds[0]);
+        const ehpB = entityMap.get(c.entityIds[1]);
+        if (!ehpA || !ehpB) break;
+        const phpA = getPoint(ehpA.id, c.pointIndices?.[0] ?? 0, pointMap);
+        const phpB = getPoint(ehpB.id, c.pointIndices?.[1] ?? 0, pointMap);
+        residuals.push(phpA.x - phpB.x);
+        break;
+      }
+      case 'vertical-points': {
+        // SKETCH-1.7: two arbitrary points share the same V coordinate (p1.v == p2.v)
+        if (c.entityIds.length < 2) break;
+        const evpA = entityMap.get(c.entityIds[0]);
+        const evpB = entityMap.get(c.entityIds[1]);
+        if (!evpA || !evpB) break;
+        const pvpA = getPoint(evpA.id, c.pointIndices?.[0] ?? 0, pointMap);
+        const pvpB = getPoint(evpB.id, c.pointIndices?.[1] ?? 0, pointMap);
+        residuals.push(pvpA.y - pvpB.y);
+        break;
+      }
       default:
         break;
     }
@@ -859,7 +961,8 @@ export function solveConstraints(
   const stepSize = options?.stepSize ?? 1.0;
 
   // B9: separate whole-entity fix from pointIndices-based partial fix.
-  const fixedEntityIds = new Set<string>();
+  // SKETCH-1.1: fixed-spline entities are always excluded from the solver (frozen geometry).
+  const fixedEntityIds = new Set<string>(entities.filter((e) => e.type === 'fixed-spline').map((e) => e.id));
   const fixedPoints = new Map<string, Set<number>>();
   for (const c of constraints) {
     if (c.type !== 'fix') continue;

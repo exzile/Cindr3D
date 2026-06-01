@@ -15,6 +15,7 @@ const PROFILE_BOUNDARY_TYPES = new Set<SketchEntity['type']>([
   'line',
   'arc',
   'spline',
+  'fixed-spline',
   'elliptical-arc',
 ]);
 const CLOSED_PROFILE_TYPES = new Set<SketchEntity['type']>([
@@ -391,7 +392,8 @@ export function createEntityGeometry(
     case 'rectangle':         return createRectangle(entity.points, material, planeAxes);
     case 'arc':               return createArc(entity, material, planeAxes);
     case 'point':             return createPointMarker(entity.points[0], planeAxes);
-    case 'spline':            return createLine(entity.points, material);
+    case 'spline':
+    case 'fixed-spline':     return createLine(entity.points, material);
     case 'ellipse':           return createEllipse(entity, material, planeAxes);
     case 'elliptical-arc':    return createEllipticalArc(entity, material, planeAxes);
     case 'isoparametric':     return createDashedLine(entity.points, ISOPARAMETRIC_MATERIAL);

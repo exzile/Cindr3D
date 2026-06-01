@@ -16,6 +16,7 @@ import SectionAnalysisPanel from './panels/SectionAnalysisPanel';
 import SketchPatternPanel from './sketch/SketchPatternPanel';
 import SketchTransformPanel from './sketch/SketchTransformPanel';
 import SketchMirrorPanel from './sketch/SketchMirrorPanel';
+import SketchOffsetPanel from './sketch/SketchOffsetPanel';
 import ExplodedViewPanel from './panels/ExplodedViewPanel';
 import ConstructTwoPlanePanel from './panels/ConstructTwoPlanePanel';
 import ConstructThreePlanePanel from './panels/ConstructThreePlanePanel';
@@ -38,6 +39,7 @@ export function ViewportPanels() {
       <SketchPatternPanel />
       <SketchTransformPanel />
       <SketchMirrorPanel />
+      <SketchOffsetPanel />
       <SketchTextPanel />
       <SketchProjectPanel />
       <ConstructTwoPlanePanel />

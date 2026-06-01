@@ -123,7 +123,7 @@ export class SketchAnalyzer {
         e.type === 'polygon' ||
         e.type === 'rectangle' ||
         e.type === 'slot' ||
-        (e.type === 'spline' && e.closed)
+        ((e.type === 'spline' || e.type === 'fixed-spline') && e.closed)
       ) {
         alreadyClosed.add(e.id);
         const loop: SketchLoop = { entityIds: [e.id], closed: true };
