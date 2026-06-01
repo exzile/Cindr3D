@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 220" width="1200" height="220" role="img" aria-label="Cindr3D — Browser CAD, Slicing, and Printer Fleet Control">
+  <title>Cindr3D</title>
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1" gradientUnits="objectBoundingBox">
+      <stop offset="0%" stop-color="#0b0d17"/>
+      <stop offset="55%" stop-color="#0d1525"/>
+      <stop offset="100%" stop-color="#0a1a18"/>
+    </linearGradient>
+    <linearGradient id="titleGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#7090ff">
+        <animate attributeName="stop-color" values="#7090ff;#38bdf8;#10b981;#ff8a00;#7090ff" dur="10s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="40%" stop-color="#38bdf8">
+        <animate attributeName="stop-color" values="#38bdf8;#10b981;#ff8a00;#7090ff;#38bdf8" dur="10s" repeatCount="indefinite"/>
+      </stop>
+      <stop offset="75%" stop-color="#10b981">
+        <animate attributeName="stop-color" values="#10b981;#ff8a00;#7090ff;#38bdf8;#10b981" dur="10s" repeatCount="indefinite"/>
+      </stop>
+    </linearGradient>
+    <filter id="glow" x="-15%" y="-50%" width="130%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="soft" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="28"/>
+    </filter>
+    <clipPath id="clip">
+      <rect width="1200" height="220" rx="18"/>
+    </clipPath>
+  </defs>
+
+  <rect width="1200" height="220" rx="18" fill="url(#bgGrad)"/>
+
+  <!-- Animated ambient orbs -->
+  <g clip-path="url(#clip)">
+    <circle cx="160" cy="90" r="110" fill="#7090ff" opacity="0.07" filter="url(#soft)">
+      <animate attributeName="cx" values="160;220;160" dur="12s" repeatCount="indefinite"/>
+      <animate attributeName="cy" values="90;60;90" dur="9s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="1040" cy="130" r="130" fill="#38bdf8" opacity="0.06" filter="url(#soft)">
+      <animate attributeName="cx" values="1040;980;1040" dur="11s" repeatCount="indefinite"/>
+      <animate attributeName="cy" values="130;90;130" dur="14s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="600" cy="200" r="90" fill="#10b981" opacity="0.05" filter="url(#soft)">
+      <animate attributeName="r" values="90;130;90" dur="10s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+
+  <!-- Grid lines -->
+  <g stroke="#7090ff" stroke-width="0.5" opacity="0.07">
+    <line x1="0" y1="55" x2="1200" y2="55"/>
+    <line x1="0" y1="110" x2="1200" y2="110"/>
+    <line x1="0" y1="165" x2="1200" y2="165"/>
+    <line x1="200" y1="0" x2="200" y2="220"/>
+    <line x1="400" y1="0" x2="400" y2="220"/>
+    <line x1="600" y1="0" x2="600" y2="220"/>
+    <line x1="800" y1="0" x2="800" y2="220"/>
+    <line x1="1000" y1="0" x2="1000" y2="220"/>
+  </g>
+
+  <!-- Scanning shimmer sweep -->
+  <g clip-path="url(#clip)">
+    <rect x="-320" y="0" width="260" height="220" fill="white" opacity="0.025" rx="8">
+      <animate attributeName="x" values="-320;1340" dur="8s" repeatCount="indefinite"/>
+    </rect>
+  </g>
+
+  <!-- Main title with glow -->
+  <text x="600" y="118" text-anchor="middle"
+    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
+    font-size="76" font-weight="800" letter-spacing="-2"
+    fill="url(#titleGrad)" filter="url(#glow)">Cindr3D</text>
+
+  <!-- Subtitle -->
+  <text x="600" y="158" text-anchor="middle"
+    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
+    font-size="15.5" font-weight="400" letter-spacing="3.5"
+    fill="#8a9abf" opacity="0.9">BROWSER CAD  ·  SLICING  ·  PRINTER FLEET CONTROL</text>
+
+  <!-- Version pill -->
+  <rect x="520" y="174" width="160" height="26" rx="13" fill="#7090ff" opacity="0.12"/>
+  <rect x="520" y="174" width="160" height="26" rx="13" fill="none" stroke="#7090ff" stroke-width="0.8" opacity="0.35"/>
+  <text x="600" y="191" text-anchor="middle"
+    font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
+    font-size="11.5" font-weight="500" fill="#7090ff" opacity="0.9">v0.5.2 · MIT Licensed · Browser-native</text>
+
+  <!-- Corner accent dots (top-left) -->
+  <circle cx="32" cy="22" r="3" fill="#7090ff" opacity="0.55">
+    <animate attributeName="opacity" values="0.3;0.8;0.3" dur="3.2s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="46" cy="22" r="2.2" fill="#38bdf8" opacity="0.45">
+    <animate attributeName="opacity" values="0.2;0.7;0.2" dur="4.1s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="58" cy="22" r="1.6" fill="#10b981" opacity="0.35">
+    <animate attributeName="opacity" values="0.15;0.6;0.15" dur="5s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Corner accent dots (bottom-right) -->
+  <circle cx="1168" cy="198" r="3" fill="#ff8a00" opacity="0.5">
+    <animate attributeName="opacity" values="0.3;0.75;0.3" dur="3.7s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="1154" cy="198" r="2.2" fill="#7090ff" opacity="0.4">
+    <animate attributeName="opacity" values="0.2;0.65;0.2" dur="4.6s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="1142" cy="198" r="1.6" fill="#38bdf8" opacity="0.3">
+    <animate attributeName="opacity" values="0.15;0.55;0.15" dur="5.5s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Top-right: three workspace pillars as tiny colored rects -->
+  <rect x="1090" y="16" width="34" height="7" rx="3.5" fill="#1d4ed8" opacity="0.6">
+    <animate attributeName="opacity" values="0.4;0.8;0.4" dur="3s" repeatCount="indefinite"/>
+  </rect>
+  <rect x="1090" y="28" width="34" height="7" rx="3.5" fill="#7c3aed" opacity="0.6">
+    <animate attributeName="opacity" values="0.4;0.8;0.4" dur="3s" begin="1s" repeatCount="indefinite"/>
+  </rect>
+  <rect x="1090" y="40" width="34" height="7" rx="3.5" fill="#059669" opacity="0.6">
+    <animate attributeName="opacity" values="0.4;0.8;0.4" dur="3s" begin="2s" repeatCount="indefinite"/>
+  </rect>
+  <text x="1130" y="22" font-family="Segoe UI,Arial,sans-serif" font-size="8" fill="#8090b0">Design</text>
+  <text x="1130" y="34" font-family="Segoe UI,Arial,sans-serif" font-size="8" fill="#8090b0">Slice</text>
+  <text x="1130" y="46" font-family="Segoe UI,Arial,sans-serif" font-size="8" fill="#8090b0">Print</text>
+</svg>
