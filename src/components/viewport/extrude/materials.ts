@@ -1,4 +1,10 @@
 import * as THREE from 'three';
+import {
+  VIEWPORT_ARROW_LINE_MATERIAL,
+  VIEWPORT_ARROW_LINE_MATERIAL_CUT,
+  VIEWPORT_ARROW_MATERIAL,
+  VIEWPORT_ARROW_MATERIAL_CUT,
+} from '../gizmos/arrowMaterials';
 
 // Shared materials for the extrude tool. Module-level singletons — never dispose.
 
@@ -54,12 +60,10 @@ export const PREVIEW_EDGE_XRAY_MATERIAL_CUT = new THREE.LineBasicMaterial({
   depthTest: false,
 });
 
-// depthTest:false so the gizmo arrow is always visible even when inside the body.
-// depthWrite:false prevents it from clobbering the depth buffer for subsequent passes.
-export const ARROW_MATERIAL = new THREE.MeshBasicMaterial({ color: 0xffaa00, depthTest: false, depthWrite: false });
-export const ARROW_MATERIAL_CUT = new THREE.MeshBasicMaterial({ color: 0xef4444, depthTest: false, depthWrite: false });
-export const ARROW_LINE_MATERIAL = new THREE.LineBasicMaterial({ color: 0xffaa00, depthTest: false, depthWrite: false });
-export const ARROW_LINE_MATERIAL_CUT = new THREE.LineBasicMaterial({ color: 0xef4444, depthTest: false, depthWrite: false });
+export const ARROW_MATERIAL = VIEWPORT_ARROW_MATERIAL;
+export const ARROW_MATERIAL_CUT = VIEWPORT_ARROW_MATERIAL_CUT;
+export const ARROW_LINE_MATERIAL = VIEWPORT_ARROW_LINE_MATERIAL;
+export const ARROW_LINE_MATERIAL_CUT = VIEWPORT_ARROW_LINE_MATERIAL_CUT;
 
 // Face-highlight materials for press-pull face picking
 export const FACE_HIGHLIGHT_FILL = new THREE.MeshBasicMaterial({

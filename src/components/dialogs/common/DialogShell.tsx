@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
+import { useDraggableDialog } from './useDraggableDialog';
 
 interface Props {
   title: ReactNode;
@@ -28,7 +29,14 @@ export function DialogShell({
   footer,
   children,
 }: Props) {
-  const dialogClass = ['dialog', size && `dialog-${size}`, className]
+  const {
+    dialogEventProps,
+    dialogRef,
+    dialogStyle,
+    dragHandleProps,
+    isDragging,
+  } = useDraggableDialog();
+  const dialogClass = ['dialog', size && `dialog-${size}`, isDragging && 'is-dragging', className]
     .filter(Boolean)
     .join(' ');
   const overlayClass = ['dialog-overlay', overlayClassName]
@@ -52,10 +60,21 @@ export function DialogShell({
 
   return (
     <div className={overlayClass}>
-      <div className={dialogClass}>
-        <div className="dialog-header">
+      <div
+        className={dialogClass}
+        ref={dialogRef}
+        style={dialogStyle}
+        {...dialogEventProps}
+      >
+        <div className="dialog-header" {...dragHandleProps}>
           <h3>{title}</h3>
-          <button className="dialog-close" onClick={onClose}><X size={16} /></button>
+          <button
+            className="dialog-close"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={onClose}
+          >
+            <X size={16} />
+          </button>
         </div>
         <div className="dialog-body">
           {children}

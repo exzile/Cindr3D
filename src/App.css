@@ -27,9 +27,58 @@
   --warning: #ff9800;
   --error: #f44336;
   --info: #2196f3;
+  --font-ui: 'Segoe UI Variable Text', Aptos, 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-ui-compact: 'Segoe UI Variable Small', 'Segoe UI Variable Text', Aptos, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'Cascadia Mono', 'Cascadia Code', Consolas, 'JetBrains Mono', ui-monospace, monospace;
+  --glass-pane-border: color-mix(in srgb, #ffffff 62%, var(--border));
+  --glass-pane-bg:
+    radial-gradient(ellipse at 18% 8%, rgba(255, 255, 255, 0.72), transparent 34%),
+    radial-gradient(ellipse at 76% 20%, rgba(255, 255, 255, 0.24), transparent 28%),
+    radial-gradient(circle at 72% 84%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 40%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.36), rgba(255, 255, 255, 0.08) 42%, rgba(255, 255, 255, 0.02) 62%, rgba(255, 255, 255, 0.14)),
+    color-mix(in srgb, var(--bg-primary) 10%, transparent);
+  --glass-pane-shadow:
+    0 16px 32px rgba(15, 23, 42, 0.11),
+    0 2px 8px rgba(15, 23, 42, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    inset 0 -18px 34px rgba(255, 255, 255, 0.06);
+  --glass-pane-shine:
+    linear-gradient(108deg, transparent 0 21%, rgba(255, 255, 255, 0.34) 32%, transparent 46% 100%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.16), transparent 16%, transparent 84%, rgba(255, 255, 255, 0.1)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2), transparent 34%, rgba(255, 255, 255, 0.08));
+  --glass-pane-glint:
+    radial-gradient(ellipse at 28% 0%, rgba(255, 255, 255, 0.62), transparent 58%),
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.52), transparent);
+  --glass-pane-filter: blur(16px) saturate(1.24);
   /* Width of the right-hand Timeline sidebar. Single-sourced so the
      side-docked tool dialogs can reserve it and never overlap it. */
   --timeline-width: 260px;
+}
+
+[data-theme="dark"] {
+  --glass-pane-border: color-mix(in srgb, #ffffff 24%, var(--border));
+  --glass-pane-bg:
+    radial-gradient(ellipse at 18% 8%, rgba(255, 255, 255, 0.13), transparent 34%),
+    radial-gradient(ellipse at 76% 20%, rgba(255, 255, 255, 0.055), transparent 32%),
+    radial-gradient(circle at 72% 84%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 44%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.024) 42%, rgba(255, 255, 255, 0.01) 62%, rgba(255, 255, 255, 0.035)),
+    color-mix(in srgb, var(--bg-primary) 54%, transparent);
+  --glass-pane-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.42),
+    0 3px 12px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(255, 255, 255, 0.035),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.045),
+    inset 0 -18px 34px rgba(255, 255, 255, 0.016);
+  --glass-pane-shine:
+    linear-gradient(108deg, transparent 0 24%, rgba(255, 255, 255, 0.075) 34%, transparent 48% 100%),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035), transparent 16%, transparent 84%, rgba(255, 255, 255, 0.025)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.052), transparent 38%, rgba(255, 255, 255, 0.02));
+  --glass-pane-glint:
+    radial-gradient(ellipse at 28% 0%, rgba(255, 255, 255, 0.13), transparent 60%),
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.085), transparent);
+  --glass-pane-filter: blur(18px) saturate(1.28);
 }
 
 /* ===== Layout ===== */
@@ -41,7 +90,9 @@
   overflow: hidden;
   background: var(--bg-canvas);
   color: var(--text-primary);
-  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: var(--font-ui);
+  font-feature-settings: 'kern' 1, 'liga' 1;
+  text-rendering: geometricPrecision;
 }
 
 .app--home {
@@ -74,12 +125,15 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.35);
+  background:
+    radial-gradient(circle at 50% 32%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 38%),
+    rgba(15, 23, 42, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(6px) saturate(1.08);
+  -webkit-backdrop-filter: blur(6px) saturate(1.08);
 }
 
 .dialog-overlay.edge-pick-dialog {
@@ -93,27 +147,78 @@
 }
 
 .dialog {
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--glass-pane-bg);
+  border: 1px solid var(--glass-pane-border);
+  border-radius: 14px;
   min-width: 380px;
   max-width: 480px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--glass-pane-shadow);
+  backdrop-filter: var(--glass-pane-filter);
+  -webkit-backdrop-filter: var(--glass-pane-filter);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.42;
+  letter-spacing: 0;
+}
+
+.dialog::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--glass-pane-shine);
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.dialog::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 8px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--glass-pane-glint);
+  filter: blur(0.2px);
+  opacity: 0.72;
+  pointer-events: none;
 }
 
 .dialog-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border-light);
+  padding: 14px 18px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-light) 62%, transparent);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.15), transparent),
+    color-mix(in srgb, var(--bg-toolbar) 28%, transparent);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.dialog.is-dragging,
+.dialog.is-dragging .dialog-header {
+  cursor: grabbing;
+}
+
+.dialog.is-dragging {
+  will-change: transform;
 }
 
 .dialog-header h3 {
   margin: 0;
   font-size: 15px;
-  font-weight: 600;
+  font-weight: 750;
   color: var(--text-primary);
+  letter-spacing: 0.005em;
+  line-height: 1.25;
 }
 
 .dialog-close {
@@ -122,20 +227,28 @@
   justify-content: center;
   width: 28px;
   height: 28px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.04)),
+    transparent;
+  color: color-mix(in srgb, var(--text-muted) 86%, var(--accent));
   cursor: pointer;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease, transform 0.14s ease, box-shadow 0.14s ease;
 }
 
 .dialog-close:hover {
-  background: var(--bg-hover);
+  border-color: color-mix(in srgb, var(--accent) 24%, #ffffff);
+  background: color-mix(in srgb, var(--accent) 9%, var(--bg-hover));
   color: var(--text-primary);
+  box-shadow:
+    0 5px 12px rgba(15, 23, 42, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.36);
+  transform: translateY(-1px);
 }
 
 .dialog-body {
-  padding: 20px;
+  padding: 18px;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -145,8 +258,11 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding: 16px 20px;
-  border-top: 1px solid var(--border-light);
+  padding: 14px 18px;
+  border-top: 1px solid color-mix(in srgb, var(--border-light) 62%, transparent);
+  background:
+    linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.1)),
+    color-mix(in srgb, var(--bg-toolbar) 20%, transparent);
 }
 
 /* ===================================================================
@@ -188,26 +304,34 @@
   min-width: 240px;
   max-width: 240px;
   max-height: calc(100vh - 24px);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--glass-pane-border);
+  border-radius: 10px;
+  background: var(--glass-pane-bg);
+  box-shadow: var(--glass-pane-shadow);
   font-size: 12px;
+  font-family: var(--font-ui-compact);
+  line-height: 1.35;
   overflow: hidden;
-  backdrop-filter: none;
+  backdrop-filter: var(--glass-pane-filter);
+  -webkit-backdrop-filter: var(--glass-pane-filter);
 }
 
 .tool-dialog-scope .dialog-header {
   flex: 0 0 auto;
   gap: 6px;
-  padding: 8px 10px;
-  background: var(--bg-toolbar);
+  padding: 9px 10px;
+  border-bottom-color: color-mix(in srgb, var(--border-light) 52%, transparent);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.17), transparent),
+    color-mix(in srgb, var(--bg-toolbar) 36%, transparent);
 }
 
 /* Accent dot before the title — same as .sketch-palette-dot. */
 .tool-dialog-scope .dialog-header h3 {
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.045em;
+  line-height: 1.2;
 }
 
 .tool-dialog-scope .dialog-header h3::before {
@@ -222,9 +346,9 @@
 }
 
 .tool-dialog-scope .dialog-close {
-  width: 18px;
-  height: 18px;
-  border-radius: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
 }
 
 .tool-dialog-scope .dialog-body {
@@ -239,6 +363,10 @@
   flex: 0 0 auto;
   padding: 8px 10px;
   gap: 6px;
+  border-top-color: color-mix(in srgb, var(--border-light) 52%, transparent);
+  background:
+    linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.08)),
+    color-mix(in srgb, var(--bg-toolbar) 22%, transparent);
 }
 
 .tool-dialog-scope .dialog-footer .btn {
@@ -246,6 +374,158 @@
   font-size: 12px;
   font-weight: 600;
   border-radius: 4px;
+}
+
+.tool-dialog-scope .dialog-field,
+.tool-dialog-scope .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.tool-dialog-scope .dialog-label,
+.tool-dialog-scope .form-group > label {
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.45px;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.tool-dialog-scope .dialog-select,
+.tool-dialog-scope .dialog-input,
+.tool-dialog-scope .form-group select,
+.tool-dialog-scope .form-group input[type="number"],
+.tool-dialog-scope .form-group input[type="text"] {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--border-light) 78%, transparent);
+  border-radius: 7px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent),
+    color-mix(in srgb, var(--bg-input) 82%, transparent);
+  color: var(--text-primary);
+  font-family: var(--font-ui-compact);
+  font-size: 12px;
+  font-weight: 560;
+  line-height: 1.25;
+  outline: none;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.tool-dialog-scope .dialog-select,
+.tool-dialog-scope .form-group select {
+  cursor: pointer;
+}
+
+.tool-dialog-scope .dialog-input[type="number"],
+.tool-dialog-scope .form-group input[type="number"] {
+  font-variant-numeric: tabular-nums;
+}
+
+.tool-dialog-scope .dialog-select:hover,
+.tool-dialog-scope .dialog-input:hover,
+.tool-dialog-scope .form-group select:hover,
+.tool-dialog-scope .form-group input[type="number"]:hover,
+.tool-dialog-scope .form-group input[type="text"]:hover {
+  border-color: var(--border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent),
+    color-mix(in srgb, var(--bg-secondary) 86%, transparent);
+}
+
+.tool-dialog-scope .dialog-select:focus,
+.tool-dialog-scope .dialog-input:focus,
+.tool-dialog-scope .form-group select:focus,
+.tool-dialog-scope .form-group input[type="number"]:focus,
+.tool-dialog-scope .form-group input[type="text"]:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.tool-dialog-scope .dialog-hint {
+  display: block;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border-light));
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent),
+    color-mix(in srgb, var(--accent) 7%, var(--bg-primary));
+  color: var(--text-muted);
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.tool-dialog-scope .face-selector {
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.tool-dialog-scope .face-selector__chip {
+  min-height: 24px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border-light));
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 28% 0%, rgba(255, 255, 255, 0.28), transparent 42%),
+    color-mix(in srgb, var(--accent) 13%, var(--bg-input));
+  color: var(--text-primary);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.tool-dialog-scope .face-selector__chip--removable {
+  padding-right: 3px;
+}
+
+.tool-dialog-scope .face-selector__clear {
+  margin-left: 8px;
+  padding: 2px 7px;
+  border: 1px solid var(--border-light);
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.tool-dialog-scope .face-selector__clear:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.tool-dialog-scope .face-selector__remove,
+.tool-dialog-scope .face-selector__chip-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.tool-dialog-scope .face-selector__remove:hover,
+.tool-dialog-scope .face-selector__chip-clear:hover {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--text-primary);
 }
 
 
@@ -256,32 +536,69 @@
   justify-content: center;
   gap: 6px;
   padding: 8px 18px;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, #ffffff 22%, transparent);
+  border-radius: 8px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 700;
   cursor: pointer;
-  transition: all 0.12s ease;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 2px 6px rgba(15, 23, 42, 0.06);
+  transition:
+    transform 0.14s ease,
+    background 0.14s ease,
+    border-color 0.14s ease,
+    box-shadow 0.14s ease,
+    color 0.14s ease;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(0) scale(0.98);
+  box-shadow: inset 0 2px 5px rgba(15, 23, 42, 0.12);
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
 }
 
 .btn-primary {
-  background: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 78%, #ffffff);
+  background:
+    radial-gradient(circle at 28% 0%, rgba(255, 255, 255, 0.34), transparent 42%),
+    linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, white 8%), var(--accent));
   color: white;
 }
 
 .btn-primary:hover {
-  background: var(--accent-hover);
+  background:
+    radial-gradient(circle at 28% 0%, rgba(255, 255, 255, 0.42), transparent 42%),
+    linear-gradient(180deg, color-mix(in srgb, var(--accent-hover) 90%, white 10%), var(--accent-hover));
+  box-shadow:
+    0 7px 16px color-mix(in srgb, var(--accent) 20%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
 }
 
 .btn-secondary {
-  background: var(--bg-hover);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.03)),
+    color-mix(in srgb, var(--bg-hover) 78%, transparent);
   color: var(--text-secondary);
-  border-color: var(--border);
+  border-color: color-mix(in srgb, var(--border) 70%, #ffffff);
 }
 
 .btn-secondary:hover {
-  background: var(--bg-secondary);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.04)),
+    color-mix(in srgb, var(--bg-secondary) 84%, transparent);
   color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
 }
 
 .btn-danger {
@@ -408,20 +725,22 @@
   position: fixed;
   z-index: 9999;
   transform-origin: top center;
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-panel, #1e2128) 94%, white 6%), var(--bg-panel, #1e2128));
-  border: 1px solid color-mix(in srgb, var(--border, #333) 78%, var(--text-muted) 22%);
-  border-radius: 8px;
-  padding: 5px;
+  background: var(--glass-pane-bg);
+  border: 1px solid var(--glass-pane-border);
+  border-radius: 12px;
+  padding: 6px;
   min-width: 240px;
   max-height: calc(100vh - 16px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 14px 34px rgba(0, 0, 0, 0.42);
+  box-shadow: var(--glass-pane-shadow);
   font-size: 12px;
+  font-family: var(--font-ui-compact);
+  line-height: 1.32;
+  font-feature-settings: 'kern' 1, 'liga' 1, 'tnum' 0;
   animation: sketchCtxUnfurl 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  backdrop-filter: var(--glass-pane-filter);
+  -webkit-backdrop-filter: var(--glass-pane-filter);
 }
 
 .sketch-ctx-menu.closing {
@@ -441,15 +760,11 @@
   right: 5px;
   top: 5px;
   height: 30px;
-  border-radius: 6px;
+  border-radius: 999px;
   pointer-events: none;
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.16),
-    rgba(255, 255, 255, 0)
-  );
+  background: var(--glass-pane-glint);
   mix-blend-mode: screen;
-  opacity: 0;
+  opacity: 0.72;
   animation: sketchCtxPaperSheen 340ms ease-out both;
 }
 
@@ -547,7 +862,7 @@
   min-width: 0;
   padding: 7px 8px 8px;
   margin-bottom: 2px;
-  border-bottom: 1px solid var(--border-light, rgba(255, 255, 255, 0.07));
+  border-bottom: 1px solid color-mix(in srgb, var(--border-light, rgba(255, 255, 255, 0.07)) 72%, transparent);
 }
 
 .sketch-ctx-title-icon {
@@ -558,8 +873,10 @@
   justify-content: center;
   flex: 0 0 auto;
   border: 1px solid color-mix(in srgb, #5eead4 45%, transparent);
-  border-radius: 6px;
-  background: color-mix(in srgb, #5eead4 12%, transparent);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 30% 0%, rgba(255, 255, 255, 0.28), transparent 44%),
+    color-mix(in srgb, #5eead4 12%, transparent);
   color: #5eead4;
 }
 
@@ -618,9 +935,11 @@
   position: relative;
   width: 100%;
   padding: 5px 10px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent),
+    transparent;
   color: var(--text-secondary);
   cursor: pointer;
   text-align: left;
@@ -632,10 +951,13 @@
 }
 
 .sketch-ctx-item:focus-visible {
-  outline: 1px solid color-mix(in srgb, var(--ctx-accent) 64%, transparent);
-  outline-offset: -1px;
-  background: color-mix(in srgb, var(--ctx-accent) 12%, var(--bg-hover));
+  outline: none;
+  border-color: color-mix(in srgb, var(--ctx-accent) 48%, #ffffff);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.24), transparent 42%),
+    color-mix(in srgb, var(--ctx-accent) 12%, var(--bg-hover));
   color: var(--text-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ctx-accent) 12%, transparent);
 }
 
 .sketch-ctx-item.sketch-ctx-has-tone {
@@ -655,9 +977,15 @@
 }
 
 .sketch-ctx-item:hover {
-  background: color-mix(in srgb, var(--ctx-accent) 10%, var(--bg-hover));
+  border-color: color-mix(in srgb, var(--ctx-accent) 24%, transparent);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.22), transparent 42%),
+    color-mix(in srgb, var(--ctx-accent) 10%, var(--bg-hover));
   color: var(--text-primary);
   transform: translateX(1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 4px 10px rgba(15, 23, 42, 0.08);
 }
 
 .sketch-ctx-item:hover::before {
@@ -718,6 +1046,8 @@
 .sketch-ctx-label {
   flex: 1;
   min-width: 0;
+  font-weight: 620;
+  letter-spacing: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -731,20 +1061,24 @@
   height: 17px;
   padding: 0 5px;
   border: 1px solid color-mix(in srgb, var(--ctx-accent) 22%, var(--border-light));
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--bg-secondary, transparent) 72%, transparent);
+  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent),
+    color-mix(in srgb, var(--bg-secondary, transparent) 62%, transparent);
   color: color-mix(in srgb, var(--ctx-accent) 55%, var(--text-dim));
   margin-left: auto;
   font-size: 10px;
   font-weight: 650;
+  font-family: var(--font-mono);
+  letter-spacing: 0;
   line-height: 1;
   white-space: nowrap;
 }
 
 .sketch-ctx-sep {
   height: 1px;
-  background: var(--border-light, rgba(255, 255, 255, 0.07));
-  margin: 3px 6px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--border-light, rgba(255, 255, 255, 0.07)) 86%, transparent), transparent);
+  margin: 5px 8px;
 }
 
 .sketch-ctx-item.disabled,

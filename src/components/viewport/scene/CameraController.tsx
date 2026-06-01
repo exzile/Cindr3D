@@ -17,6 +17,7 @@ declare global {
 const frameVisibleSceneEvent = 'cad:frame-visible-scene';
 const focusSketchEvent = 'cad:focus-sketch';
 const orbitCameraEvent = 'cad:orbit-camera';
+const setCurrentViewHomeEvent = 'cad:set-current-view-home';
 
 interface FocusSketchEventDetail {
   center: [number, number, number];
@@ -50,6 +51,9 @@ export default function CameraController({ onQuaternionChange }: { onQuaternionC
   const startDistanceRef = useRef(0);
   const endDistanceRef = useRef(0);
   const requestedDistanceRef = useRef<number | null>(null);
+  const homePositionRef = useRef(new THREE.Vector3(50, 50, 50));
+  const homeUpRef = useRef(new THREE.Vector3(0, 1, 0));
+  const homeTargetRef = useRef(new THREE.Vector3(0, 0, 0));
   // Stable scratch objects — reused every frame/event to avoid GC pressure
   const _q = useRef(new THREE.Quaternion());
   const _dir = useRef(new THREE.Vector3());
@@ -85,6 +89,18 @@ export default function CameraController({ onQuaternionChange }: { onQuaternionC
     window.addEventListener(frameVisibleSceneEvent, frameVisibleScene);
     return () => window.removeEventListener(frameVisibleSceneEvent, frameVisibleScene);
   }, [frameVisibleScene]);
+
+  useEffect(() => {
+    const setCurrentViewHome = () => {
+      const orbitControls = controls as OrbitControlsLike;
+      homePositionRef.current.copy(camera.position);
+      homeUpRef.current.copy(camera.up).normalize();
+      homeTargetRef.current.copy((orbitControls?.target as THREE.Vector3 | undefined) ?? _center.current.set(0, 0, 0));
+    };
+
+    window.addEventListener(setCurrentViewHomeEvent, setCurrentViewHome);
+    return () => window.removeEventListener(setCurrentViewHomeEvent, setCurrentViewHome);
+  }, [camera, controls]);
 
   useEffect(() => {
     const orbitCamera = (event: Event) => {
@@ -161,9 +177,9 @@ export default function CameraController({ onQuaternionChange }: { onQuaternionC
   // Home button
   useEffect(() => {
     if (cameraHomeCounter === 0) return;
-    const target = new THREE.Vector3(0, 0, 0);
-    camera.up.set(0, 1, 0);
-    camera.position.set(50, 50, 50);
+    const target = homeTargetRef.current;
+    camera.up.copy(homeUpRef.current);
+    camera.position.copy(homePositionRef.current);
     camera.lookAt(target);
     const orbitControls = controls as OrbitControlsLike;
     if (orbitControls?.target) {

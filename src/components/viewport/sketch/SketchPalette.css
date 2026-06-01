@@ -4,14 +4,45 @@
   right: 12px;
   top: 50%;
   transform: translateY(-50%);
-  z-index: 150;
+  z-index: 1000;
   width: 240px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  background: var(--glass-pane-bg);
+  border: 1px solid var(--glass-pane-border);
+  border-radius: 12px;
+  box-shadow: var(--glass-pane-shadow);
+  backdrop-filter: var(--glass-pane-filter);
+  -webkit-backdrop-filter: var(--glass-pane-filter);
+  font-family: var(--font-ui-compact);
   font-size: 12px;
+  line-height: 1.34;
   overflow: hidden;
+  isolation: isolate;
+  pointer-events: auto;
+}
+
+.sketch-palette::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--glass-pane-shine);
+  opacity: 0.86;
+  pointer-events: none;
+}
+
+.sketch-palette::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 7px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--glass-pane-glint);
+  filter: blur(0.2px);
+  opacity: 0.48;
+  pointer-events: none;
 }
 
 .sketch-palette--dimension {
@@ -142,9 +173,21 @@
   align-items: center;
   gap: 6px;
   padding: 8px 10px;
-  background: var(--bg-toolbar);
-  border-bottom: 1px solid var(--border-light);
-  cursor: default;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.12), transparent),
+    color-mix(in srgb, var(--bg-toolbar) 26%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-light) 54%, transparent);
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.sketch-palette.is-dragging .sketch-palette-header {
+  cursor: grabbing;
+}
+
+.sketch-palette.is-dragging {
+  will-change: transform;
 }
 
 .sketch-palette-dot {
@@ -192,12 +235,15 @@
 
 .sketch-palette-collapse:hover,
 .sketch-palette-close:hover {
-  background: var(--bg-hover);
+  background:
+    radial-gradient(circle at 30% 12%, rgba(255, 255, 255, 0.16), transparent 42%),
+    var(--bg-hover);
   color: var(--text-primary);
 }
 
 .sketch-palette-body {
   padding: 4px 0;
+  background: color-mix(in srgb, var(--bg-primary) 8%, transparent);
 }
 
 .sketch-palette-section-header {
@@ -297,16 +343,21 @@
 
 .sketch-palette-footer {
   padding: 8px 10px;
-  border-top: 1px solid var(--border-light);
+  border-top: 1px solid color-mix(in srgb, var(--border-light) 54%, transparent);
   margin-top: 4px;
+  background:
+    linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.06)),
+    color-mix(in srgb, var(--bg-toolbar) 16%, transparent);
 }
 
 .sketch-palette-finish {
   width: 100%;
   padding: 6px 12px;
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
   border-radius: 4px;
-  background: var(--bg-input);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent),
+    color-mix(in srgb, var(--bg-input) 72%, transparent);
   color: var(--text-primary);
   font-size: 12px;
   font-weight: 600;
@@ -324,9 +375,11 @@
 .sketch-palette-input--narrow {
   width: 64px;
   padding: 3px 6px;
-  border: 1px solid var(--border-light);
+  border: 1px solid color-mix(in srgb, var(--border-light) 78%, transparent);
   border-radius: 4px;
-  background: var(--bg-input);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
+    color-mix(in srgb, var(--bg-input) 76%, transparent);
   color: var(--text-primary);
   font-size: 12px;
   text-align: right;

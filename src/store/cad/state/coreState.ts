@@ -51,6 +51,8 @@ export interface CADCoreState {
    *  O(n³) full-sketch solve for points that already satisfy their constraints. */
   addSketchEntitiesAndConstraintsBatch: (entities: SketchEntity[], constraints: SketchConstraint[], skipSolve?: boolean) => void;
   replaceSketchEntities: (entities: SketchEntity[]) => void;
+  /** Replace entities AND constraints atomically (lets callers drop specific constraints, e.g. fillet/chamfer corner weld). */
+  replaceActiveSketchGeometry: (entities: SketchEntity[], constraints: SketchConstraint[]) => void;
   /** D57: toggle a single entity's linetype (line ↔ construction-line ↔ centerline) */
   cycleEntityLinetype: (entityId: string) => void;
   /** S6: remove the 'linked' flag on a projected entity so it becomes an independent editable entity */
@@ -65,8 +67,12 @@ export interface CADCoreState {
   sliceSketch: (sketchId: string) => void;
   /** D50: Auto-detect and apply geometric constraints (horizontal/vertical/coincident/parallel/equal) */
   autoConstrainSketch: () => void;
-  /** D27: Run the Newton-Raphson constraint solver on the active sketch. */
-  solveSketch: () => void;
+  /**
+   * D27: Run the Newton-Raphson constraint solver on the active sketch.
+   * `opts.fixedPoint` pins one entity point (used during handle drag so the
+   * dragged point tracks the cursor while constraints move everything else).
+   */
+  solveSketch: (opts?: { fixedPoint?: { entityId: string; pointIndex: number } }) => void;
   /** B6.c: entity IDs in fully-constrained solver components — used for DOF coloring. */
   sketchConstrainedEntityIds: string[];
   /** CORR-7: when true, constraint solver is not called automatically on entity/constraint changes */
@@ -264,7 +270,15 @@ export interface CADCoreState {
   setSketchOffsetDistance: (d: number) => void;
   // Sketch mirror (D21) — axis can be a fixed direction or a picked entity ID
   sketchMirrorAxis: 'horizontal' | 'vertical' | 'diagonal' | string;
+  sketchMirrorObjectIds: string[];
+  sketchMirrorLineId: string | null;
+  sketchMirrorSelectionMode: 'objects' | 'line';
   setSketchMirrorAxis: (axis: string) => void;
+  setSketchMirrorObjectIds: (ids: string[]) => void;
+  toggleSketchMirrorObjectId: (id: string) => void;
+  setSketchMirrorLineId: (id: string | null) => void;
+  setSketchMirrorSelectionMode: (mode: 'objects' | 'line') => void;
+  clearSketchMirrorSelections: () => void;
   commitSketchMirror: () => void;
   // Conic curve rho (D11)
   conicRho: number;

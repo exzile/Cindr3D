@@ -1,9 +1,17 @@
 import { X } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import type { DimensionToolType } from '../../../types/cad';
+import { useDraggablePanel } from './useDraggablePanel';
 import './SketchPalette.css';
 
 export default function SketchDimensionPanel() {
+  const {
+    dragHandleProps,
+    isDragging,
+    panelEventProps,
+    panelRef,
+    panelStyle,
+  } = useDraggablePanel();
   const activeTool = useCADStore((s) => s.activeTool);
   const activeDimensionType = useCADStore((s) => s.activeDimensionType);
   const setActiveDimensionType = useCADStore((s) => s.setActiveDimensionType);
@@ -38,8 +46,13 @@ export default function SketchDimensionPanel() {
   };
 
   return (
-    <div className="sketch-palette sketch-palette--dimension">
-      <div className="sketch-palette-header">
+    <div
+      ref={panelRef}
+      className={`sketch-palette sketch-palette--dimension${isDragging ? ' is-dragging' : ''}`}
+      style={panelStyle}
+      {...panelEventProps}
+    >
+      <div className="sketch-palette-header" {...dragHandleProps}>
         <span className="sketch-palette-dot" />
         <span className="sketch-palette-title">DIMENSION</span>
         <button className="sketch-palette-close" onClick={cancelDimensionTool} title="Cancel">

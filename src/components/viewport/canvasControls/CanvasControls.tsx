@@ -24,7 +24,14 @@ import GridSettingsPanel from './GridSettingsPanel';
 import IncrementSettingsPanel from './IncrementSettingsPanel';
 import ObjectSnapPanel from './ObjectSnapPanel';
 
-const LAYOUT_CYCLE = ['1', '2h', '2v', '4'] as const;
+const VIEWPORT_LAYOUTS = [
+  { value: '1', label: 'Single', hint: 'One full viewport' },
+  { value: '2h', label: 'Two columns', hint: 'Top and perspective side by side' },
+  { value: '2v', label: 'Two rows', hint: 'Top and perspective stacked' },
+  { value: '4', label: 'Four views', hint: 'Top, front, right, perspective' },
+] as const;
+
+type ViewportLayoutValue = (typeof VIEWPORT_LAYOUTS)[number]['value'];
 
 export default function CanvasControls() {
   const gridVisible = useCADStore((s) => s.gridVisible);
@@ -49,6 +56,7 @@ export default function CanvasControls() {
   const gridSettingsRef = useRef<HTMLButtonElement>(null);
   const incrementRef = useRef<HTMLButtonElement>(null);
   const objectSnapRef = useRef<HTMLButtonElement>(null);
+  const viewportRef = useRef<HTMLButtonElement>(null);
 
   const togglePopover = useCallback((id: string) => {
     setOpenPopover((prev) => (prev === id ? null : id));
@@ -60,22 +68,22 @@ export default function CanvasControls() {
     setCameraNavMode(cameraNavMode === mode ? null : mode);
   }, [cameraNavMode, setCameraNavMode]);
 
-  const handleCycleViewportLayout = useCallback(() => {
-    const idx = LAYOUT_CYCLE.indexOf(viewportLayout);
-    const next = LAYOUT_CYCLE[(idx + 1) % LAYOUT_CYCLE.length];
-    setViewportLayout(next);
-  }, [viewportLayout, setViewportLayout]);
+  const handleViewportLayoutSelect = useCallback((layout: ViewportLayoutValue) => {
+    setViewportLayout(layout);
+    closePopover();
+  }, [closePopover, setViewportLayout]);
 
   return (
     <div className="canvas-controls-bar">
-      {/* ---- Grid / Snap section ---- */}
-      <div className="cc-group">
+      {/* ---- View / display section ---- */}
+      <div className="cc-group cc-group--view" aria-label="Viewport display controls">
         {/* Display settings */}
         <div className="cc-popover-anchor">
           <button
             ref={displayRef}
-            className="cc-btn"
-            title="Display Settings"
+            className="cc-btn cc-btn--secondary"
+            aria-label="Display settings"
+            data-tooltip="Display settings"
             onClick={() => togglePopover('display')}
           >
             <Settings size={14} />
@@ -85,12 +93,58 @@ export default function CanvasControls() {
           </Popover>
         </div>
 
-        <div className="cc-divider" />
+        {/* NAV-19: Viewport layout picker */}
+        <div className="cc-popover-anchor cc-popover-anchor--viewports">
+          <button
+            ref={viewportRef}
+            className={`cc-btn ${viewportLayout !== '1' ? 'active' : ''}`}
+            aria-label="Viewports"
+            data-tooltip="Viewports"
+            onClick={() => togglePopover('viewports')}
+          >
+            <LayoutGrid size={14} />
+            {viewportLayout !== '1' && (
+              <span className="cc-btn-badge">
+                {viewportLayout}
+              </span>
+            )}
+          </button>
+          <Popover anchorRef={viewportRef} open={openPopover === 'viewports'} onClose={closePopover}>
+            <div className="cc-panel cc-panel--viewports">
+              <div className="cc-panel-title">Viewports</div>
+              <div className="cc-viewport-layout-grid">
+                {VIEWPORT_LAYOUTS.map((layout) => (
+                  <button
+                    key={layout.value}
+                    type="button"
+                    className={`cc-viewport-layout-option ${viewportLayout === layout.value ? 'active' : ''}`}
+                    onClick={() => handleViewportLayoutSelect(layout.value)}
+                  >
+                    <span className={`cc-viewport-layout-preview cc-viewport-layout-preview--${layout.value}`}>
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                    </span>
+                    <span className="cc-viewport-layout-copy">
+                      <span className="cc-viewport-layout-label">{layout.label}</span>
+                      <span className="cc-viewport-layout-hint">{layout.hint}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </Popover>
+        </div>
+      </div>
 
+      {/* ---- Grid / snap section ---- */}
+      <div className="cc-group cc-group--grid" aria-label="Grid and snap controls">
         {/* Grid toggle */}
         <button
           className={`cc-btn ${gridVisible ? 'active' : ''}`}
-          title="Toggle Grid"
+          aria-label="Toggle grid"
+          data-tooltip="Toggle grid"
           onClick={() => setGridVisible(!gridVisible)}
         >
           <Grid3x3 size={14} />
@@ -99,7 +153,8 @@ export default function CanvasControls() {
         {/* Grid lock */}
         <button
           className={`cc-btn ${gridLocked ? 'active' : ''}`}
-          title="Lock Grid"
+          aria-label="Lock grid"
+          data-tooltip="Lock grid"
           onClick={() => setGridLocked(!gridLocked)}
         >
           {gridLocked ? <Lock size={14} /> : <Unlock size={14} />}
@@ -108,7 +163,8 @@ export default function CanvasControls() {
         {/* Snap to grid */}
         <button
           className={`cc-btn ${snapEnabled ? 'active' : ''}`}
-          title="Snap to Grid"
+          aria-label="Snap to grid"
+          data-tooltip="Snap to grid"
           onClick={() => setSnapEnabled(!snapEnabled)}
         >
           <Magnet size={14} />
@@ -119,7 +175,8 @@ export default function CanvasControls() {
           <button
             ref={objectSnapRef}
             className={`cc-btn ${objectSnapEnabled ? 'active' : ''}`}
-            title="Object Snaps"
+            aria-label="Object snaps"
+            data-tooltip="Object snaps"
             onClick={() => togglePopover('object-snap')}
           >
             <ScanSearch size={14} />
@@ -133,8 +190,9 @@ export default function CanvasControls() {
         <div className="cc-popover-anchor">
           <button
             ref={gridSettingsRef}
-            className="cc-btn"
-            title="Grid Settings"
+            className="cc-btn cc-btn--secondary"
+            aria-label="Grid settings"
+            data-tooltip="Grid settings"
             onClick={() => togglePopover('grid')}
           >
             <SlidersHorizontal size={14} />
@@ -143,13 +201,11 @@ export default function CanvasControls() {
             <GridSettingsPanel onClose={closePopover} />
           </Popover>
         </div>
-
-        <div className="cc-divider" />
-
         {/* Incremental move */}
         <button
-          className={`cc-btn ${incrementalMove ? 'active' : ''}`}
-          title="Incremental Move"
+          className={`cc-btn cc-btn--optional ${incrementalMove ? 'active' : ''}`}
+          aria-label="Incremental move"
+          data-tooltip="Incremental move"
           onClick={() => setIncrementalMove(!incrementalMove)}
         >
           <Move size={14} />
@@ -159,8 +215,9 @@ export default function CanvasControls() {
         <div className="cc-popover-anchor">
           <button
             ref={incrementRef}
-            className="cc-btn"
-            title="Set Increments"
+            className="cc-btn cc-btn--secondary cc-btn--optional"
+            aria-label="Set increments"
+            data-tooltip="Set increments"
             onClick={() => togglePopover('increment')}
           >
             <SlidersHorizontal size={12} />
@@ -172,86 +229,62 @@ export default function CanvasControls() {
       </div>
 
       {/* ---- Navigation section ---- */}
-      <div className="cc-group">
-        <div className="cc-divider" />
-
+      <div className="cc-group cc-group--navigation" aria-label="Viewport navigation controls">
         <button
           className={`cc-btn ${cameraNavMode === 'orbit' ? 'active' : ''}`}
-          title="Orbit"
+          aria-label="Orbit"
+          data-tooltip="Orbit"
           onClick={() => handleNavMode('orbit')}
         >
           <RotateCcw size={14} />
         </button>
         <button
           className={`cc-btn ${cameraNavMode === 'pan' ? 'active' : ''}`}
-          title="Pan"
+          aria-label="Pan"
+          data-tooltip="Pan"
           onClick={() => handleNavMode('pan')}
         >
           <Hand size={14} />
         </button>
         <button
           className={`cc-btn ${cameraNavMode === 'zoom' ? 'active' : ''}`}
-          title="Zoom"
+          aria-label="Zoom"
+          data-tooltip="Zoom"
           onClick={() => handleNavMode('zoom')}
         >
           <Search size={14} />
         </button>
         <button
-          className="cc-btn"
-          title="Zoom to Fit"
+          className="cc-btn cc-btn--secondary"
+          aria-label="Zoom to fit"
+          data-tooltip="Zoom to fit"
           onClick={() => triggerZoomToFit()}
         >
           <Maximize size={14} />
         </button>
         <button
           className={`cc-btn ${cameraNavMode === 'zoom-window' ? 'active' : ''}`}
-          title="Zoom Window"
+          aria-label="Zoom window"
+          data-tooltip="Zoom window"
           onClick={() => handleNavMode('zoom-window')}
         >
           <ScanSearch size={14} />
         </button>
-
-        <div className="cc-divider" />
-
         <button
           className={`cc-btn ${cameraNavMode === 'look-at' ? 'active' : ''}`}
-          title="Look At"
+          aria-label="Look at"
+          data-tooltip="Look at"
           onClick={() => handleNavMode('look-at')}
         >
           <Eye size={14} />
         </button>
         <button
-          className="cc-btn"
-          title="Home View"
+          className="cc-btn cc-btn--secondary"
+          aria-label="Home view"
+          data-tooltip="Home view"
           onClick={() => triggerCameraHome()}
         >
           <Home size={14} />
-        </button>
-
-        <div className="cc-divider" />
-
-        {/* NAV-19: Viewport layout cycle */}
-        <button
-          className={`cc-btn ${viewportLayout !== '1' ? 'active' : ''}`}
-          title="Viewports"
-          onClick={handleCycleViewportLayout}
-          style={{ position: 'relative' }}
-        >
-          <LayoutGrid size={14} />
-          {viewportLayout !== '1' && (
-            <span style={{
-              position: 'absolute',
-              top: 1,
-              right: 1,
-              fontSize: 8,
-              fontWeight: 700,
-              lineHeight: 1,
-              color: 'inherit',
-              pointerEvents: 'none',
-            }}>
-              {viewportLayout}
-            </span>
-          )}
         </button>
       </div>
     </div>

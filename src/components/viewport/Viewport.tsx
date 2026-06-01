@@ -19,7 +19,8 @@ import SketchConstraintOverlay from './scene/SketchConstraintOverlay';
 import PolygonConstraintOverlay from './scene/PolygonConstraintOverlay';
 import SketchDimensionAnnotations from './scene/SketchDimensionAnnotations';
 import SketchDimensionPreview from './scene/SketchDimensionPreview';
-import SketchSplineHandles from './scene/SketchSplineHandles';
+import SketchPointHandles from './scene/SketchPointHandles';
+import SketchArcRadiusEditor from './sketch/SketchArcRadiusEditor';
 import PrimitiveBodies, { PrimitivePreview } from './scene/PrimitiveBodies';
 import FastenerBodies from './scene/FastenerBodies';
 import ExtrudedBodies from './scene/ExtrudedBodies';
@@ -252,7 +253,8 @@ export default function Viewport() {
             <PolygonConstraintOverlay />
             <SketchDimensionAnnotations />
             <SketchDimensionPreview />
-            <SketchSplineHandles />
+            <SketchPointHandles />
+            <SketchArcRadiusEditor />
           </>
         )}
         <ExtrudedBodies />
@@ -363,6 +365,7 @@ export default function Viewport() {
         onCloseContextMenu={() => setViewportCtxMenu(null)}
         onOrientViewCube={handleViewCubeOrient}
         onHomeViewCube={() => useCADStore.getState().triggerCameraHome()}
+        onZoomFitViewCube={() => useCADStore.getState().triggerZoomToFit()}
       />
       <ViewportPanels />
     </div>

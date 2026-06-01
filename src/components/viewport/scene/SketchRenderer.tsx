@@ -5,6 +5,7 @@ import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
 import { DimensionEngine } from '../../../engine/DimensionEngine';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
+import { buildSketchMirrorResult } from '../../../engine/sketchMirror';
 import { disposeLineGeometries } from '../../../utils/threeDisposal';
 import { SKETCH_CONSTRAINED_MATERIAL } from '../../../engine/geometryEngine/materials';
 import type { Sketch } from '../../../types/cad';
@@ -47,6 +48,21 @@ const SELECTED_SKETCH_ENTITY_MAT = new THREE.LineBasicMaterial({
   transparent: true,
   opacity: 1,
   linewidth: 3,
+});
+const MIRROR_PREVIEW_MAT = new THREE.LineBasicMaterial({
+  color: 0x0ea5e9,
+  depthTest: false,
+  depthWrite: false,
+  transparent: true,
+  opacity: 0.45,
+  linewidth: 2,
+});
+const TEXT_BOX_MAT = new THREE.LineBasicMaterial({
+  color: 0xd9772b,
+  depthTest: false,
+  depthWrite: false,
+  transparent: true,
+  opacity: 0.6,
 });
 const pendingDimensionLabelStyle: React.CSSProperties = {
   background: 'rgba(255, 255, 255, 0.94)',
@@ -255,6 +271,40 @@ function SelectedSketchEntitiesHighlight({ sketch, selectedIds }: { sketch: Sket
   }, [selectedIds, sketch]);
 
   useEffect(() => () => disposeLineGeometries(group), [group]);
+  return <primitive object={group} />;
+}
+
+function SketchMirrorPreview({ sketch }: { sketch: Sketch }) {
+  const activeTool = useCADStore((s) => s.activeTool);
+  const mirrorObjectIds = useCADStore((s) => s.sketchMirrorObjectIds);
+  const mirrorLineId = useCADStore((s) => s.sketchMirrorLineId);
+  const mirrorAxis = useCADStore((s) => s.sketchMirrorAxis);
+
+  const group = useMemo(() => {
+    if (activeTool !== 'sketch-mirror' || !mirrorLineId || mirrorObjectIds.length === 0) return null;
+    const mirror = buildSketchMirrorResult(sketch, {
+      axis: mirrorAxis,
+      lineId: mirrorLineId,
+      objectIds: mirrorObjectIds,
+      createEntityId: (entity) => `mirror-preview-${entity.id}`,
+      createPointId: (point) => `mirror-preview-${point.id}`,
+    });
+    if (!mirror || mirror.mirrored.length === 0) return null;
+    const previewSketch: Sketch = { ...sketch, entities: mirror.mirrored };
+    const previewGroup = GeometryEngine.createSketchGeometry(previewSketch);
+    previewGroup.renderOrder = 1320;
+    previewGroup.traverse((object) => {
+      const line = object as THREE.Line | THREE.LineSegments;
+      if (line.isLine || (line as THREE.LineSegments).isLineSegments) {
+        line.material = MIRROR_PREVIEW_MAT;
+        line.renderOrder = 1320;
+      }
+    });
+    return previewGroup;
+  }, [activeTool, mirrorAxis, mirrorLineId, mirrorObjectIds, sketch]);
+
+  useEffect(() => () => { if (group) disposeLineGeometries(group); }, [group]);
+  if (!group) return null;
   return <primitive object={group} />;
 }
 
@@ -597,6 +647,71 @@ function PendingDimensionHighlight({
   );
 }
 
+/**
+ * Draws a thin border box around each Sketch Text object (Fusion-style). The
+ * box hugs the rendered glyphs with small padding and is computed from the
+ * extents of the group's segment points in plane (t1/t2) coordinates.
+ */
+function SketchTextBoxes({ sketch }: { sketch: Sketch }) {
+  const lines = useMemo(() => {
+    // Group all text-segment points by textGroupId.
+    const groups = new Map<string, { uMin: number; uMax: number; vMin: number; vMax: number; height: number }>();
+    const { t1, t2 } = GeometryEngine.getSketchAxes(sketch);
+    const origin = sketch.planeOrigin ?? new THREE.Vector3(0, 0, 0);
+
+    for (const entity of sketch.entities) {
+      if (!entity.textGroupId) continue;
+      let box = groups.get(entity.textGroupId);
+      if (!box) {
+        box = { uMin: Infinity, uMax: -Infinity, vMin: Infinity, vMax: -Infinity, height: entity.textMeta?.height ?? 0 };
+        groups.set(entity.textGroupId, box);
+      }
+      if (entity.textMeta?.height) box.height = entity.textMeta.height;
+      for (const p of entity.points) {
+        const d = new THREE.Vector3(p.x, p.y, p.z).sub(origin);
+        const u = d.dot(t1);
+        const v = d.dot(t2);
+        if (u < box.uMin) box.uMin = u;
+        if (u > box.uMax) box.uMax = u;
+        if (v < box.vMin) box.vMin = v;
+        if (v > box.vMax) box.vMax = v;
+      }
+    }
+    if (groups.size === 0) return null;
+
+    const verts: number[] = [];
+    const cornerWorld = (u: number, v: number) =>
+      origin.clone().addScaledVector(t1, u).addScaledVector(t2, v);
+    for (const box of groups.values()) {
+      if (!Number.isFinite(box.uMin)) continue;
+      const pad = (box.height || (box.vMax - box.vMin)) * 0.18 || 0.5;
+      const uMin = box.uMin - pad, uMax = box.uMax + pad;
+      const vMin = box.vMin - pad, vMax = box.vMax + pad;
+      const c = [
+        cornerWorld(uMin, vMin),
+        cornerWorld(uMax, vMin),
+        cornerWorld(uMax, vMax),
+        cornerWorld(uMin, vMax),
+      ];
+      // four edges as line segments
+      for (let i = 0; i < 4; i++) {
+        const a = c[i], b = c[(i + 1) % 4];
+        verts.push(a.x, a.y, a.z, b.x, b.y, b.z);
+      }
+    }
+    if (verts.length === 0) return null;
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts), 3));
+    const seg = new THREE.LineSegments(geom, TEXT_BOX_MAT);
+    seg.renderOrder = 1100;
+    return seg;
+  }, [sketch]);
+
+  useEffect(() => () => { lines?.geometry?.dispose(); }, [lines]);
+  if (!lines) return null;
+  return <primitive object={lines} />;
+}
+
 export default function SketchRenderer() {
   const activeSketch = useCADStore((s) => s.activeSketch);
   const features = useCADStore((s) => s.features);
@@ -678,6 +793,8 @@ export default function SketchRenderer() {
           {selectedEntityIds.length > 0 && (
             <SelectedSketchEntitiesHighlight sketch={activeSketch} selectedIds={selectedEntityIds} />
           )}
+          <SketchMirrorPreview sketch={activeSketch} />
+          <SketchTextBoxes sketch={activeSketch} />
           {pendingDimensionEntityIds.length > 0 && (
             <PendingDimensionHighlight
               sketch={activeSketch}

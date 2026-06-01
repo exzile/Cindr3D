@@ -6,6 +6,8 @@ import {
   Router, TrendingUp, MonitorPlay, Camera, Gauge,
 } from 'lucide-react';
 import { usePrinterStore } from '../../store/printerStore';
+import { RibbonSection } from './FlyoutMenu';
+import { ToolButton } from './ToolButton';
 
 type PrinterTabKey =
   | 'dashboard' | 'camera' | 'status' | 'console' | 'job' | 'history'
@@ -63,72 +65,53 @@ export function RibbonPrinterTab() {
 
   return (
     <>
-      <div className="ribbon-section">
-        <div className="ribbon-section-content">
-          <button
-            className={`ribbon-button large ${showPrinter && activePrinterPage === 'printers' ? 'active' : ''}`}
-            onClick={openPrintersPage}
-            title="Choose or monitor printers"
-          >
-            <div className={`ribbon-button-icon ${connected ? 'icon-green' : 'icon-gray'}`}>
-              <MonitorPlay size={22} />
-            </div>
-            <span className="ribbon-button-label">Printers</span>
-          </button>
-        </div>
-        <div className="ribbon-section-label">Printer</div>
-      </div>
+      <RibbonSection title="PRINTER">
+        <ToolButton
+          icon={<MonitorPlay size={22} />}
+          label="Printers"
+          active={showPrinter && activePrinterPage === 'printers'}
+          onClick={openPrintersPage}
+          large
+          colorClass={connected ? 'icon-green' : 'icon-gray'}
+        />
+      </RibbonSection>
 
       {showSelectedPrinterTools && (
-        <div className="ribbon-section">
-          <div className="ribbon-section-content">
-            {PRINTER_TABS.map(({ key, label, Icon, color }) => (
-              <button
-                key={key}
-                className={`ribbon-button large ${activeTab === key ? 'active' : ''}`}
-                onClick={() => navigate(key as Parameters<typeof setActiveTab>[0])}
-                title={label}
-              >
-                <div className={`ribbon-button-icon ${color}`}>
-                  <Icon size={22} />
-                </div>
-                <span className="ribbon-button-label">{label}</span>
-              </button>
-            ))}
-          </div>
-          <div className="ribbon-section-label">Navigation</div>
-        </div>
+        <RibbonSection title="NAVIGATION">
+          {PRINTER_TABS.map(({ key, label, Icon, color }) => (
+            <ToolButton
+              key={key}
+              icon={<Icon size={22} />}
+              label={label}
+              active={activeTab === key}
+              onClick={() => navigate(key as Parameters<typeof setActiveTab>[0])}
+              large
+              colorClass={color}
+            />
+          ))}
+        </RibbonSection>
       )}
 
       {showSelectedPrinterTools && (
-        <div className="ribbon-section">
-          <div className="ribbon-section-content">
-            {!connected && (
-              <button
-                className="ribbon-button large"
-                title="Connect to printer"
-                onClick={() => navigate('settings')}
-              >
-                <div className="ribbon-button-icon icon-green">
-                  <Wifi size={22} />
-                </div>
-                <span className="ribbon-button-label">Connect</span>
-              </button>
-            )}
-            <button
-              className="ribbon-button large"
-              title={connected ? 'Emergency Stop (M112)' : 'Connect to a printer before using E-stop'}
-              onClick={handleEmergencyStop}
-              disabled={!connected}
-            >
-              <div className="ribbon-button-icon icon-red">
-                <OctagonAlert size={22} />
-              </div>
-              <span className="ribbon-button-label">E-Stop</span>
-            </button>
-          </div>
-          <div className="ribbon-section-label">Actions</div>
-        </div>
+        <RibbonSection title="ACTIONS">
+          {!connected && (
+            <ToolButton
+              icon={<Wifi size={22} />}
+              label="Connect"
+              onClick={() => navigate('settings')}
+              large
+              colorClass="icon-green"
+            />
+          )}
+          <ToolButton
+            icon={<OctagonAlert size={22} />}
+            label="E-Stop"
+            onClick={handleEmergencyStop}
+            disabled={!connected}
+            large
+            colorClass="icon-red"
+          />
+        </RibbonSection>
       )}
     </>
   );

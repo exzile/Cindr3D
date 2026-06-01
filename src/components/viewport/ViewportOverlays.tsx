@@ -12,6 +12,7 @@ interface ViewportOverlaysProps {
   onCloseContextMenu: () => void;
   onOrientViewCube: Parameters<typeof ViewCube>[0]['onOrient'];
   onHomeViewCube: () => void;
+  onZoomFitViewCube: () => void;
 }
 
 export function ViewportOverlays({
@@ -19,6 +20,7 @@ export function ViewportOverlays({
   onCloseContextMenu,
   onOrientViewCube,
   onHomeViewCube,
+  onZoomFitViewCube,
 }: ViewportOverlaysProps) {
   const camQuat = useViewCubeQuaternion();
 
@@ -29,7 +31,12 @@ export function ViewportOverlays({
       <WindowSelectOverlay />
       <LassoSelectOverlay />
       <ZoomWindowOverlay />
-      <ViewCube mainCameraQuaternion={camQuat} onOrient={onOrientViewCube} onHome={onHomeViewCube} />
+      <ViewCube
+        mainCameraQuaternion={camQuat}
+        onOrient={onOrientViewCube}
+        onHome={onHomeViewCube}
+        onZoomFit={onZoomFitViewCube}
+      />
     </>
   );
 }

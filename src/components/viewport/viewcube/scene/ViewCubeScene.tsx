@@ -8,14 +8,19 @@ import {
 } from '../constants/defs';
 
 /** The main textured cube body */
-function CubeBody({ hoveredZone }: { hoveredZone: string | null }) {
-  void hoveredZone; // reserved for future hover highlight effect
+function CubeBody({ hoveredZone, activeFace }: { hoveredZone: string | null; activeFace: string | null }) {
   const meshRef = useRef<THREE.Mesh>(null);
 
   return (
     <mesh ref={meshRef}>
       <boxGeometry args={[CUBE_SIZE, CUBE_SIZE, CUBE_SIZE]} />
-      <meshStandardMaterial color="#e8e8ec" roughness={0.7} metalness={0.05} />
+      <meshStandardMaterial
+        color={hoveredZone ? '#f4f8ff' : activeFace ? '#edf5ff' : '#e8edf3'}
+        roughness={0.58}
+        metalness={0.08}
+        emissive={hoveredZone ? '#0b3a78' : activeFace ? '#0b3a78' : '#000000'}
+        emissiveIntensity={hoveredZone ? 0.08 : activeFace ? 0.025 : 0}
+      />
     </mesh>
   );
 }
@@ -29,7 +34,7 @@ function CubeEdges() {
   return (
     <lineSegments>
       <edgesGeometry args={[boxGeo]} />
-      <lineBasicMaterial color="#999" />
+      <lineBasicMaterial color="#5f7698" transparent opacity={0.95} />
     </lineSegments>
   );
 }
@@ -38,12 +43,14 @@ function CubeEdges() {
 function FaceLabel({
   face,
   isHovered,
+  isActive,
   onHover,
   onUnhover,
   onClick,
 }: {
   face: FaceDef;
   isHovered: boolean;
+  isActive: boolean;
   onHover: () => void;
   onUnhover: () => void;
   onClick: () => void;
@@ -79,17 +86,29 @@ function FaceLabel({
       >
         <planeGeometry args={face.size} />
         <meshBasicMaterial
-          color={isHovered ? '#b0c4ff' : '#e8e8ec'}
+          color={isHovered ? '#72a8ff' : '#dbe7f7'}
           transparent
-          opacity={isHovered ? 0.85 : 0.01}
+          opacity={isHovered ? 0.86 : 0.08}
           depthTest={false}
         />
       </mesh>
       {/* Text label */}
       <mesh position={[0, 0, 0.001]}>
         <planeGeometry args={face.size} />
-        <meshBasicMaterial map={canvasTexture} transparent depthTest={false} />
+        <meshBasicMaterial
+          map={canvasTexture}
+          transparent
+          opacity={isActive ? 1 : 0.78}
+          color={isActive ? '#0d4f9b' : '#ffffff'}
+          depthTest={false}
+        />
       </mesh>
+      {isActive && (
+        <mesh position={[0, 0, 0.0005]}>
+          <planeGeometry args={[face.size[0] * 0.92, face.size[1] * 0.92]} />
+          <meshBasicMaterial color="#75b9ff" transparent opacity={0.16} depthTest={false} />
+        </mesh>
+      )}
     </group>
   );
 }
@@ -118,9 +137,9 @@ function EdgeHitZone({
     >
       <planeGeometry args={edge.size} />
       <meshBasicMaterial
-        color="#7090ff"
+        color="#ff9f2f"
         transparent
-        opacity={isHovered ? 0.6 : 0}
+        opacity={isHovered ? 0.72 : 0.22}
         depthTest={false}
       />
     </mesh>
@@ -150,9 +169,9 @@ function CornerHitZone({
     >
       <sphereGeometry args={[corner.size, 8, 8]} />
       <meshBasicMaterial
-        color="#7090ff"
+        color="#ffb14a"
         transparent
-        opacity={isHovered ? 0.7 : 0}
+        opacity={isHovered ? 0.78 : 0.28}
         depthTest={false}
       />
     </mesh>
@@ -242,9 +261,13 @@ function AxisTriad() {
 export default function ViewCubeScene({
   mainCameraQuaternion,
   onOrient,
+  onPreviewLabel,
+  dragSuppressed = false,
 }: {
   mainCameraQuaternion: THREE.Quaternion;
   onOrient: (q: THREE.Quaternion) => void;
+  onPreviewLabel?: (label: string | null) => void;
+  dragSuppressed?: boolean;
 }) {
   const { camera, invalidate } = useThree();
   const [hoveredZone, setHoveredZone] = useState<string | null>(null);
@@ -256,6 +279,7 @@ export default function ViewCubeScene({
   // — that would create the unconditional 60fps loop that previously locked both
   // canvases at full frame rate even when the viewport was completely idle.
   const dirScratch = useRef(new THREE.Vector3());
+  const upScratch = useRef(new THREE.Vector3());
   useEffect(() => {
     // Each time the quaternion prop changes, schedule one render frame so the
     // view cube mini-camera gets updated.  useFrame then applies the new
@@ -264,11 +288,33 @@ export default function ViewCubeScene({
   }, [mainCameraQuaternion, invalidate]);
   useFrame(() => {
     const dir = dirScratch.current.set(0, 0, 1).applyQuaternion(mainCameraQuaternion);
+    const up = upScratch.current.set(0, 1, 0).applyQuaternion(mainCameraQuaternion).normalize();
     camera.position.copy(dir).multiplyScalar(5);
+    camera.up.copy(up);
     camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
     // No invalidate() here — one frame per quaternion update is enough.
   });
+
+  const activeFace = useMemo(() => {
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(mainCameraQuaternion).normalize();
+    const view = forward.negate();
+    let bestFace: FaceDef | null = null;
+    let bestDot = -Infinity;
+    for (const face of FACES) {
+      const dot = view.dot(new THREE.Vector3(...face.normal).normalize());
+      if (dot > bestDot) {
+        bestDot = dot;
+        bestFace = face;
+      }
+    }
+    return bestFace && bestDot > 0.52 ? bestFace.name : null;
+  }, [mainCameraQuaternion]);
+
+  const preview = useCallback((label: string | null) => {
+    setHoveredZone(label);
+    onPreviewLabel?.(label ? `Snap to ${label.replaceAll('-', ' ')}` : null);
+  }, [onPreviewLabel]);
 
   const handleFaceClick = useCallback((face: FaceDef) => {
     const q = orientationQuaternion(face.normal, face.up);
@@ -291,7 +337,7 @@ export default function ViewCubeScene({
       <ambientLight intensity={0.7} />
       <directionalLight position={[3, 4, 5]} intensity={0.8} />
 
-      <CubeBody hoveredZone={hoveredZone} />
+      <CubeBody hoveredZone={hoveredZone} activeFace={activeFace} />
       <CubeEdges />
 
       {/* Face labels */}
@@ -300,9 +346,10 @@ export default function ViewCubeScene({
           key={face.name}
           face={face}
           isHovered={hoveredZone === face.name}
-          onHover={() => setHoveredZone(face.name)}
-          onUnhover={() => setHoveredZone(null)}
-          onClick={() => handleFaceClick(face)}
+          isActive={activeFace === face.name}
+          onHover={() => preview(face.name)}
+          onUnhover={() => preview(null)}
+          onClick={() => { if (!dragSuppressed) handleFaceClick(face); }}
         />
       ))}
 
@@ -312,9 +359,9 @@ export default function ViewCubeScene({
           key={edge.name}
           edge={edge}
           isHovered={hoveredZone === edge.name}
-          onHover={() => setHoveredZone(edge.name)}
-          onUnhover={() => setHoveredZone(null)}
-          onClick={() => handleEdgeClick(edge)}
+          onHover={() => preview(edge.name)}
+          onUnhover={() => preview(null)}
+          onClick={() => { if (!dragSuppressed) handleEdgeClick(edge); }}
         />
       ))}
 
@@ -324,9 +371,9 @@ export default function ViewCubeScene({
           key={corner.name}
           corner={corner}
           isHovered={hoveredZone === corner.name}
-          onHover={() => setHoveredZone(corner.name)}
-          onUnhover={() => setHoveredZone(null)}
-          onClick={() => handleCornerClick(corner)}
+          onHover={() => preview(corner.name)}
+          onUnhover={() => preview(null)}
+          onClick={() => { if (!dragSuppressed) handleCornerClick(corner); }}
         />
       ))}
 

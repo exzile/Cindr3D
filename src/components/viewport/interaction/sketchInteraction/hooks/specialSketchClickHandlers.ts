@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { SketchPoint } from '../../../../../types/cad';
 import { useCADStore } from '../../../../../store/cadStore';
-import { loadDefaultFont, fontPathToSegments } from '../../../../../utils/sketchTextUtil';
+import { generateText3DContours } from '../../../../../utils/sketchTextGenerate';
 
 interface SpecialClickParams {
   activeTool: string;
@@ -19,6 +19,11 @@ interface SpecialClickParams {
   sketchTextHeight: number;
   sketchTextBold: boolean;
   sketchTextItalic: boolean;
+  sketchTextCharSpacing: number;
+  sketchTextFlipH: boolean;
+  sketchTextFlipV: boolean;
+  sketchTextHAlign: 'left' | 'center' | 'right';
+  sketchTextVAlign: 'top' | 'middle' | 'bottom';
   commitSketchTextEntities: ReturnType<typeof useCADStore.getState>['commitSketchTextEntities'];
 }
 
@@ -38,26 +43,35 @@ export function handleSpecialSketchClick({
   sketchTextHeight,
   sketchTextBold,
   sketchTextItalic,
+  sketchTextCharSpacing,
+  sketchTextFlipH,
+  sketchTextFlipV,
+  sketchTextHAlign,
+  sketchTextVAlign,
   commitSketchTextEntities,
 }: SpecialClickParams): boolean {
   if (activeTool === 'sketch-text') {
     const anchorPt = point;
     setStatusMessage('Placing text...');
-    loadDefaultFont()
-      .then((font) => {
-        const segs2d = fontPathToSegments(font, sketchTextContent, 0, 0, sketchTextHeight, 8, {
-          bold: sketchTextBold,
-          italic: sketchTextItalic,
-        });
-        const seg3d = segs2d.map((s) => {
-          const p1 = anchorPt.clone().addScaledVector(t1, s.x1).addScaledVector(t2, s.y1);
-          const p2 = anchorPt.clone().addScaledVector(t1, s.x2).addScaledVector(t2, s.y2);
-          return { x1: p1.x, y1: p1.y, z1: p1.z, x2: p2.x, y2: p2.y, z2: p2.z };
-        });
-        commitSketchTextEntities(seg3d);
+    const meta = {
+      content: sketchTextContent,
+      height: sketchTextHeight,
+      font: useCADStore.getState().sketchTextFont,
+      bold: sketchTextBold,
+      italic: sketchTextItalic,
+      charSpacing: sketchTextCharSpacing,
+      flipH: sketchTextFlipH,
+      flipV: sketchTextFlipV,
+      hAlign: sketchTextHAlign,
+      vAlign: sketchTextVAlign,
+      anchor: { x: anchorPt.x, y: anchorPt.y, z: anchorPt.z },
+    };
+    generateText3DContours(t1, t2, meta)
+      .then((contours) => {
+        commitSketchTextEntities(contours, meta);
       })
       .catch(() => {
-        setStatusMessage('Sketch Text: font failed to load - check /fonts/Roboto-Regular.ttf');
+        setStatusMessage('Sketch Text: font failed to load');
       });
     return true;
   }

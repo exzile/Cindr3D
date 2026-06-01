@@ -38,6 +38,7 @@ import {
 } from 'lucide-react';
 import type { MenuItem } from '../../types/toolbar.types';
 import type { SketchMenuDeps } from './menuBuilderTypes';
+import { useCADStore } from '../../store/cadStore';
 
 const MI = 16;
 const RIBBON_ICON = 28;
@@ -169,9 +170,19 @@ export function buildSketchMenus({
     },
     { icon: <Waypoints size={MI} />, label: 'Conic Curve', onClick: () => { setActiveTool('conic'); setStatusMessage('Conic: click start, then end, then shoulder point — set ρ in palette'); } },
     { separator: true, icon: <CircleDot size={MI} />, label: 'Point', onClick: () => setActiveTool('point') },
-    { separator: true, icon: <ArrowUpFromLine size={MI} />, label: 'Project / Include', shortcut: 'P', onClick: () => { setActiveTool('sketch-project'); setStatusMessage('Project: click a solid face to project its boundary onto the sketch plane'); } },
-    { icon: <Scissors size={MI} />, label: 'Intersect', onClick: () => { setActiveTool('sketch-intersect'); setStatusMessage('Click a solid face to create intersection curve with sketch plane'); } },
-    { icon: <Download size={MI} />, label: 'Project to Surface', onClick: startSketchProjectSurfaceTool },
+    {
+      separator: true, icon: <ArrowUpFromLine size={MI} />, label: 'Project / Include',
+      onClick: () => { useCADStore.getState().setProjectLiveLink(true); setActiveTool('sketch-project'); setStatusMessage('Project: click a solid face to project its boundary onto the sketch plane (linked)'); },
+      submenu: [
+        { icon: <ArrowUpFromLine size={MI} />, label: 'Project', shortcut: 'P', onClick: () => { useCADStore.getState().setProjectLiveLink(true); setActiveTool('sketch-project'); setStatusMessage('Project: click a solid face to project its boundary onto the sketch plane (linked)'); } },
+        { icon: <Scissors size={MI} />, label: 'Intersect', onClick: () => { setActiveTool('sketch-intersect'); setStatusMessage('Intersect: click a solid face to create an intersection curve with the sketch plane'); } },
+        { icon: <RotateCcw size={MI} />, label: 'Spun Profile', onClick: () => { setActiveTool('sketch-spun-profile'); setStatusMessage('Spun Profile: click a cylindrical or revolved face to extract its axial profile'); } },
+        { icon: <Package size={MI} />, label: 'Include 3D Geometry', onClick: () => { useCADStore.getState().setProjectLiveLink(false); setActiveTool('sketch-project'); setStatusMessage('Include 3D Geometry: click a solid face to copy its edges as editable sketch geometry'); } },
+        { icon: <Download size={MI} />, label: 'Project to Surface', onClick: startSketchProjectSurfaceTool },
+        { icon: <GitMerge size={MI} />, label: 'Intersection Curve', onClick: () => { setActiveTool('sketch-intersection-curve'); setStatusMessage('Intersection Curve: click the first surface, then the second to compute their intersection'); } },
+        { icon: <Waypoints size={MI} />, label: 'Isoparametric Curve', onClick: () => { setActiveTool('isoparametric'); setStatusMessage('Iso Curve: click to place a U (horizontal) isoparametric line — hold Shift for V (vertical)'); } },
+      ],
+    },
     { separator: true, icon: <Type size={MI} />, label: 'Text', onClick: startSketchTextTool },
   ];
 
@@ -186,7 +197,7 @@ export function buildSketchMenus({
     { icon: <Move size={MI} />, label: 'Extend', onClick: () => { setActiveTool('extend'); setStatusMessage('Extend: click near an endpoint of a line to extend it to the nearest intersection'); } },
     { icon: <Scissors size={MI} />, label: 'Break', onClick: () => { setActiveTool('break'); setStatusMessage('Break: click on a line to split it at that point'); } },
     { separator: true, icon: <Copy size={MI} />, label: 'Offset', shortcut: 'O', onClick: () => { setActiveTool('sketch-offset'); setStatusMessage('Offset: click a line, then click the side to offset towards'); } },
-    { icon: <FlipHorizontal size={MI} />, label: 'Mirror', onClick: () => { setActiveTool('sketch-mirror'); setStatusMessage('Mirror: select axis direction, then click OK'); } },
+    { icon: <FlipHorizontal size={MI} />, label: 'Mirror', onClick: () => { setActiveTool('sketch-mirror'); setStatusMessage('Mirror: select objects, then pick a mirror line'); } },
     { separator: true, icon: <Repeat size={MI} />, label: 'Circular Pattern', onClick: () => { setActiveTool('sketch-circ-pattern'); setStatusMessage('Circular Pattern: set count and angle, then click OK'); } },
     { icon: <Repeat size={MI} />, label: 'Rectangular Pattern', onClick: () => { setActiveTool('sketch-rect-pattern'); setStatusMessage('Rectangular Pattern: set counts and spacing, then click OK'); } },
     { icon: <Repeat size={MI} />, label: 'Pattern on Path', onClick: () => { setActiveTool('sketch-path-pattern'); setStatusMessage('Pattern on Path: select a path curve, set count, then click OK'); } },

@@ -13,6 +13,7 @@ export interface SketchCommitCtx {
   addSketchEntity: (e: SketchEntity) => void;
   addSketchConstraint: (c: SketchConstraint) => void;
   replaceSketchEntities: (entities: SketchEntity[]) => void;
+  replaceActiveSketchGeometry: (entities: SketchEntity[], constraints: SketchConstraint[]) => void;
   cycleEntityLinetype: (id: string) => void;
   setStatusMessage: (msg: string) => void;
   polygonSides: number;

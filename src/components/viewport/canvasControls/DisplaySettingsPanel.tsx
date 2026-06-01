@@ -37,33 +37,37 @@ export default function DisplaySettingsPanel({ onClose }: { onClose: () => void 
   ];
 
   return (
-    <div className="cc-panel">
+    <div className="cc-panel cc-panel--display">
       <div className="cc-panel-title">Display Settings</div>
 
       <div className="cc-panel-section">
         <div className="cc-panel-section-title">Camera</div>
-        <button
-          className={`cc-panel-option ${cameraProjection === 'perspective' ? 'active' : ''}`}
-          onClick={() => setCameraProjection('perspective')}
-        >Perspective</button>
-        <button
-          className={`cc-panel-option ${cameraProjection === 'orthographic' ? 'active' : ''}`}
-          onClick={() => setCameraProjection('orthographic')}
-        >Orthographic</button>
+        <div className="cc-panel-option-grid cc-panel-option-grid--two">
+          <button
+            className={`cc-panel-option ${cameraProjection === 'perspective' ? 'active' : ''}`}
+            onClick={() => setCameraProjection('perspective')}
+          >Perspective</button>
+          <button
+            className={`cc-panel-option ${cameraProjection === 'orthographic' ? 'active' : ''}`}
+            onClick={() => setCameraProjection('orthographic')}
+          >Orthographic</button>
+        </div>
       </div>
       <div className="cc-panel-divider" />
 
       <div className="cc-panel-section">
         <div className="cc-panel-section-title">Visual Style</div>
-        {styles.map((s) => (
-          <button
-            key={s.value}
-            className={`cc-panel-option ${visualStyle === s.value ? 'active' : ''}`}
-            onClick={() => setVisualStyle(s.value)}
-          >
-            {s.label}
-          </button>
-        ))}
+        <div className="cc-panel-option-grid">
+          {styles.map((s) => (
+            <button
+              key={s.value}
+              className={`cc-panel-option ${visualStyle === s.value ? 'active' : ''}`}
+              onClick={() => setVisualStyle(s.value)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="cc-panel-divider" />
@@ -79,12 +83,12 @@ export default function DisplaySettingsPanel({ onClose }: { onClose: () => void 
           <span>Reflections (IBL)</span>
         </label>
         {showReflections && (
-          <div className="cc-panel-row" style={{ marginTop: 4 }}>
+          <div className="cc-panel-row">
             <span className="cc-panel-label">Preset</span>
             <select
+              className="cc-panel-select"
               value={environmentPreset}
               onChange={(e) => setEnvironmentPreset(e.target.value)}
-              style={{ fontSize: 11, padding: '2px 4px', borderRadius: 3, flex: 1 }}
             >
               {['apartment','city','dawn','forest','lobby','night','park','studio','sunset','warehouse']
                 .map((p) => <option key={p} value={p}>{p}</option>)}
@@ -158,30 +162,30 @@ export default function DisplaySettingsPanel({ onClose }: { onClose: () => void 
           <span>Ambient Occlusion</span>
         </label>
         {showGroundPlane && (
-          <div className="cc-panel-row" style={{ marginTop: 4 }}>
+          <div className="cc-panel-row">
             <span className="cc-panel-label">GP Offset</span>
             <input
+              className="cc-panel-number"
               type="number"
               step="0.1"
               value={groundPlaneOffset}
               onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) setGroundPlaneOffset(v); }}
-              style={{ width: 52, fontSize: 11, padding: '2px 4px', borderRadius: 3 }}
             />
           </div>
         )}
         {showShadows && (
-          <div className="cc-panel-row" style={{ marginTop: 4 }}>
+          <div className="cc-panel-row">
             <span className="cc-panel-label">Shadow Blur</span>
             <input
+              className="cc-panel-range"
               type="range"
               min="0"
               max="10"
               step="0.5"
               value={shadowSoftness}
               onChange={(e) => setShadowSoftness(parseFloat(e.target.value))}
-              style={{ flex: 1 }}
             />
-            <span style={{ fontSize: 10, minWidth: 22, textAlign: 'right' }}>{shadowSoftness}</span>
+            <span className="cc-panel-value">{shadowSoftness}</span>
           </div>
         )}
       </div>

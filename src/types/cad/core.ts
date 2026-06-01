@@ -133,6 +133,8 @@ export type Tool =
   | 'ruled-surface'
   | 'sketch-text'
   | 'isoparametric'
+  | 'sketch-intersection-curve'
+  | 'sketch-spun-profile'
   | 'construct-plane-two-edges'
   | 'construct-plane-three-points'
   | 'construct-axis-through-edge'

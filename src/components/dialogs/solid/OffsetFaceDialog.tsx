@@ -57,7 +57,12 @@ export function OffsetFaceDialog({ onClose }: { onClose: () => void }) {
   const faceCount = offsetFaceIds.length > 0 ? offsetFaceIds.length : (offsetFaceId ? 1 : 0);
 
   return (
-    <DialogShell title={editing ? 'Edit Offset Face' : 'Offset Face'} onClose={onClose} onConfirm={handleOK}>
+    <DialogShell
+      title={editing ? 'Edit Offset Face' : 'Offset Face'}
+      onClose={onClose}
+      size="sm"
+      onConfirm={handleOK}
+    >
       <div className="dialog-field">
         <label className="dialog-label">Body</label>
         <select
@@ -65,7 +70,7 @@ export function OffsetFaceDialog({ onClose }: { onClose: () => void }) {
           value={selectedBodyId}
           onChange={(e) => setSelectedBodyId(e.target.value)}
         >
-          {bodyFeatures.length === 0 && <option value="">— no bodies —</option>}
+          {bodyFeatures.length === 0 && <option value="">No bodies</option>}
           {bodyFeatures.map((f) => (
             <option key={f.id} value={f.id}>{f.name}</option>
           ))}
@@ -77,9 +82,9 @@ export function OffsetFaceDialog({ onClose }: { onClose: () => void }) {
           {faceCount > 0 && (
             <button
               type="button"
-              className="face-selector__clear"
+              className="face-selector__clear face-selector__clear--inline"
               onClick={clearOffsetFace}
-              style={{ marginLeft: 8, fontSize: '0.75rem', cursor: 'pointer' }}
+              aria-label="Clear selected faces"
             >
               Clear All
             </button>
@@ -98,10 +103,9 @@ export function OffsetFaceDialog({ onClose }: { onClose: () => void }) {
                     type="button"
                     className="face-selector__remove"
                     onClick={() => removeOffsetFace(id)}
-                    style={{ marginLeft: 4, cursor: 'pointer', background: 'none', border: 'none', padding: 0, lineHeight: 1 }}
                     aria-label={`Remove face ${idx + 1}`}
                   >
-                    ×
+                    x
                   </button>
                 </span>
               ))}

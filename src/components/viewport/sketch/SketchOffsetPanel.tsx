@@ -1,8 +1,16 @@
 import { useCADStore } from '../../../store/cadStore';
+import { useDraggablePanel } from './useDraggablePanel';
 import './SketchToolPanel.css';
 
 /** Floating panel for SKETCH-1.4 Offset Curves. Offset fires on canvas click. */
 export default function SketchOffsetPanel() {
+  const {
+    dragHandleProps,
+    isDragging,
+    panelEventProps,
+    panelRef,
+    panelStyle,
+  } = useDraggablePanel();
   const activeTool = useCADStore((s) => s.activeTool);
   const setActiveTool = useCADStore((s) => s.setActiveTool);
   const distance = useCADStore((s) => s.sketchOffsetDistance);
@@ -11,8 +19,13 @@ export default function SketchOffsetPanel() {
   if (activeTool !== 'sketch-offset') return null;
 
   return (
-    <div className="sketch-tool-panel">
-      <div className="sketch-tool-panel__header">
+    <div
+      ref={panelRef}
+      className={`sketch-tool-panel${isDragging ? ' is-dragging' : ''}`}
+      style={panelStyle}
+      {...panelEventProps}
+    >
+      <div className="sketch-tool-panel__header" {...dragHandleProps}>
         <span className="sketch-tool-panel__dot" />
         <span className="sketch-tool-panel__title">SKETCH OFFSET</span>
       </div>

@@ -63,17 +63,17 @@ export function orientationQuaternion(direction: [number, number, number], up: [
 /** Closest face label based on camera direction. */
 export function closestFaceLabel(cameraQuaternion: THREE.Quaternion): string {
   const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(cameraQuaternion).normalize();
-  // Camera looks at origin, so the face we see is opposite to the camera direction
-  let best = '';
-  let bestDot = -Infinity;
-  for (const face of FACES) {
-    const n = new THREE.Vector3(...face.normal);
-    const dot = n.dot(forward.clone().negate());
-    if (dot > bestDot) {
-      bestDot = dot;
-      best = face.name;
-    }
-  }
-  // Capitalize first letter only
-  return best.charAt(0) + best.slice(1).toLowerCase();
+  const view = forward.clone().negate();
+  const axes = [
+    { label: 'Right', value: view.x },
+    { label: 'Left', value: -view.x },
+    { label: 'Top', value: view.y },
+    { label: 'Bottom', value: -view.y },
+    { label: 'Front', value: view.z },
+    { label: 'Back', value: -view.z },
+  ]
+    .filter((axis) => axis.value > 0.38)
+    .sort((a, b) => b.value - a.value);
+
+  return axes.slice(0, 3).map((axis) => axis.label).join(' ') || 'Free';
 }

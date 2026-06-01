@@ -1,11 +1,12 @@
 import { X } from 'lucide-react';
-import type { Dispatch, SetStateAction } from 'react';
+import type { Dispatch, HTMLAttributes, SetStateAction } from 'react';
 import type { SketchPaletteState } from './useSketchPaletteState';
 
 interface SketchPaletteHeaderProps {
   state: SketchPaletteState;
   collapsed: boolean;
   dismissed: boolean;
+  dragHandleProps?: HTMLAttributes<HTMLDivElement>;
   setCollapsed: Dispatch<SetStateAction<boolean>>;
   setDismissed: Dispatch<SetStateAction<boolean>>;
 }
@@ -14,13 +15,14 @@ export function SketchPaletteHeader({
   state,
   collapsed,
   dismissed,
+  dragHandleProps,
   setCollapsed,
   setDismissed,
 }: SketchPaletteHeaderProps) {
   if (!state.activeSketch || dismissed) return null;
 
   return (
-    <div className="sketch-palette-header">
+    <div className="sketch-palette-header" {...dragHandleProps}>
       <span className="sketch-palette-dot" />
       <span className="sketch-palette-title">SKETCH PALETTE</span>
       {state.activeSketch.overConstrained && (
