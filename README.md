@@ -8,7 +8,7 @@
 
 <p>
   <a href="https://cindr3d.com/"><img alt="Live site" src="https://img.shields.io/badge/Live-cindr3d.com-00a86b?style=for-the-badge"></a>
-  <a href="https://github.com/exzile/Cindr3D/releases/tag/v0.5.1"><img alt="Latest release" src="https://img.shields.io/badge/Release-v0.5.1-ff6b35?style=for-the-badge"></a>
+  <a href="https://github.com/exzile/Cindr3D/releases/tag/v0.5.2"><img alt="Latest release" src="https://img.shields.io/badge/Release-v0.5.2-ff6b35?style=for-the-badge"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-2563eb?style=for-the-badge"></a>
 </p>
 
@@ -24,7 +24,7 @@
 
 <p>
   <a href="#quick-start"><strong>Quick start</strong></a> |
-  <a href="#release-051"><strong>v0.5.1</strong></a> |
+  <a href="#release-052"><strong>v0.5.2</strong></a> |
   <a href="#capabilities"><strong>Capabilities</strong></a> |
   <a href="#printer-support"><strong>Printer support</strong></a> |
   <a href="#ai-and-automation"><strong>AI</strong></a> |
@@ -53,7 +53,7 @@ Cindr3D combines a CAD-style design workspace, slicing/prep tools, and multi-pri
 | Reader | Start here | What to look for |
 |---|---|---|
 | **Maker or shop operator** | [Live site](https://cindr3d.com/) or [Quick Start](#quick-start) | Printer dashboards, profiles, calibration, camera workflows, and queue/fleet tools. |
-| **CAD contributor** | [Release 0.5.1](#release-051), [Capabilities](#capabilities), [TaskLists.txt](TaskLists.txt) | OCC modeling, sketch parity, profile selection, timeline edits, and topology tasks. |
+| **CAD contributor** | [Release 0.5.2](#release-052), [Capabilities](#capabilities), [TaskLists.txt](TaskLists.txt) | Sketch parity, primitive UX, OCC modeling, constraint solver, and topology tasks. |
 | **Self-hosting user** | [Self Hosting](#self-hosting) | Static deployment, Orange Pi updater service, release assets, and local-only operation. |
 | **AI/MCP user** | [AI and Automation](#ai-and-automation) | Claude Code pairing, BYOK chat, tool audit logs, token rotation, and safety gates. |
 
@@ -97,27 +97,36 @@ npm run test:run
 npm run build
 ```
 
-## Release 0.5.1
+## Release 0.5.2
 
-**v0.5.1** is the follow-up release after the large v0.5.0 Design/OCC milestone. It carries the merged sketch, viewport, primitive, timeline, printer-calibration, public-site, and release-readiness improvements now deployed to Azure Static Web Apps.
+**v0.5.2** is a focused Design workspace release covering sketch parity, primitive UX, and performance. All changes shipped in PRs #78 and #79.
 
 | Area | Highlights |
 |---|---|
-| **Sketch UX** | Polygon side-count glyphs, refined sketch coloring, delete/context-menu flows, better dropdown tool promotion, and Fusion-style profile selection behavior. |
-| **Viewport performance** | Reduced sketch-overlay work while panning, batched constraint glyphs, exact endpoint snapping, and camera-idle redraws. |
-| **OCC modeling** | Continued work on silhouette split, split/replace face, transform, merge-face tests, and topology-aware modeling paths. |
-| **Design UI** | Compact modern timeline, polished ribbon/dropdowns, draggable centered configuration modal, richer browser/context-menu styling. |
-| **Printer workflows** | Calibration page stability work and more QA coverage around printer dashboard/help flows. |
-| **Release ops** | Updated package version, production build verified, GitHub release published, and Azure deployment completed. |
+| **Sketch mirror** | Mirror any selection of entities across a chosen sketch line. Handles lines, arcs, circles, splines, and rectangles while preserving constraint relationships. |
+| **Sketch text** | Parametric text with Roboto Regular/Bold/Italic across three families. Text generates extrudable closed-spline contours; double-click to edit. Text-on-path support included. |
+| **Sketch point handles** | Fusion-style drag handles on every entity point type — line endpoints, arc centre/ends, spline knots — reshape geometry directly in the viewport while the constraint solver keeps connections consistent. |
+| **Advanced constraints** | G2+ smooth continuity, offset curves dimension, tangent-distance dimension, angular solver, fixed spline type, break-link, H/V points constraint, and autoConstrain on solve. Break/split arc and real cubic B-spline entity type. |
+| **Cylinder dimension labels** | Drag-handle badges matching Fusion's manipulator UX: a cyan `20.00 mm` badge on the height arrow and an orange `Ø 40.00 mm` badge on the diameter arrow. Both update live during drag and are directly editable. |
+| **Primitive operations** | Box/Cylinder/Sphere/Torus now fully support Join, Cut, Intersect, and New Component operations against existing bodies. Coil and Pipe dialogs completed to Fusion field parity. All primitive dialogs reopen from the timeline. |
+| **Viewport performance** | Fixed a pointermove listener leak that accumulated on each sketch-interaction mount. Demand-driven re-renders cut idle CPU on complex assemblies. Batched constraint glyph renders. |
+| **Toolbar polish** | RibbonSection overflow button (⋯) when tools don't fit; active tool auto-promotes into the visible ribbon. Flyout close-timing fix prevents stray menu portals intercepting canvas clicks after item selection. |
+| **Tests** | Three new test files: corner editing commit, corner fillet geometry (tangent-point reconstruction), and fillet-radius update round-trips. Mirror and arc solver edge cases added to the existing suite. |
 
 <details>
-<summary><strong>v0.5.0 foundation carried into 0.5.1</strong></summary>
+<summary><strong>v0.5.1 and v0.5.0 foundation</strong></summary>
 
+**v0.5.1:**
+- Polygon side-count glyphs, refined sketch coloring, delete/context-menu flows.
+- Compact modern timeline, polished ribbon/dropdowns, draggable configuration modal.
+- Reduced sketch-overlay work while panning, batched constraint glyphs, camera-idle redraws.
+
+**v0.5.0:**
 - OpenCascade modeling core for extrude, revolve, sweep, loft, primitives, booleans, split, shell, draft, offset faces, fillet, and chamfer.
 - Topology-aware fillet/chamfer edge metadata, stable edge anchors, circular-edge support, tangent-chain support, and validity probes.
 - Profile-aware extrude selection for nested sketch regions: plates with holes, inner islands, or targeted cuts.
 - DZND project persistence for OCC metadata, profile selections, edge-mod inputs, feature parameters, and reconstruction data.
-- Search metadata, sitemap, robots, Bing/Google verification work, Static Web Apps rewrites, Azure headers, help screenshots, and expanded tests.
+- Search metadata, sitemap, robots, Static Web Apps rewrites, Azure headers, and expanded tests.
 
 </details>
 

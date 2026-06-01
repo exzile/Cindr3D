@@ -545,82 +545,82 @@ export const faqs = [
 
 export const latestReleaseHighlights = [
   {
-    icon: Cpu,
-    label: 'OCC modeling core',
-    detail: 'The Design workspace now uses an OpenCascade-backed B-rep foundation for the major solid workflows. Extrude, revolve, sweep, loft, booleans, primitives, split, shell, draft, offset faces, fillet, and chamfer all preserve richer topology for downstream edits.',
+    icon: Copy,
+    label: 'Sketch mirror tool',
+    detail: 'Mirror any selection of sketch entities across a chosen mirror line with a single panel action. The mirror engine handles lines, arcs, circles, splines, and rectangles, preserving constraint relationships on the original entities.',
   },
   {
-    icon: Crosshair,
-    label: 'Topology-aware edge selection',
-    detail: 'Fillet and chamfer edge picking moved away from mesh-crease guessing toward selectable OCC edge metadata, with stable edge anchors, circular-edge handling, tangent-chain awareness, and live validity probes before a feature is committed.',
-  },
-  {
-    icon: Box,
-    label: 'Profile-aware extrude',
-    detail: 'Sketches with multiple closed regions can now drive the intended result: select the outer region for a plate with holes, select inner regions independently, or cut nested profiles without the operation blindly extruding every loop together.',
-  },
-  {
-    icon: ShieldCheck,
-    label: 'Reliable project reloads',
-    detail: 'Native DZND saves now carry OCC body metadata, selected profile regions, feature parameters, edge-modification inputs, and reconstruction data needed to restore extrudes, cuts, fillets, chamfers, and downstream body operations after refresh.',
+    icon: PenLine,
+    label: 'Sketch text and text-on-path',
+    detail: 'Place parametric text in any sketch using the Roboto family (Regular, Bold, Italic across three styles). Text generates extrudable closed-spline contours — double-click to edit the string, and it extrudes cleanly as any other sketch profile.',
   },
   {
     icon: Move,
-    label: 'Expanded direct-edit tools',
-    detail: 'Offset faces, draft, shell tangent-chain behavior, split and replace face, move, align, merge faces, scale, combine, and primitive creation received OCC-backed implementation work so more edits operate on the source body instead of flattened mesh fallbacks.',
+    label: 'Sketch point drag handles',
+    detail: 'Every entity type — line endpoints, arc centre and ends, spline knots — now shows a Fusion-style drag handle. Drag any point to reshape the entity directly in the viewport without opening a dialog, while the constraint solver keeps connected entities consistent.',
   },
   {
-    icon: History,
-    label: 'Modern compact timeline',
-    detail: 'The Design timeline was restyled for denser scanning, clearer feature state, and easier editing. Timeline entries now better reflect reconstructed OCC features and the tool dialogs they can reopen.',
+    icon: Wand2,
+    label: 'Advanced sketch constraints',
+    detail: 'G2+ smooth continuity, offset curves with live distance dimension, tangent-distance dimensions, angular solver, fixed spline type, and autoConstrain on solve. Break-link, H/V points, and Mirror Line constraint tools round out the parity push.',
   },
   {
-    icon: Scissors,
-    label: 'Sketch cleanup controls',
-    detail: 'Selected sketch entities can be deleted with Delete or Backspace, or from the context menu, helping users clean up profiles before extrude, cut, revolve, or sketch-driven feature creation.',
+    icon: Ruler,
+    label: 'Cylinder dimension labels',
+    detail: 'The cylinder primitive preview now shows Fusion-style floating dimension badges on its drag handles: a cyan badge for height and an orange Ø badge for diameter. Both update live while dragging and are directly editable — type a new value and press Enter.',
   },
   {
-    icon: Code2,
-    label: 'Search-ready public site',
-    detail: 'The hosted site now ships canonical route metadata, sitemap and robots files, static route rewrites, Bing verification, and Azure Static Web Apps headers so the public release is easier to discover and safer to serve.',
+    icon: Box,
+    label: 'Primitive operations complete',
+    detail: 'Box, Cylinder, Sphere, and Torus primitives now support Join, Cut, Intersect, and New Component operations against existing bodies. Coil and Pipe dialogs reached parity with Fusion\'s field set. All primitive dialogs are fully editable from the timeline.',
+  },
+  {
+    icon: Zap,
+    label: 'Viewport performance and memory',
+    detail: 'Eliminated a pointermove event listener leak that accumulated on every sketch-interaction mount. Batched constraint glyph renders and reduced redraw work while panning. Scene re-renders are now demand-driven, cutting idle CPU load in complex assemblies.',
   },
   {
     icon: LayoutGrid,
-    label: 'Refactored workspace modules',
-    detail: 'Large CAD, dialog, viewport, slicer, and printer panels were split into focused modules with shared helpers and targeted tests. The result is a cleaner foundation for release builds and future community contributions.',
+    label: 'Toolbar overflow and promotion',
+    detail: 'RibbonSection sections now show an overflow button (⋯) when not all tools fit, and the active tool automatically promotes into the visible ribbon so the selected tool is always shown. Flyout close-timing was fixed to prevent stray menu portals from intercepting canvas clicks.',
+  },
+  {
+    icon: History,
+    label: 'Spline and arc parity',
+    detail: 'Real cubic B-spline curve type for spline-control entities, break/split arc support, G2 blend constraint, and a floating arc-radius callout that lets you edit a fillet radius by clicking the arc centre dot.',
   },
   {
     icon: FlaskConical,
-    label: 'Broader OCC test coverage',
-    detail: 'New regression coverage exercises selectable edges, fillet ordering, requested-radius checks, topology anchors, sketch-to-wire conversion, primitive OCC bodies, transform and pattern operations, STEP IO, and save/reload behavior.',
+    label: 'New sketch and fillet tests',
+    detail: 'Three new test files cover corner editing commit paths, corner fillet geometry (tangent-point reconstruction), and fillet-radius update round-trips. The solver test suite was extended with mirror and arc edge cases from the PR review.',
   },
 ];
 
 export const nextReleaseFeatures = [
   {
+    icon: Crosshair,
+    label: 'Face-placement for primitives',
+    detail: 'Click any planar face in the viewport to place a cylinder, box, sphere, or torus normal to that face — matching Fusion\'s Placement → Face flow. Currently primitives default to the XY plane; the next milestone wires face-pick into the placement pipeline.',
+  },
+  {
+    icon: Scan,
+    label: 'Full sketch DOF coloring',
+    detail: 'Under-constrained entities shown in blue, fully constrained in black, and over-constrained in red — with per-entity degree-of-freedom annotations so it is always clear which dimensions or constraints are still needed to fully define a sketch.',
+  },
+  {
     icon: ShieldCheck,
-    label: 'Public-repo security hardening',
-    detail: 'Tighten release hygiene around tracked local files, persisted credentials, deploy workflow pinning, dependency audit checks, and hosted CSP profiles before the next public milestone.',
+    label: 'Sketch offset and break tools',
+    detail: 'Offset curves at a typed distance with preview, and break/trim entities at any intersection. Both are present in the solver and partially in the toolbar; the next release finishes the interactive workflows to match Fusion parity.',
   },
   {
     icon: Crosshair,
     label: 'Pure OCC selectable-edge service',
-    detail: 'Finish the clean topology service so fillet and chamfer rendering, hover, selection, tangent propagation, and edge IDs all come directly from OCC edge data instead of tessellation-derived fallback logic.',
+    detail: 'Complete the topology service so fillet and chamfer hover, selection, tangent propagation, and edge IDs come directly from OCC edge data instead of tessellation-derived fallback logic.',
   },
   {
     icon: Scan,
     label: 'Camera-assisted calibration',
     detail: 'Attach photos to calibration results, crop banded regions, align ruler overlays with live video, and use BYOK vision models for explainable first-layer, ringing, and stringing recommendations.',
-  },
-  {
-    icon: BarChart2,
-    label: 'Calibration history analytics',
-    detail: 'Track result history per printer, material, nozzle, and profile with confidence scoring, drift charts, and alerts when pressure advance, input shaper, or dimensional values move outside their expected band.',
-  },
-  {
-    icon: Rocket,
-    label: 'Plugin / extension system',
-    detail: 'A registry-based plugin architecture that lets third-party tools hook into CAD features, slicer pipeline steps, printer panels, and MCP tool sets. Plugins are isolated web workers so a broken plugin cannot crash the main workspace.',
   },
 ];
 export const PAGE_COLORS: Record<string, string> = {
