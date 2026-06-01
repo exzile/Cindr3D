@@ -49,7 +49,8 @@ Cindr3D combines a CAD-style design workspace, in-browser slicing, and multi-pri
 
 <img src=".github/divider.svg" width="100%"/>
 
-## ⚡ Quick Start
+<details>
+<summary><h2>⚡ Quick Start</h2></summary>
 
 **Requirements:** Node.js `≥ 22.12.0` · npm · A modern browser with WebGL
 
@@ -79,9 +80,12 @@ npm run test:run    # Vitest once
 npm run build       # Full production build
 ```
 
+</details>
+
 <img src=".github/divider.svg" width="100%"/>
 
-## 🚀 What's New in v0.5.2
+<details>
+<summary><h2>🚀 What's New in v0.5.2</h2></summary>
 
 Design workspace release — sketch parity, primitive UX, and performance. Ships in PRs [#78](https://github.com/exzile/Cindr3D/pull/78) and [#79](https://github.com/exzile/Cindr3D/pull/79).
 
@@ -106,9 +110,12 @@ Design workspace release — sketch parity, primitive UX, and performance. Ships
 
 </details>
 
+</details>
+
 <img src=".github/divider.svg" width="100%"/>
 
-## 🛠 Capabilities
+<details>
+<summary><h2>🛠 Capabilities</h2></summary>
 
 <details>
 <summary><b>🎨 CAD and Modeling</b></summary>
@@ -161,9 +168,12 @@ Design workspace release — sketch parity, primitive UX, and performance. Ships
 
 </details>
 
+</details>
+
 <img src=".github/divider.svg" width="100%"/>
 
-## 🖨 Printer Support
+<details>
+<summary><h2>🖨 Printer Support</h2></summary>
 
 | Feature | Klipper | Duet / RRF | Marlin USB | Other |
 |---|:---:|:---:|:---:|:---:|
@@ -180,9 +190,12 @@ Design workspace release — sketch parity, primitive UX, and performance. Ships
 
 > Mid-print cancellation requires labelled G-code. Cindr3D-sliced jobs are labelled automatically. For external slicers, enable object labels or equivalent post-processing.
 
+</details>
+
 <img src=".github/divider.svg" width="100%"/>
 
-## 🤖 AI & Automation
+<details>
+<summary><h2>🤖 AI & Automation</h2></summary>
 
 Two integration paths backed by the same local tool surface:
 
@@ -195,9 +208,12 @@ Two integration paths backed by the same local tool surface:
 
 See [docs/ai-mcp-tools.md](docs/ai-mcp-tools.md) for tool details and [docs/ai-examples.md](docs/ai-examples.md) for example workflows.
 
+</details>
+
 <img src=".github/divider.svg" width="100%"/>
 
-## 🏗 Tech Stack
+<details>
+<summary><h2>🏗 Tech Stack</h2></summary>
 
 <div align="center">
 
@@ -224,9 +240,12 @@ See [docs/ai-mcp-tools.md](docs/ai-mcp-tools.md) for tool details and [docs/ai-e
 
 </div>
 
+</details>
+
 <img src=".github/divider.svg" width="100%"/>
 
-## 📂 Project Layout
+<details>
+<summary><h2>📂 Project Layout</h2></summary>
 
 ```text
 src/
@@ -254,9 +273,12 @@ docs/              Help, AI/MCP, deployment, and technical docs
 | `npm run test:run` | Run Vitest once |
 | `npm run verify` | Run `tsc -b` and `vitest run` |
 
+</details>
+
 <img src=".github/divider.svg" width="100%"/>
 
-## 🌐 Self-Hosting
+<details>
+<summary><h2>🌐 Self-Hosting</h2></summary>
 
 Cindr3D is a static single-page app. Any static host works if unknown routes fall back to `index.html`.
 
@@ -294,9 +316,12 @@ The updater installs release assets — it does not update directly from `master
 
 </details>
 
+</details>
+
 <img src=".github/divider.svg" width="100%"/>
 
-## 🗺 Roadmap
+<details>
+<summary><h2>🗺 Roadmap</h2></summary>
 
 Active work is tracked in [TaskLists.txt](TaskLists.txt).
 
@@ -307,7 +332,12 @@ Active work is tracked in [TaskLists.txt](TaskLists.txt).
 | 📷 **Camera-assisted calibration** | Vision models for first-layer, ringing, and stringing analysis |
 | 🔌 **Plugin system** | Registry-based architecture for third-party CAD, slicer, and printer panel extensions |
 
-## 🏷 GitNexus Code Intelligence
+</details>
+
+<img src=".github/divider.svg" width="100%"/>
+
+<details>
+<summary><h2>🏷 GitNexus Code Intelligence</h2></summary>
 
 This repository is indexed by GitNexus for symbol-level navigation and impact analysis. See [AGENTS.md](AGENTS.md) for guidance.
 
@@ -319,25 +349,36 @@ npm run graph:serve     # start the GitNexus server
 
 Before modifying any function, class, or method, run impact analysis as described in [AGENTS.md](AGENTS.md).
 
+</details>
+
 <img src=".github/divider.svg" width="100%"/>
 
-## 🤝 Contributing
+<details>
+<summary><h2>🤝 Contributing</h2></summary>
 
 Start with [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and [SECURITY.md](SECURITY.md).
 
 Good contributions include focused bug fixes, geometry/slicer edge-case tests, importer/exporter improvements, viewport interaction fixes, printer workflow improvements, and documentation that helps users run or self-host the app.
 
-## 🔒 Security
+</details>
+
+<details>
+<summary><h2>🔒 Security</h2></summary>
 
 Please do not report security issues in public issues. See [SECURITY.md](SECURITY.md).
 
 Never commit printer credentials, Wi-Fi credentials, updater keys, GitHub tokens, local G-code test files, generated caches, or private project files.
 
-## 📄 License
+</details>
+
+<details>
+<summary><h2>📄 License</h2></summary>
 
 Cindr3D is released under the **MIT License**. See [LICENSE](LICENSE).
 
 The bundled Roboto font is licensed separately by Google under Apache-2.0. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+</details>
 
 <br/>
 
