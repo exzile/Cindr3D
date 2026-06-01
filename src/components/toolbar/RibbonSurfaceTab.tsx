@@ -4,6 +4,7 @@ import {
   SplitSquareHorizontal, RefreshCw, Combine, Trash2,
   MousePointer2, MoveRight, Grid3x3, Blend,
 } from 'lucide-react';
+import { useCallback } from 'react';
 import { useCADStore } from '../../store/cadStore';
 import { RibbonSection } from './FlyoutMenu';
 import { ToolButton } from './ToolButton';
@@ -17,6 +18,8 @@ export function RibbonSurfaceTab() {
   const activeDialog = useCADStore((s) => s.activeDialog);
   const activeTool = useCADStore((s) => s.activeTool);
   const startExtrudeTool = useCADStore((s) => s.startExtrudeTool);
+  const setExtrudeBodyKind = useCADStore((s) => s.setExtrudeBodyKind);
+  const setExtrudeOperation = useCADStore((s) => s.setExtrudeOperation);
   const startRevolveTool = useCADStore((s) => s.startRevolveTool);
   const startSweepTool = useCADStore((s) => s.startSweepTool);
   const startLoftTool = useCADStore((s) => s.startLoftTool);
@@ -28,10 +31,16 @@ export function RibbonSurfaceTab() {
   const openDeleteFaceDialog = useCADStore((s) => s.openDeleteFaceDialog);
   const openSurfacePrimitivesDialog = useCADStore((s) => s.openSurfacePrimitivesDialog);
   const setSketchPlaneSelecting = useCADStore((s) => s.setSketchPlaneSelecting);
+  const startSurfaceExtrudeTool = useCallback(() => {
+    startExtrudeTool();
+    setExtrudeBodyKind('surface');
+    setExtrudeOperation('new-body');
+    useCADStore.getState().setStatusMessage('Click a profile or open curve to create a surface extrude');
+  }, [setExtrudeBodyKind, setExtrudeOperation, startExtrudeTool]);
 
   const createMenuItems: MenuItem[] = [
     { icon: <PenTool size={MI} />, ribbonIcon: <PenTool size={ICON_LG} />, ribbonColorClass: 'icon-blue', label: 'Sketch', onClick: () => setSketchPlaneSelecting(true) },
-    { icon: <ArrowUpFromLine size={MI} />, ribbonIcon: <ArrowUpFromLine size={ICON_LG} />, ribbonColorClass: 'icon-green', ribbonTool: 'extrude', promoteToRibbon: true, label: 'Extrude', onClick: startExtrudeTool },
+    { icon: <ArrowUpFromLine size={MI} />, ribbonIcon: <ArrowUpFromLine size={ICON_LG} />, ribbonColorClass: 'icon-green', ribbonTool: 'extrude', promoteToRibbon: true, label: 'Extrude', onClick: startSurfaceExtrudeTool },
     { icon: <RotateCcw size={MI} />, ribbonIcon: <RotateCcw size={ICON_LG} />, ribbonColorClass: 'icon-green', ribbonTool: 'revolve', promoteToRibbon: true, label: 'Revolve', onClick: startRevolveTool },
     { icon: <Spline size={MI} />, ribbonIcon: <Spline size={ICON_LG} />, ribbonColorClass: 'icon-green', ribbonTool: 'sweep', promoteToRibbon: true, label: 'Sweep', onClick: startSweepTool },
     { icon: <Layers size={MI} />, ribbonIcon: <Layers size={ICON_LG} />, ribbonColorClass: 'icon-green', ribbonTool: 'loft', promoteToRibbon: true, label: 'Loft', onClick: startLoftTool },
@@ -61,7 +70,7 @@ export function RibbonSurfaceTab() {
     <>
       <RibbonSection title="CREATE" menuItems={createMenuItems} accentColor="#1aa04a" maxVisible={5}>
         <ToolButton icon={<PenTool size={ICON_LG} />} label="Sketch" onClick={() => setSketchPlaneSelecting(true)} large colorClass="icon-blue" />
-        <ToolButton icon={<ArrowUpFromLine size={ICON_LG} />} label="Extrude" onClick={startExtrudeTool} active={activeTool === 'extrude'} large colorClass="icon-green" />
+        <ToolButton icon={<ArrowUpFromLine size={ICON_LG} />} label="Extrude" onClick={startSurfaceExtrudeTool} active={activeTool === 'extrude'} large colorClass="icon-green" />
         <ToolButton icon={<RotateCcw size={ICON_LG} />} label="Revolve" onClick={startRevolveTool} active={activeTool === 'revolve'} large colorClass="icon-green" />
         <ToolButton icon={<Spline size={ICON_LG} />} label="Sweep" onClick={startSweepTool} large colorClass="icon-green" />
         <ToolButton icon={<Layers size={ICON_LG} />} label="Loft" onClick={startLoftTool} large colorClass="icon-green" />

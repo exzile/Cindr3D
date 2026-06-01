@@ -192,6 +192,16 @@ const _primitiveConeUp = new THREE.Vector3(0, 1, 0);
 
 type CylinderHandleKind = 'height' | 'radius';
 
+type OrbitControlsLike = { enabled: boolean } | null;
+
+function setCanvasCursor(canvas: HTMLCanvasElement, cursor: string): void {
+  canvas.style.cursor = cursor;
+}
+
+function setOrbitControlsEnabled(controls: OrbitControlsLike, enabled: boolean): void {
+  if (controls) controls.enabled = enabled;
+}
+
 interface CylinderDimensionHandleProps {
   kind: CylinderHandleKind;
   center: THREE.Vector3;
@@ -203,24 +213,19 @@ interface CylinderDimensionHandleProps {
 function CylinderDimensionHandle({ kind, center, radius, height, onChange }: CylinderDimensionHandleProps) {
   const camera = useThree((s) => s.camera);
   const gl = useThree((s) => s.gl);
-  const controls = useThree((s) => s.controls as { enabled: boolean } | null);
+  const controls = useThree((s) => s.controls as OrbitControlsLike);
   const themeColors = useThemeStore((s) => s.colors);
   const colorCss = kind === 'height' ? '#00d4ff' : '#ff8a00';
   const draggingRef = useRef(false);
   const dragOffsetRef = useRef(0);
   const latestValueRef = useRef(kind === 'height' ? height : radius);
-  const [inputValue, setInputValue] = useState(() =>
-    (kind === 'height' ? height : radius * 2).toFixed(2),
-  );
+  const skipNextBlurCommitRef = useRef(false);
+  const [draftInputValue, setDraftInputValue] = useState<string | null>(null);
+  const propInputValue = (kind === 'height' ? height : radius * 2).toFixed(2);
+  const inputValue = draftInputValue ?? propInputValue;
 
   useEffect(() => {
     latestValueRef.current = kind === 'height' ? height : radius;
-  }, [height, kind, radius]);
-
-  // Sync label from props when not dragging (e.g. user typed in the panel dialog)
-  useEffect(() => {
-    if (draggingRef.current) return;
-    setInputValue((kind === 'height' ? height : radius * 2).toFixed(2));
   }, [height, kind, radius]);
 
   const axis = useMemo(
@@ -281,13 +286,11 @@ function CylinderDimensionHandle({ kind, center, radius, height, onChange }: Cyl
     if (kind === 'height') {
       const nextHeight = Math.max(0.1, Math.round(Math.abs(axisScalar) * 200) / 100);
       latestValueRef.current = nextHeight;
-      setInputValue(nextHeight.toFixed(2));
       onChange({ height: nextHeight });
       return;
     }
     const nextRadius = Math.max(0.05, Math.round(Math.abs(axisScalar) * 100) / 100);
     latestValueRef.current = nextRadius;
-    setInputValue((nextRadius * 2).toFixed(2));
     onChange({ radius: nextRadius });
   }, [kind, onChange]);
 
@@ -311,8 +314,8 @@ function CylinderDimensionHandle({ kind, center, radius, height, onChange }: Cyl
     draggingRef.current = true;
     setGizmoDragging(true);
     dragOffsetRef.current = scalar - axisScalar;
-    if (controls) controls.enabled = false;
-    gl.domElement.style.cursor = kind === 'height' ? 'ns-resize' : 'ew-resize';
+    setOrbitControlsEnabled(controls, false);
+    setCanvasCursor(gl.domElement, kind === 'height' ? 'ns-resize' : 'ew-resize');
   }, [controls, gl, kind, rayToAxis, scalar, updateNdc]);
 
   useEffect(() => {
@@ -327,8 +330,8 @@ function CylinderDimensionHandle({ kind, center, radius, height, onChange }: Cyl
     const finishDrag = () => {
       if (!draggingRef.current) return;
       draggingRef.current = false;
-      if (controls) controls.enabled = true;
-      gl.domElement.style.cursor = '';
+      setOrbitControlsEnabled(controls, true);
+      setCanvasCursor(gl.domElement, '');
       window.setTimeout(() => setGizmoDragging(false), 0);
     };
 
@@ -340,14 +343,14 @@ function CylinderDimensionHandle({ kind, center, radius, height, onChange }: Cyl
       window.removeEventListener('pointerup', finishDrag);
       window.removeEventListener('pointercancel', finishDrag);
       if (!draggingRef.current) return;
-      if (controls) controls.enabled = true;
-      gl.domElement.style.cursor = '';
+      setOrbitControlsEnabled(controls, true);
+      setCanvasCursor(gl.domElement, '');
     };
   }, [commitValue, controls, gl, rayToAxis, updateNdc]);
 
   useEffect(() => () => {
-    if (controls) controls.enabled = true;
-    gl.domElement.style.cursor = '';
+    setOrbitControlsEnabled(controls, true);
+    setCanvasCursor(gl.domElement, '');
     setGizmoDragging(false);
   }, [controls, gl]);
 
@@ -359,8 +362,8 @@ function CylinderDimensionHandle({ kind, center, radius, height, onChange }: Cyl
         quaternion={handleQuaternion}
         scale={handleScale}
         onPointerDown={handlePointerDown}
-        onPointerOver={() => { gl.domElement.style.cursor = kind === 'height' ? 'ns-resize' : 'ew-resize'; }}
-        onPointerOut={() => { if (!draggingRef.current) gl.domElement.style.cursor = ''; }}
+        onPointerOver={() => { setCanvasCursor(gl.domElement, kind === 'height' ? 'ns-resize' : 'ew-resize'); }}
+        onPointerOut={() => { if (!draggingRef.current) setCanvasCursor(gl.domElement, ''); }}
       >
         <coneGeometry args={[1.1, 3.4, 18]} />
         <primitive object={handleMat} attach="material" />
@@ -397,12 +400,28 @@ function CylinderDimensionHandle({ kind, center, radius, height, onChange }: Cyl
                 step={0.5}
                 value={inputValue}
                 onChange={(e) => {
-                  setInputValue(e.target.value);
-                  handleInputCommit(e.target.value);
+                  setDraftInputValue(e.target.value);
                 }}
                 onKeyDown={(e) => {
                   e.stopPropagation();
+                  if (e.key === 'Enter') {
+                    skipNextBlurCommitRef.current = true;
+                    handleInputCommit((e.target as HTMLInputElement).value);
+                    setDraftInputValue(null);
+                  }
+                  if (e.key === 'Escape') {
+                    skipNextBlurCommitRef.current = true;
+                    setDraftInputValue(null);
+                  }
                   if (e.key === 'Enter' || e.key === 'Escape') (e.target as HTMLInputElement).blur();
+                }}
+                onBlur={(e) => {
+                  if (skipNextBlurCommitRef.current) {
+                    skipNextBlurCommitRef.current = false;
+                  } else if (draftInputValue !== null) {
+                    handleInputCommit(e.target.value);
+                  }
+                  setDraftInputValue(null);
                 }}
                 onFocus={(e) => e.currentTarget.select()}
                 style={{

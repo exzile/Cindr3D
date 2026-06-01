@@ -211,8 +211,21 @@ export function extrudeSketchSurface(sketch: Sketch, distance: number): THREE.Me
   const shapes = entitiesToShapes(sketch.entities, project);
   if (shapes.length === 0) return null;
 
-  let outlineLoops2D = shapes.map((shape) => shape.getPoints(64).map((point) => ({ u: point.x, v: point.y })));
-  outlineLoops2D = outlineLoops2D.filter((loop) => loop.length >= 2);
+  const shapeBoundaryLoops = (shape: THREE.Shape): THREE.Vector2[][] => [
+    shape.getPoints(64),
+    ...shape.holes.map((hole) => hole.getPoints(64)),
+  ];
+  const closeLoop = (loop: { u: number; v: number }[]) => {
+    if (loop.length < 2) return loop;
+    const first = loop[0];
+    const last = loop[loop.length - 1];
+    return Math.hypot(first.u - last.u, first.v - last.v) < 1e-6 ? loop : [...loop, first];
+  };
+
+  const outlineLoops2D = shapes
+    .flatMap(shapeBoundaryLoops)
+    .map((loop) => closeLoop(loop.map((point) => ({ u: point.x, v: point.y }))))
+    .filter((loop) => loop.length >= 2);
   if (outlineLoops2D.length === 0) return null;
 
   const positions: number[] = [];
