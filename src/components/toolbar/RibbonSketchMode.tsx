@@ -7,8 +7,8 @@ import {
   Move, Ruler, AlignCenter, Minus, Lock, Tangent, Equal,
   LocateFixed, FlipHorizontal, GitMerge, Zap,
   Grid3X3, Magnet, FileUp, MousePointer2, Square, Crosshair,
-  ArrowLeftRight, ArrowUpDown,
-  Check, ChevronDown, X, Grid, Unlink,
+  ArrowLeftRight, ArrowUpDown, RotateCcw, Package,
+  Check, ChevronDown, X, Unlink,
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore';
 import { RibbonSection } from './FlyoutMenu';
@@ -17,7 +17,8 @@ import type { MenuItem } from '../../types/toolbar.types';
 import type { Tool as CADTool } from '../../types/cad';
 
 // Estimated px consumed by CONFIGURE + INSPECT + INSERT + SELECT sections
-const SMALL_SECTIONS_W = 360;
+// CONFIGURE ≈92 + INSPECT ≈92 + INSERT ≈92 + SELECT ≈76 + borders + buffer = 400
+const SMALL_SECTIONS_W = 400;
 // Per-section overhead: 8px*2 padding + 4px buffer + overflow button width
 const SECTION_OVERHEAD = 54; // 20px pad + 34px overflow btn
 // Approximate width per tool button
@@ -50,6 +51,7 @@ export function RibbonSketchMode({
   const activeTool = useCADStore((s) => s.activeTool);
   const setActiveTool = useCADStore((s) => s.setActiveTool);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
+  const setProjectLiveLink = useCADStore((s) => s.setProjectLiveLink);
   const setActiveDialog = useCADStore((s) => s.setActiveDialog);
   const finishSketch = useCADStore((s) => s.finishSketch);
   const cancelSketch = useCADStore((s) => s.cancelSketch);
@@ -72,8 +74,15 @@ export function RibbonSketchMode({
         <ToolButton
           icon={<PenLine size={20} />}
           label="Line"
-          tool="line"
+          active={['line', 'construction-line', 'centerline', 'midpoint-line'].includes(activeTool)}
+          onClick={() => setActiveTool('line' as T)}
           colorClass="icon-blue"
+          dropdown={[
+            { label: 'Line', icon: <PenLine size={14} />, onClick: () => setActiveTool('line' as T) },
+            { label: 'Construction Line', icon: <Minus size={14} />, onClick: () => setActiveTool('construction-line' as T) },
+            { label: 'Centerline', icon: <Minus size={14} />, onClick: () => setActiveTool('centerline' as T) },
+            { label: 'Midpoint Line', icon: <Minus size={14} />, onClick: () => { setActiveTool('midpoint-line' as T); setStatusMessage('Midpoint Line: click the midpoint, then one endpoint'); } },
+          ]}
         />
         <ToolButton
           icon={<RectangleHorizontal size={20} />}
@@ -90,13 +99,15 @@ export function RibbonSketchMode({
         <ToolButton
           icon={<Circle size={20} />}
           label="Circle"
-          active={['circle', 'circle-2point', 'circle-3point'].includes(activeTool)}
+          active={['circle', 'circle-2point', 'circle-3point', 'circle-2tangent', 'circle-3tangent'].includes(activeTool)}
           onClick={() => setActiveTool('circle' as T)}
           colorClass="icon-blue"
           dropdown={[
             { label: 'Center Diameter Circle', icon: <Circle size={14} />, onClick: () => setActiveTool('circle' as T) },
             { label: '2-Point Circle', icon: <Circle size={14} />, onClick: () => setActiveTool('circle-2point' as T) },
             { label: '3-Point Circle', icon: <Circle size={14} />, onClick: () => setActiveTool('circle-3point' as T) },
+            { label: '2-Tangent Circle', icon: <Circle size={14} />, onClick: () => { setActiveTool('circle-2tangent' as T); setStatusMessage('2-Tangent Circle: click first line, then second line — set radius in palette'); } },
+            { label: '3-Tangent Circle', icon: <Circle size={14} />, onClick: () => { setActiveTool('circle-3tangent' as T); setStatusMessage('3-Tangent Circle: click three lines to create the incircle'); } },
           ]}
         />
         <ToolButton
@@ -109,6 +120,20 @@ export function RibbonSketchMode({
             { label: '3-Point Arc', icon: <Spline size={14} />, onClick: () => setActiveTool('arc-3point' as T) },
             { label: 'Center Point Arc', icon: <Spline size={14} />, onClick: () => setActiveTool('arc' as T) },
             { label: 'Tangent Arc', icon: <Spline size={14} />, onClick: () => setActiveTool('arc-tangent' as T) },
+          ]}
+        />
+        <ToolButton
+          icon={<Circle size={20} />}
+          label="Slot"
+          active={['slot-center', 'slot-overall', 'slot-center-point', 'slot-3point-arc', 'slot-center-arc'].includes(activeTool)}
+          onClick={() => { setActiveTool('slot-center' as T); setStatusMessage('Center Slot: click first centre, then second centre, then width'); }}
+          colorClass="icon-blue"
+          dropdown={[
+            { label: 'Center to Center Slot', icon: <Circle size={14} />, onClick: () => { setActiveTool('slot-center' as T); setStatusMessage('Center Slot: click first centre, then second centre, then width'); } },
+            { label: 'Overall Slot', icon: <Circle size={14} />, onClick: () => { setActiveTool('slot-overall' as T); setStatusMessage('Overall Slot: click first end, then second end, then width'); } },
+            { label: 'Center Point Slot', icon: <Circle size={14} />, onClick: () => { setActiveTool('slot-center-point' as T); setStatusMessage('Center Point Slot: click centre, then end, then width'); } },
+            { label: 'Three Point Arc Slot', icon: <Circle size={14} />, onClick: () => { setActiveTool('slot-3point-arc' as T); setStatusMessage('Three Point Arc Slot: click arc start, arc end, point on arc, then width'); } },
+            { label: 'Center Point Arc Slot', icon: <Circle size={14} />, onClick: () => { setActiveTool('slot-center-arc' as T); setStatusMessage('Center Point Arc Slot: click arc centre, arc start, arc end, then width'); } },
           ]}
         />
         <ToolButton
@@ -146,9 +171,22 @@ export function RibbonSketchMode({
             { label: 'Control Point Spline', icon: <Waypoints size={14} />, onClick: () => { setActiveTool('spline-control' as T); setStatusMessage('Control Point Spline: click to add control points, right-click to commit'); } },
           ]}
         />
-        <ToolButton icon={<ArrowUpFromLine size={20} />} label="Project" active={activeTool === 'sketch-project'} onClick={() => { setActiveTool('sketch-project' as T); setStatusMessage('Project: click a solid face to project its boundary onto the sketch plane'); }} colorClass="icon-blue" />
-        <ToolButton icon={<Scissors size={20} />} label="Intersect" active={activeTool === 'sketch-intersect'} onClick={() => { setActiveTool('sketch-intersect' as T); setStatusMessage('Click a solid face to create intersection curve with sketch plane'); }} colorClass="icon-blue" />
-        <ToolButton icon={<Download size={20} />} label="Proj Surface" active={activeTool === 'sketch-project-surface'} onClick={startSketchProjectSurfaceTool} colorClass="icon-blue" />
+        <ToolButton
+          icon={<ArrowUpFromLine size={20} />}
+          label="Project"
+          active={['sketch-project', 'sketch-intersect', 'sketch-project-surface', 'sketch-intersection-curve', 'sketch-spun-profile', 'isoparametric'].includes(activeTool)}
+          onClick={() => { setProjectLiveLink(true); setActiveTool('sketch-project' as T); setStatusMessage('Project: click a solid face to project its boundary onto the sketch plane (linked)'); }}
+          colorClass="icon-blue"
+          dropdown={[
+            { label: 'Project', icon: <ArrowUpFromLine size={14} />, onClick: () => { setProjectLiveLink(true); setActiveTool('sketch-project' as T); setStatusMessage('Project: click a solid face to project its boundary onto the sketch plane (linked)'); } },
+            { label: 'Intersect', icon: <Scissors size={14} />, onClick: () => { setActiveTool('sketch-intersect' as T); setStatusMessage('Intersect: click a solid face to create an intersection curve with the sketch plane'); } },
+            { label: 'Spun Profile', icon: <RotateCcw size={14} />, onClick: () => { setActiveTool('sketch-spun-profile' as T); setStatusMessage('Spun Profile: click a cylindrical or revolved face to extract its axial profile'); } },
+            { label: 'Include 3D Geometry', icon: <Package size={14} />, onClick: () => { setProjectLiveLink(false); setActiveTool('sketch-project' as T); setStatusMessage('Include 3D Geometry: click a solid face to copy its edges as editable sketch geometry'); } },
+            { label: 'Project to Surface', icon: <Download size={14} />, onClick: startSketchProjectSurfaceTool },
+            { label: 'Intersection Curve', icon: <GitMerge size={14} />, onClick: () => { setActiveTool('sketch-intersection-curve' as T); setStatusMessage('Intersection Curve: click the first surface, then the second to compute their intersection'); } },
+            { label: 'Isoparametric Curve', icon: <Waypoints size={14} />, onClick: () => { setActiveTool('isoparametric' as T); setStatusMessage('Iso Curve: click to place a U (horizontal) isoparametric line — hold Shift for V (vertical)'); } },
+          ]}
+        />
         {hasLinkedEntities && (
           <ToolButton
             icon={<Unlink size={20} />}
@@ -158,13 +196,6 @@ export function RibbonSketchMode({
           />
         )}
         <ToolButton icon={<Type size={20} />} label="Text" active={activeTool === 'sketch-text'} onClick={startSketchTextTool} colorClass="icon-blue" />
-        <ToolButton
-          icon={<Grid size={20} />}
-          label="Iso Curve"
-          active={activeTool === 'isoparametric'}
-          onClick={() => { setActiveTool('isoparametric' as T); setStatusMessage('Iso Curve: click to place a U (horizontal) isoparametric line — hold Shift for V (vertical)'); }}
-          colorClass="icon-blue"
-        />
       </RibbonSection>
 
       {/* ── MODIFY ─────────────────────────────────── */}
@@ -174,7 +205,7 @@ export function RibbonSketchMode({
         <ToolButton icon={<Scissors size={20} />} label="Trim" onClick={() => { setActiveTool('trim' as T); setStatusMessage('Trim: click a segment portion to remove it'); }} colorClass="icon-blue" />
         <ToolButton icon={<ChevronsRight size={20} />} label="Extend" onClick={() => { setActiveTool('extend' as T); setStatusMessage('Extend: click near an endpoint to extend to nearest intersection'); }} colorClass="icon-blue" />
         <ToolButton icon={<Copy size={20} />} label="Offset" active={activeTool === 'sketch-offset'} onClick={() => { setActiveTool('sketch-offset' as T); setStatusMessage('Offset: click a line, then click the side to offset towards'); }} colorClass="icon-blue" />
-        <ToolButton icon={<FlipHorizontal2 size={20} />} label="Mirror" active={activeTool === 'sketch-mirror'} onClick={() => { setActiveTool('sketch-mirror' as T); setStatusMessage('Mirror: select axis direction, then click OK'); }} colorClass="icon-blue" />
+        <ToolButton icon={<FlipHorizontal2 size={20} />} label="Mirror" active={activeTool === 'sketch-mirror'} onClick={() => { setActiveTool('sketch-mirror' as T); setStatusMessage('Mirror: select objects, then pick a mirror line'); }} colorClass="icon-blue" />
         <ToolButton icon={<Move size={20} />} label="Move" onClick={() => { setActiveTool('sketch-move' as T); setStatusMessage('Move: set X/Y offset, then click OK'); }} colorClass="icon-blue" />
       </RibbonSection>
 
@@ -223,9 +254,9 @@ export function RibbonSketchMode({
       {/* ── INSERT ─────────────────────────────────── */}
       <RibbonSection title="INSERT" accentColor="#555">
         <div className="ribbon-stack">
-          <ToolButton icon={<FileUp size={ICON_SM} />} label="Insert SVG" onClick={() => setActiveDialog('insert-svg')} colorClass="icon-gray" />
-          <ToolButton icon={<FileUp size={ICON_SM} />} label="Insert DXF" onClick={() => setActiveDialog('insert-dxf')} colorClass="icon-gray" />
-          <ToolButton icon={<FileUp size={ICON_SM} />} label="Insert Canvas" onClick={() => setActiveDialog('insert-canvas')} colorClass="icon-gray" />
+          <ToolButton icon={<FileUp size={ICON_SM} />} label="SVG" onClick={() => setActiveDialog('insert-svg')} colorClass="icon-gray" />
+          <ToolButton icon={<FileUp size={ICON_SM} />} label="DXF" onClick={() => setActiveDialog('insert-dxf')} colorClass="icon-gray" />
+          <ToolButton icon={<FileUp size={ICON_SM} />} label="Canvas" onClick={() => setActiveDialog('insert-canvas')} colorClass="icon-gray" />
         </div>
       </RibbonSection>
 

@@ -52,6 +52,42 @@
   border-radius: 0 6px 6px 6px;
   padding: 4px 0;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.08);
+  transform-origin: top left;
+  animation: sketchCtxUnfurl 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.flyout-menu::after {
+  content: '';
+  position: absolute;
+  left: 4px; right: 4px; top: 4px;
+  height: 26px;
+  border-radius: 4px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,0.13), rgba(255,255,255,0));
+  mix-blend-mode: screen;
+  opacity: 0;
+  animation: sketchCtxPaperSheen 340ms ease-out both;
+}
+
+.flyout-menu > * { animation: sketchCtxInkIn 160ms ease-out both; }
+.flyout-menu > *:nth-child(1) { animation-delay: 40ms; }
+.flyout-menu > *:nth-child(2) { animation-delay: 54ms; }
+.flyout-menu > *:nth-child(3) { animation-delay: 68ms; }
+.flyout-menu > *:nth-child(4) { animation-delay: 82ms; }
+.flyout-menu > *:nth-child(n+5) { animation-delay: 96ms; }
+
+.flyout-menu.closing {
+  pointer-events: none;
+  animation: sketchCtxFoldAway 120ms ease-in both;
+}
+.flyout-menu.closing > *,
+.flyout-menu.closing::after { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .flyout-menu,
+  .flyout-menu::after,
+  .flyout-menu > *,
+  .flyout-menu.closing { animation: none; }
 }
 
 .flyout-menu-separator {
@@ -163,5 +199,40 @@
   border-radius: 6px;
   padding: 4px 0;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  transform-origin: top left;
+  animation: sketchCtxUnfurl 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.flyout-submenu::after {
+  content: '';
+  position: absolute;
+  left: 4px; right: 4px; top: 4px;
+  height: 22px;
+  border-radius: 4px;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,0.13), rgba(255,255,255,0));
+  mix-blend-mode: screen;
+  opacity: 0;
+  animation: sketchCtxPaperSheen 280ms ease-out both;
+}
+
+.flyout-submenu > * { animation: sketchCtxInkIn 140ms ease-out both; }
+.flyout-submenu > *:nth-child(1) { animation-delay: 30ms; }
+.flyout-submenu > *:nth-child(2) { animation-delay: 44ms; }
+.flyout-submenu > *:nth-child(3) { animation-delay: 58ms; }
+.flyout-submenu > *:nth-child(n+4) { animation-delay: 72ms; }
+
+.flyout-submenu.closing {
+  pointer-events: none;
+  animation: sketchCtxFoldAway 120ms ease-in both;
+}
+.flyout-submenu.closing > *,
+.flyout-submenu.closing::after { animation: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .flyout-submenu,
+  .flyout-submenu::after,
+  .flyout-submenu > *,
+  .flyout-submenu.closing { animation: none; }
 }
 

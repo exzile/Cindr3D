@@ -6,6 +6,7 @@ import type { MenuItem } from '../../types/toolbar.types';
 import { useCADStore } from '../../store/cadStore';
 import { useEscapeKey } from '../../hooks/useEscapeKey';
 import { ToolButton } from './ToolButton';
+import { useMenuClose } from './useMenuClose';
 
 // ─── Flyout Sub-Menu Item ─────────────────────────────────────────────────
 
@@ -19,9 +20,14 @@ export function FlyoutMenuItem({
   onSelectItem?: (item: MenuItem) => void;
 }) {
   const [submenuOpen, setSubmenuOpen] = useState(false);
+  const { closing: submenuClosing, startClose: startSubmenuClose } = useMenuClose();
   const wrapperRef = useRef<HTMLDivElement>(null);
-  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [submenuPos, setSubmenuPos] = useState({ top: 0, left: 0 });
+
+  const closeSubmenu = useCallback(() => {
+    startSubmenuClose(() => setSubmenuOpen(false));
+  }, [startSubmenuClose]);
 
   const handleClick = () => {
     if (item.disabled) return;
@@ -32,13 +38,14 @@ export function FlyoutMenuItem({
       return;
     }
     if (item.submenu) {
-      setSubmenuOpen(!submenuOpen);
+      if (submenuOpen) closeSubmenu();
+      else setSubmenuOpen(true);
     }
   };
 
   const openSubmenu = () => {
     if (!item.submenu) return;
-    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
     if (wrapperRef.current) {
       const rect = wrapperRef.current.getBoundingClientRect();
       setSubmenuPos({ top: rect.top, left: rect.right });
@@ -47,12 +54,12 @@ export function FlyoutMenuItem({
   };
 
   const scheduleClose = () => {
-    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
-    closeTimerRef.current = setTimeout(() => setSubmenuOpen(false), 120);
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => closeSubmenu(), 120);
   };
 
   useEffect(() => () => {
-    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current);
   }, []);
 
   return (
@@ -76,9 +83,9 @@ export function FlyoutMenuItem({
       </button>
       {item.submenu && submenuOpen && createPortal(
         <div
-          className="flyout-submenu"
+          className={`flyout-submenu${submenuClosing ? ' closing' : ''}`}
           style={{ position: 'fixed', top: submenuPos.top, left: submenuPos.left }}
-          onMouseEnter={() => { if (closeTimerRef.current) clearTimeout(closeTimerRef.current); }}
+          onMouseEnter={() => { if (hoverTimerRef.current) clearTimeout(hoverTimerRef.current); }}
           onMouseLeave={scheduleClose}
         >
           {item.submenu.map((sub, i) => (
@@ -105,6 +112,7 @@ export function RibbonSection({ title, children, menuItems, accentColor, maxVisi
   maxVisible?: number;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const { closing: menuClosing, startClose: startMenuClose } = useMenuClose();
   const sectionRef = useRef<HTMLDivElement>(null);
   const labelRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -118,6 +126,21 @@ export function RibbonSection({ title, children, menuItems, accentColor, maxVisi
 
   const visibleCount = maxVisible !== undefined ? Math.min(maxVisible, childArray.length) : childArray.length;
   const hasOverflow = hasFlyout && visibleCount < childArray.length;
+
+  // Animated close — used for Escape and click-outside, where nothing else is
+  // re-rendering the section, so the fold-away timer runs to completion.
+  const closeMenu = useCallback(() => {
+    startMenuClose(() => setMenuOpen(false));
+  }, [startMenuClose]);
+
+  // Immediate close — used when an item is SELECTED. Activating a tool triggers a
+  // synchronous store update + re-render of this section; the animated close's
+  // 120ms timer could be dropped in that churn, leaving the portal mounted and
+  // intercepting the user's next canvas click. Unmounting synchronously here is
+  // race-free and is the standard "menu vanishes when you pick something" UX.
+  const closeMenuImmediate = useCallback(() => {
+    setMenuOpen(false);
+  }, []);
 
   // A ToolButton child is active if it explicitly passes active=true (dropdown
   // tools compute this from the activeTool set) or if its `tool` prop matches.
@@ -221,14 +244,14 @@ export function RibbonSection({ title, children, menuItems, accentColor, maxVisi
         menuRef.current && !menuRef.current.contains(target) &&
         !el?.closest('.flyout-submenu')
       ) {
-        setMenuOpen(false);
+        closeMenu();
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [menuOpen]);
+  }, [menuOpen, closeMenu]);
 
-  const handleEscape = useCallback(() => setMenuOpen(false), []);
+  const handleEscape = useCallback(() => closeMenu(), [closeMenu]);
   useEscapeKey(handleEscape, menuOpen);
 
   return (
@@ -259,13 +282,13 @@ export function RibbonSection({ title, children, menuItems, accentColor, maxVisi
       {hasFlyout && menuOpen && createPortal(
         <div
           ref={menuRef}
-          className="flyout-menu"
+          className={`flyout-menu${menuClosing ? ' closing' : ''}`}
           style={{ position: 'fixed', top: menuPos.top, left: menuPos.left }}
         >
           {menuItems!.map((item, i) => (
             <div key={i}>
               {item.separator && <div className="flyout-menu-separator" />}
-              <FlyoutMenuItem item={item} onClose={() => setMenuOpen(false)} onSelectItem={handleSelectMenuItem} />
+              <FlyoutMenuItem item={item} onClose={closeMenuImmediate} onSelectItem={handleSelectMenuItem} />
             </div>
           ))}
         </div>,

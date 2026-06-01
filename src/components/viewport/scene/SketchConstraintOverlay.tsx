@@ -1,4 +1,5 @@
-import { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect } from 'react';
+import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
@@ -207,6 +208,24 @@ function makeEqualTicks(pos: THREE.Vector3, t1: THREE.Vector3, t2: THREE.Vector3
 }
 
 /**
+ * Position for the mirror glyph — placed ON the entity edge (not floating above)
+ * like Fusion 360: top of a circle/arc, midpoint of a line.
+ */
+function mirrorGlyphPosition(e: SketchEntity, t2: THREE.Vector3): THREE.Vector3 | null {
+  const pts = e.points;
+  if (!pts || pts.length === 0) return null;
+  const center = new THREE.Vector3(pts[0].x, pts[0].y, pts[0].z);
+  if (e.type === 'circle' || e.type === 'arc' || e.type === 'ellipse' || e.type === 'elliptical-arc') {
+    // Place at the topmost point of the circle/arc (center + radius along t2)
+    return center.clone().addScaledVector(t2, e.radius ?? 5);
+  }
+  // For lines and everything else: midpoint
+  const sum = new THREE.Vector3();
+  for (const p of pts) sum.add(new THREE.Vector3(p.x, p.y, p.z));
+  return sum.divideScalar(pts.length);
+}
+
+/**
  * Small T-shape (used for tangent constraint).
  */
 function makeTangentSymbol(pos: THREE.Vector3, t1: THREE.Vector3, t2: THREE.Vector3, size: number, color: THREE.Color): THREE.LineSegments {
@@ -278,6 +297,26 @@ export default function SketchConstraintOverlay() {
   // Hide the glyphs while the camera moves so they don't add draw calls every
   // frame during panning/orbiting; they reappear when the camera settles.
   const cameraIdle = useCameraIdle();
+
+  // Mirror badges: screen-space <Html> pins so they never flash during camera
+  // movement and stay a constant pixel size regardless of sketch scale.
+  const mirrorPositions = useMemo(() => {
+    if (!activeSketch?.constraints?.length) return [];
+    const sketch = activeSketch;
+    const entityMap = new Map<string, SketchEntity>();
+    for (const e of sketch.entities) entityMap.set(e.id, e);
+    const { t2 } = GeometryEngine.getSketchAxes(sketch);
+    const positions: THREE.Vector3[] = [];
+    for (const constraint of sketch.constraints) {
+      if (constraint.type !== 'mirror') continue;
+      const entities = constraint.entityIds.map((id) => entityMap.get(id)).filter(Boolean) as SketchEntity[];
+      for (let ei = 0; ei < Math.min(2, entities.length); ei++) {
+        const pos = mirrorGlyphPosition(entities[ei], t2);
+        if (pos) positions.push(pos);
+      }
+    }
+    return positions;
+  }, [activeSketch]);
 
   const objects = useMemo(() => {
     // Respect the "Constraints" visibility toggle. Besides being correct, hiding
@@ -405,6 +444,9 @@ export default function SketchConstraintOverlay() {
           }
           break;
         }
+        case 'mirror':
+          // Handled by the dedicated mirrorObjects memo — always shown.
+          break;
         case 'fix':
         case 'midpoint': {
           // Small ring at the fixed/midpoint
@@ -482,9 +524,7 @@ export default function SketchConstraintOverlay() {
     return objs.length > 0 ? mergeGlyphsByMaterial(objs) : null;
   }, [activeSketch, showConstraints]);
 
-  // Dispose every constraint glyph's geometry when `objects` is replaced
-  // (active sketch changed, constraints edited) or on unmount. Materials are
-  // module-level singletons and must NOT be disposed.
+  // Dispose geometry when objects are replaced or on unmount. Materials are singletons — never dispose.
   useEffect(() => {
     return () => {
       if (!objects) return;
@@ -499,13 +539,36 @@ export default function SketchConstraintOverlay() {
     };
   }, [objects]);
 
-  if (!objects || !cameraIdle) return null;
+  // Mirror badges render outside the cameraIdle gate so they never flash.
+  const mirrorBadge: React.CSSProperties = {
+    pointerEvents: 'none',
+    userSelect: 'none',
+    fontSize: '8px',
+    fontFamily: 'monospace',
+    fontWeight: 700,
+    color: '#222',
+    background: 'rgba(180,180,180,0.92)',
+    border: '1px solid rgba(0,0,0,0.65)',
+    borderRadius: '2px',
+    padding: '0 2px',
+    lineHeight: '11px',
+    whiteSpace: 'nowrap',
+  };
 
   return (
-    <group renderOrder={999}>
-      {objects.map((obj, i) => (
-        <primitive key={i} object={obj} />
+    <>
+      {mirrorPositions.map((pos, i) => (
+        <Html key={i} position={pos} center zIndexRange={[998, 0]} style={{ pointerEvents: 'none' }}>
+          <div style={mirrorBadge}>[ ]</div>
+        </Html>
       ))}
-    </group>
+      {cameraIdle && objects && (
+        <group renderOrder={999}>
+          {objects.map((obj, i) => (
+            <primitive key={i} object={obj} />
+          ))}
+        </group>
+      )}
+    </>
   );
 }

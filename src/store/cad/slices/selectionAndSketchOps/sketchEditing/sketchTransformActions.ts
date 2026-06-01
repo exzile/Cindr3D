@@ -1,5 +1,6 @@
 import { GeometryEngine } from '../../../../../engine/GeometryEngine';
-import type { SketchEntity, SketchPoint } from '../../../../../types/cad';
+import { buildSketchMirrorResult } from '../../../../../engine/sketchMirror';
+import type { SketchConstraint, SketchEntity, SketchPoint } from '../../../../../types/cad';
 import type { CADSliceContext } from '../../../sliceContext';
 import type { CADState } from '../../../state';
 
@@ -99,102 +100,92 @@ export function createSketchTransformActions({ set, get }: CADSliceContext): Par
     setSketchOffsetDistance: (d) => set({ sketchOffsetDistance: Math.max(0.001, Math.abs(d)) }),
 
     sketchMirrorAxis: 'vertical',
+    sketchMirrorObjectIds: [],
+    sketchMirrorLineId: null,
+    sketchMirrorSelectionMode: 'objects',
     setSketchMirrorAxis: (axis) => set({ sketchMirrorAxis: axis }),
+    setSketchMirrorObjectIds: (ids) => set({ sketchMirrorObjectIds: Array.from(new Set(ids)) }),
+    toggleSketchMirrorObjectId: (id) =>
+      set((state) => {
+        const current = state.sketchMirrorObjectIds ?? [];
+        return {
+          sketchMirrorObjectIds: current.includes(id)
+            ? current.filter((existing) => existing !== id)
+            : [...current, id],
+        };
+      }),
+    setSketchMirrorLineId: (id) => set({ sketchMirrorLineId: id, sketchMirrorAxis: id ?? 'vertical' }),
+    setSketchMirrorSelectionMode: (mode) => set({ sketchMirrorSelectionMode: mode }),
+    clearSketchMirrorSelections: () => set({ sketchMirrorObjectIds: [], sketchMirrorLineId: null, sketchMirrorAxis: 'vertical' }),
     commitSketchMirror: () => {
-      const { activeSketch, sketchMirrorAxis } = get();
+      const { activeSketch, sketchMirrorAxis, sketchMirrorObjectIds = [], sketchMirrorLineId } = get();
       if (!activeSketch || activeSketch.entities.length === 0) return;
-      const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
+      const mirror = buildSketchMirrorResult(activeSketch, {
+        axis: sketchMirrorAxis,
+        lineId: sketchMirrorLineId,
+        objectIds: sketchMirrorObjectIds,
+      });
+      if (!mirror) {
+        set({ statusMessage: 'Mirror: select objects and a valid mirror line' });
+        return;
+      }
+      const { mirrored, idMap, reflectLocal, mirrorPoint, label } = mirror;
 
-      // SKETCH-1.3: support picking an existing sketch line as the mirror axis
-      const isPicked = sketchMirrorAxis !== 'horizontal' && sketchMirrorAxis !== 'vertical' && sketchMirrorAxis !== 'diagonal';
-      let axisOrigin = { lx: 0, ly: 0 };
-      let axisDirLx = 0, axisDirLy = 1; // local 2D direction
+      const mirroredConstraints = activeSketch.constraints
+        .filter((constraint) => (
+          constraint.entityIds.length > 0
+          && constraint.entityIds.every((id) => idMap.has(id))
+        ))
+        .map((constraint) => ({
+          ...constraint,
+          id: crypto.randomUUID(),
+          entityIds: constraint.entityIds.map((id) => idMap.get(id)!),
+          polygonMeta: constraint.polygonMeta
+            ? {
+                ...constraint.polygonMeta,
+                center: mirrorPoint({ id: crypto.randomUUID(), ...constraint.polygonMeta.center }),
+              }
+            : undefined,
+        }));
 
-      if (isPicked) {
-        const axisEnt = activeSketch.entities.find((e) => e.id === sketchMirrorAxis && e.points.length >= 2);
-        if (!axisEnt) {
-          set({ statusMessage: 'Mirror: picked line not found in sketch' });
-          return;
-        }
-        const p0 = axisEnt.points[0];
-        const p1 = axisEnt.points[1];
-        axisOrigin = {
-          lx: p0.x * t1.x + p0.y * t1.y + p0.z * t1.z,
-          ly: p0.x * t2.x + p0.y * t2.y + p0.z * t2.z,
-        };
-        const dl = {
-          lx: (p1.x - p0.x) * t1.x + (p1.y - p0.y) * t1.y + (p1.z - p0.z) * t1.z,
-          ly: (p1.x - p0.x) * t2.x + (p1.y - p0.y) * t2.y + (p1.z - p0.z) * t2.z,
-        };
-        const dlen = Math.sqrt(dl.lx * dl.lx + dl.ly * dl.ly) || 1;
-        axisDirLx = dl.lx / dlen;
-        axisDirLy = dl.ly / dlen;
-      } else {
-        // Fixed-axis: centroid as pivot
-        let cx = 0, cy2 = 0, cz = 0, n = 0;
-        for (const e of activeSketch.entities) {
-          for (const p of e.points) { cx += p.x; cy2 += p.y; cz += p.z; n++; }
-        }
-        if (n === 0) return;
-        cx /= n; cy2 /= n; cz /= n;
-        axisOrigin = {
-          lx: cx * t1.x + cy2 * t1.y + cz * t1.z,
-          ly: cx * t2.x + cy2 * t2.y + cz * t2.z,
-        };
-        if (sketchMirrorAxis === 'horizontal') { axisDirLx = 1; axisDirLy = 0; }
-        else if (sketchMirrorAxis === 'vertical') { axisDirLx = 0; axisDirLy = 1; }
-        else { axisDirLx = 1 / Math.SQRT2; axisDirLy = 1 / Math.SQRT2; }
+      const mirroredDimensions = activeSketch.dimensions
+        .filter((dimension) => (
+          dimension.entityIds.length > 0
+          && dimension.entityIds.every((id) => idMap.has(id))
+        ))
+        .map((dimension) => {
+          const position = reflectLocal(dimension.position.x, dimension.position.y);
+          return {
+            ...dimension,
+            id: crypto.randomUUID(),
+            entityIds: dimension.entityIds.map((id) => idMap.get(id)!),
+            position: { x: position.lx, y: position.ly },
+          };
+        });
+
+      // One mirror constraint per original↔mirrored pair so the overlay can
+      // render the reflection-arrow glyph on both sides.
+      const pairConstraints: SketchConstraint[] = [];
+      for (const [origId, mirId] of idMap) {
+        pairConstraints.push({
+          id: crypto.randomUUID(),
+          type: 'mirror',
+          entityIds: sketchMirrorLineId
+            ? [origId, mirId, sketchMirrorLineId]
+            : [origId, mirId],
+        });
       }
 
-      // Reflect a local 2D point across the axis line (origin + direction)
-      const reflectLocal = (lx: number, ly: number): { lx: number; ly: number } => {
-        const ox = lx - axisOrigin.lx, oy = ly - axisOrigin.ly;
-        const dot = ox * axisDirLx + oy * axisDirLy;
-        const projX = dot * axisDirLx, projY = dot * axisDirLy;
-        return { lx: axisOrigin.lx + 2 * projX - ox, ly: axisOrigin.ly + 2 * projY - oy };
-      };
-
-      const mirrorPt = (p: SketchPoint): SketchPoint => {
-        const lx = p.x * t1.x + p.y * t1.y + p.z * t1.z;
-        const ly = p.x * t2.x + p.y * t2.y + p.z * t2.z;
-        const { lx: mx, ly: my } = reflectLocal(lx, ly);
-        // Apply the reflection as an IN-PLANE delta to the original world point so
-        // the plane-normal component (offset/custom planes) is preserved. Rebuilding
-        // from t1*mx + t2*my alone assumes the plane passes through the origin and
-        // collapses mirrored copies onto that plane (e.g. snaps to z=0).
-        const dmx = mx - lx, dmy = my - ly;
-        return {
-          ...p,
-          id: crypto.randomUUID(),
-          x: p.x + t1.x * dmx + t2.x * dmy,
-          y: p.y + t1.y * dmx + t2.y * dmy,
-          z: p.z + t1.z * dmx + t2.z * dmy,
-        };
-      };
-
-      const label = isPicked ? 'picked line' : sketchMirrorAxis;
-      const entitiesToMirror = isPicked
-        ? activeSketch.entities.filter((e) => e.id !== sketchMirrorAxis)
-        : activeSketch.entities;
-
-      // Reflection reverses arc orientation; the renderer forces CCW, so swap
-      // start/end and map each angle θ → 2φ − θ, where φ is the axis-line angle in
-      // the local (t1,t2) frame. This general formula reproduces the horizontal
-      // (φ=0) and vertical (φ=π/2) special cases and also fixes the diagonal and
-      // picked-line cases that previously left angles unchanged.
-      const twoPhi = 2 * Math.atan2(axisDirLy, axisDirLx);
-      const mirrored: SketchEntity[] = entitiesToMirror.map((e) => {
-        const hasAngles = e.startAngle !== undefined && e.endAngle !== undefined;
-        return {
-          ...e,
-          id: crypto.randomUUID(),
-          points: e.points.map(mirrorPt),
-          startAngle: hasAngles ? twoPhi - (e.endAngle as number) : e.startAngle,
-          endAngle: hasAngles ? twoPhi - (e.startAngle as number) : e.endAngle,
-        };
-      });
+      const mirroredIds = mirrored.map((entity) => entity.id);
       set({
-        activeSketch: { ...activeSketch, entities: [...activeSketch.entities, ...mirrored] },
+        activeSketch: {
+          ...activeSketch,
+          entities: [...activeSketch.entities, ...mirrored],
+          constraints: [...activeSketch.constraints, ...mirroredConstraints, ...pairConstraints],
+          dimensions: [...activeSketch.dimensions, ...mirroredDimensions],
+        },
+        selectedEntityIds: mirroredIds,
+        sketchMirrorObjectIds: mirroredIds,
         statusMessage: `Mirror: ${mirrored.length} entities added (${label})`,
       });
     },

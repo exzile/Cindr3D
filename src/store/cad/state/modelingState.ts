@@ -502,24 +502,38 @@ export interface CADModelingState {
   sketchTextContent: string;
   sketchTextHeight: number;
   sketchTextFont: string;
-  /** SK-A6: bold / italic formatting flags */
   sketchTextBold: boolean;
   sketchTextItalic: boolean;
+  sketchTextType: 'standard' | 'along-path';
+  sketchTextCharSpacing: number;
+  sketchTextFlipH: boolean;
+  sketchTextFlipV: boolean;
+  sketchTextHAlign: 'left' | 'center' | 'right';
+  sketchTextVAlign: 'top' | 'middle' | 'bottom';
   setSketchTextContent: (v: string) => void;
   setSketchTextHeight: (v: number) => void;
   setSketchTextFont: (v: string) => void;
   setSketchTextBold: (v: boolean) => void;
   setSketchTextItalic: (v: boolean) => void;
+  setSketchTextType: (v: 'standard' | 'along-path') => void;
+  setSketchTextCharSpacing: (v: number) => void;
+  setSketchTextFlipH: (v: boolean) => void;
+  setSketchTextFlipV: (v: boolean) => void;
+  setSketchTextHAlign: (v: 'left' | 'center' | 'right') => void;
+  setSketchTextVAlign: (v: 'top' | 'middle' | 'bottom') => void;
+  /** When set, the Text panel is editing an existing text group rather than placing a new one. */
+  editingTextGroupId: string | null;
   startSketchTextTool: () => void;
+  /** Load an existing text group's params into the panel and enter edit mode. */
+  startSketchTextEdit: (groupId: string) => void;
+  /** Regenerate the text group currently being edited from the panel params. */
+  commitSketchTextEdit: () => void;
+  /** Place text bent along the given sketch curve (Type = along-path). */
+  commitTextAlongPath: (pathEntityId: string) => void;
+  /** Commit text as closed glyph contours (each becomes one closed spline entity). */
   commitSketchTextEntities: (
-    segments: Array<{
-      x1: number;
-      y1: number;
-      z1: number;
-      x2: number;
-      y2: number;
-      z2: number;
-    }>,
+    contours: Array<Array<{ x: number; y: number; z: number }>>,
+    meta?: import('../../../types/cad').SketchTextMeta,
   ) => void;
   cancelSketchTextTool: () => void;
 
@@ -601,11 +615,26 @@ export interface CADModelingState {
   // S10 — Spline post-commit handle editing
   editingSplineEntityId: string | null;
   hoveredSplinePointIndex: number | null;
+  sketchEditingArcId: string | null;
+  setSketchEditingArcId: (id: string | null) => void;
   draggingSplinePointIndex: number | null;
   setEditingSplineEntityId: (id: string | null) => void;
   setHoveredSplinePointIndex: (i: number | null) => void;
   setDraggingSplinePointIndex: (i: number | null) => void;
   updateSplineControlPoint: (
+    entityId: string,
+    pointIndex: number,
+    x: number,
+    y: number,
+    z: number,
+  ) => void;
+  /**
+   * Move one point of any sketch entity to a new world position, then run the
+   * constraint solver with that point pinned. Used by the entity-point drag
+   * handles so dragging e.g. a rectangle corner keeps coincident corners welded
+   * and horizontal/vertical edges aligned (Fusion-style).
+   */
+  dragSketchPoint: (
     entityId: string,
     pointIndex: number,
     x: number,
@@ -625,4 +654,12 @@ export interface CADModelingState {
   // D46 — Project to Surface
   startSketchProjectSurfaceTool: () => void;
   cancelSketchProjectSurfaceTool: () => void;
+
+  // D47 — Intersection Curve (mesh × mesh)
+  startSketchIntersectionCurveTool: () => void;
+  cancelSketchIntersectionCurveTool: () => void;
+
+  // D48 — Spun Profile (revolve cross-section)
+  startSketchSpunProfileTool: () => void;
+  cancelSketchSpunProfileTool: () => void;
 }

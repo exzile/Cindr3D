@@ -110,7 +110,7 @@ export function createConstraintAndViewActions({ set, get }: CADSliceContext): P
     sketchComputeDeferred: false,
     setSketchComputeDeferred: (v) => set({ sketchComputeDeferred: v }),
     sketchConstrainedEntityIds: [],
-    solveSketch: () => {
+    solveSketch: (opts) => {
       const { activeSketch } = get();
       if (!activeSketch) return;
       const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
@@ -120,6 +120,18 @@ export function createConstraintAndViewActions({ set, get }: CADSliceContext): P
       // trial over-constraint check in engine/overConstraintCheck.ts can run
       // the exact same assembly — prediction must match reality.
       const { entities: projectedEntities, constraints } = buildSketchSolveInputs(activeSketch);
+
+      // Handle-drag: pin the point the user is dragging so the solver treats it
+      // as the driving target and moves coincident/constrained geometry to match
+      // it, instead of relaxing the dragged point back. The synthetic `fix`
+      // constraint lives only for this solve — it is never stored on the sketch.
+      if (opts?.fixedPoint) {
+        constraints.push({
+          type: 'fix',
+          entityIds: [opts.fixedPoint.entityId],
+          pointIndices: [opts.fixedPoint.pointIndex],
+        });
+      }
 
       // Plan B: connected-component partitioning. Entities that share no constraint
       // can be solved independently. For N isolated polygons this reduces complexity

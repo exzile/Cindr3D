@@ -32,7 +32,8 @@ export type ConstraintType =
   | 'line-parallel-surface'
   | 'horizontal-points'
   | 'vertical-points'
-  | 'smooth';
+  | 'smooth'
+  | 'mirror';
 
 export interface SketchConstraint {
   id: string;
@@ -57,6 +58,32 @@ export interface SketchConstraint {
     baseAngle: number;
     kind?: 'inscribed' | 'circumscribed';
   };
+}
+
+/**
+ * Sketch Text metadata. Text is rendered as a group of `line` segment entities
+ * (one per glyph stroke), all sharing a `textGroupId`. The full parameter set
+ * plus the placement anchor is stored once (on the group's first segment) as
+ * `textMeta`, so the text can be regenerated when re-edited (double-click) or
+ * when any parameter changes.
+ */
+export interface SketchTextMeta {
+  content: string;
+  height: number;
+  font: string;
+  bold: boolean;
+  italic: boolean;
+  charSpacing: number;
+  flipH: boolean;
+  flipV: boolean;
+  hAlign: 'left' | 'center' | 'right';
+  vAlign: 'top' | 'middle' | 'bottom';
+  /** Placement anchor in world (sketch-plane) coordinates. */
+  anchor: { x: number; y: number; z: number };
+  /** 'standard' lays glyphs on a straight baseline; 'along-path' bends them along a curve. */
+  type?: 'standard' | 'along-path';
+  /** For along-path text: the id of the sketch entity used as the baseline curve. */
+  pathEntityId?: string;
 }
 
 export interface SketchEntity {
@@ -93,6 +120,10 @@ export interface SketchEntity {
   isoParamDir?: 'u' | 'v';
   isoParamValue?: number;
   isoParamBodyId?: string;
+  /** Shared across all glyph-stroke segments of one Sketch Text object. */
+  textGroupId?: string;
+  /** Full text params + anchor; present only on the group's first segment. */
+  textMeta?: SketchTextMeta;
 }
 
 export type DimensionOrientation = 'horizontal' | 'vertical' | 'auto';

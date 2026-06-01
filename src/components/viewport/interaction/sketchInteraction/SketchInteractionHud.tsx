@@ -4,6 +4,7 @@ import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import { useCADStore } from '../../../../store/cadStore';
 import type { Sketch, SketchPoint, SnapType } from '../../../../types/cad';
 import type { ThemeColors } from '../../../../types/theme.types';
+import { findFilletCorner, computeFilletGeometry, type FilletGeometry } from './cornerFilletGeometry';
 
 interface SketchInteractionHudProps {
   mousePos: THREE.Vector3 | null;
@@ -28,9 +29,24 @@ export function SketchInteractionHud({
 }: SketchInteractionHudProps) {
   const polygonSides = useCADStore((s) => s.sketchPolygonSides);
   const setPolygonSides = useCADStore((s) => s.setSketchPolygonSides);
+  const filletRadius = useCADStore((s) => s.sketchFilletRadius);
+  const setFilletRadius = useCADStore((s) => s.setSketchFilletRadius);
 
   if (!mousePos || !activeSketch) {
     return null;
+  }
+
+  // Fillet tool: latch onto the nearest real corner (two coincident lines) so the
+  // radius callout stays put and stays clickable. Compute the live arc geometry
+  // for the center-dot preview, using the same helper the commit uses.
+  let filletCornerPos: THREE.Vector3 | null = null;
+  let filletGeo: FilletGeometry | null = null;
+  if (activeTool === 'sketch-fillet') {
+    const cornerInfo = findFilletCorner(activeSketch, mousePos, Infinity);
+    if (cornerInfo) {
+      filletCornerPos = cornerInfo.corner;
+      filletGeo = computeFilletGeometry(activeSketch, cornerInfo, filletRadius);
+    }
   }
 
   const isPolygonTool =
@@ -125,7 +141,11 @@ export function SketchInteractionHud({
       const displayLen = activeTool === 'slot-center-point' ? delta.length() * 2 : delta.length();
       const angDeg = (Math.atan2(delta.dot(t2), delta.dot(t1)) * 180) / Math.PI;
       slotHudText = `${displayLen.toFixed(3)} ${units}   ${Math.abs(angDeg).toFixed(1)} deg`;
-      slotHudPosition = p0.clone().add(mousePos).multiplyScalar(0.5);
+      // Offset the label perpendicular to the axis so it doesn't sit on the line.
+      const axisDir = delta.lengthSq() > 1e-9 ? delta.clone().normalize() : t1.clone();
+      const perpDir = axisDir.clone().cross(planeNormal).normalize();
+      const offset = Math.max(2, delta.length() * 0.15);
+      slotHudPosition = p0.clone().add(mousePos).multiplyScalar(0.5).addScaledVector(perpDir, offset);
       slotHintText = activeTool === 'slot-center-point' ? 'Select end centre' : 'Select end point';
     } else if (drawingPoints.length === 2) {
       const p1 = new THREE.Vector3(drawingPoints[0].x, drawingPoints[0].y, drawingPoints[0].z);
@@ -210,6 +230,42 @@ export function SketchInteractionHud({
           <meshBasicMaterial color={0xff6600} />
         </mesh>
       </group>
+
+      {/* Dropped-point markers: a white/black dot at every point the user has
+          placed in the current tool (first click of a slot/line/arc etc.) so the
+          anchor is visible while the rest of the shape is dragged out. */}
+      {drawingPoints.map((p, i) => (
+        <Html key={`dp-${i}`} position={[p.x, p.y, p.z]} center zIndexRange={[96, 0]} style={{ pointerEvents: 'none' }}>
+          <div style={{
+            width: 8, height: 8, borderRadius: '50%',
+            background: '#ffffff', border: '1.5px solid #1a1a1a',
+            boxShadow: '0 0 2px rgba(0,0,0,0.5)', pointerEvents: 'none',
+          }} />
+        </Html>
+      ))}
+
+      {/* Fillet preview: the fillet circle (faint ring) + its centre dot, à la Fusion.
+          ringGeometry args only depend on radius, so geometry isn't rebuilt on every
+          cursor move — only the group position changes. */}
+      {activeTool === 'sketch-fillet' && filletGeo && (
+        <>
+          {/* Faint full circle that the fillet arc belongs to */}
+          <group position={filletGeo.center}>
+            <mesh>
+              <ringGeometry args={[Math.max(0.001, filletRadius * 0.94), filletRadius, 64]} />
+              <meshBasicMaterial color={0x66ccff} transparent opacity={0.5} depthTest={false} />
+            </mesh>
+          </group>
+          {/* Centre dot — screen-constant size so it's always visible (Fusion-style) */}
+          <Html position={filletGeo.center} center zIndexRange={[300, 0]} style={{ pointerEvents: 'none' }}>
+            <div style={{
+              width: 7, height: 7, borderRadius: '50%',
+              background: '#ffffff', border: '1.5px solid #1a1a1a',
+              boxShadow: '0 0 2px rgba(0,0,0,0.6)', pointerEvents: 'none',
+            }} />
+          </Html>
+        </>
+      )}
 
       {showLineDimensions && lineMidpoint && lineAnglePosition && (
         <>
@@ -342,6 +398,69 @@ export function SketchInteractionHud({
               <div style={{ position: 'absolute', top: -2, left: 5, width: 2, height: 16, background: '#ff88cc', transform: 'rotate(0deg)' }} />
             </div>
           )}
+        </Html>
+      )}
+
+      {/* Fillet radius callout — corner dot + SVG leader + editable radius box */}
+      {activeTool === 'sketch-fillet' && filletCornerPos && (
+        <Html position={filletCornerPos} zIndexRange={[300, 0]} style={{ pointerEvents: 'none', overflow: 'visible' }}>
+          <div style={{ position: 'relative', width: 0, height: 0 }}>
+            {/* Grip dot at the corner */}
+            <div style={{
+              position: 'absolute',
+              left: -4, top: -4,
+              width: 8, height: 8,
+              borderRadius: '50%',
+              background: themeColors.accent,
+              border: `1.5px solid ${themeColors.bgPanel}`,
+              pointerEvents: 'none',
+            }} />
+
+            {/* SVG leader line from corner to label */}
+            <svg style={{ position: 'absolute', overflow: 'visible', pointerEvents: 'none' }} width="0" height="0">
+              <line x1="0" y1="0" x2="22" y2="-44" stroke={themeColors.accent} strokeWidth="1" />
+            </svg>
+
+            {/* Radius input box, offset above-right */}
+            <div
+              style={{ position: 'absolute', left: 22, top: -68, pointerEvents: 'auto' }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{
+                ...baseLabelStyle,
+                pointerEvents: 'auto', // override baseLabelStyle's 'none' (inherited by the input)
+                borderColor: themeColors.accent,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '4px',
+              }}>
+                <span style={{ color: themeColors.textSecondary, fontWeight: 600, fontSize: '10px' }}>R</span>
+                <input
+                  type="number"
+                  min={0.01}
+                  step={0.5}
+                  value={filletRadius}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (!Number.isNaN(v) && v > 0) setFilletRadius(v);
+                  }}
+                  onKeyDown={(e) => e.stopPropagation()}
+                  style={{
+                    width: '52px',
+                    fontSize: '11px',
+                    textAlign: 'right',
+                    color: themeColors.textPrimary,
+                    background: themeColors.bgInput,
+                    border: `1px solid ${themeColors.border}`,
+                    borderRadius: '2px',
+                    padding: '1px 4px',
+                  }}
+                />
+                <span style={{ color: themeColors.textSecondary, fontSize: '10px' }}>{units}</span>
+              </div>
+            </div>
+          </div>
         </Html>
       )}
     </>

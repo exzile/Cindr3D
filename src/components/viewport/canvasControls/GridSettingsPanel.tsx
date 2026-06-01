@@ -16,10 +16,10 @@ export default function GridSettingsPanel({ onClose }: { onClose: () => void }) 
   };
 
   return (
-    <div className="cc-panel">
+    <div className="cc-panel cc-panel--compact">
       <div className="cc-panel-title">Grid Settings</div>
       {gridLocked && (
-        <div style={{ padding: '4px 8px', fontSize: 10, color: '#888', fontStyle: 'italic' }}>
+        <div className="cc-panel-note">
           Grid is locked. Unlock to change settings.
         </div>
       )}
@@ -37,7 +37,6 @@ export default function GridSettingsPanel({ onClose }: { onClose: () => void }) 
               onKeyDown={(e) => { if (e.key === 'Enter') apply(); }}
               min={0.1}
               step={1}
-              style={gridLocked ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
             />
             <span className="cc-panel-field-unit">mm</span>
           </div>

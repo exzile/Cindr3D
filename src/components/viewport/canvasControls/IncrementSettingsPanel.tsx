@@ -22,7 +22,7 @@ export default function IncrementSettingsPanel({ onClose }: { onClose: () => voi
   };
 
   return (
-    <div className="cc-panel">
+    <div className="cc-panel cc-panel--compact">
       <div className="cc-panel-title">Set Increments</div>
       <div className="cc-panel-section">
         <div className="cc-panel-field">

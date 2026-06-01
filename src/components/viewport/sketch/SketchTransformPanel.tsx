@@ -1,4 +1,5 @@
 import { useCADStore } from '../../../store/cadStore';
+import { useDraggablePanel } from './useDraggablePanel';
 import './SketchToolPanel.css';
 
 /**
@@ -10,6 +11,13 @@ import './SketchToolPanel.css';
  * Appears when activeTool is any of the above.
  */
 export default function SketchTransformPanel() {
+  const {
+    dragHandleProps,
+    isDragging,
+    panelEventProps,
+    panelRef,
+    panelStyle,
+  } = useDraggablePanel();
   const activeTool = useCADStore((s) => s.activeTool);
   const setActiveTool = useCADStore((s) => s.setActiveTool);
 
@@ -58,8 +66,13 @@ export default function SketchTransformPanel() {
     : isScale ? 'SCALE' : 'ROTATE';
 
   return (
-    <div className="sketch-tool-panel">
-      <div className="sketch-tool-panel__header">
+    <div
+      ref={panelRef}
+      className={`sketch-tool-panel${isDragging ? ' is-dragging' : ''}`}
+      style={panelStyle}
+      {...panelEventProps}
+    >
+      <div className="sketch-tool-panel__header" {...dragHandleProps}>
         <span className="sketch-tool-panel__dot" />
         <span className="sketch-tool-panel__title">SKETCH {title}</span>
       </div>

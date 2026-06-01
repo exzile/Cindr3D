@@ -6,8 +6,17 @@ export interface TextSegment {
 }
 
 export interface TextFormatOptions {
-  /** Italic shear factor applied to segment X (0 = upright, ~0.25 = standard italic) */
   italic?: boolean;
-  /** Bold — stored as metadata; visual stroke-width expansion is not implemented for polyline */
   bold?: boolean;
+  /**
+   * Apply synthetic italic shear. Set by the font resolver when the loaded face
+   * is upright but italic was requested (no true italic face available). When a
+   * real italic face is loaded this stays false so glyphs aren't double-slanted.
+   */
+  shear?: boolean;
+  charSpacing?: number;
+  flipH?: boolean;
+  flipV?: boolean;
+  hAlign?: 'left' | 'center' | 'right';
+  vAlign?: 'top' | 'middle' | 'bottom';
 }

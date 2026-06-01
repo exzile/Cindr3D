@@ -14,13 +14,16 @@ import ImportedModels from '../scene/ImportedModels';
 import CanvasReferences from '../scene/CanvasReferences';
 import FastenerBodies from '../scene/FastenerBodies';
 import WorldAxes from '../scene/WorldAxes';
-import { GroundPlaneGrid } from '../scene/SketchPlaneGrid';
+import SketchRenderer from '../scene/SketchRenderer';
+import SketchPlaneGrid, { GroundPlaneGrid } from '../scene/SketchPlaneGrid';
+import SceneTheme from '../scene/SceneTheme';
 import { CrashBoundary } from '../EnvErrorBoundary';
 import FilletEdgeHighlight from '../scene/FilletEdgeHighlight';
 import FilletGizmo from '../scene/FilletGizmo';
 import ChamferEdgeHighlight from '../scene/ChamferEdgeHighlight';
 import ChamferGizmo from '../scene/ChamferGizmo';
 import { useCADStore } from '../../../store/cadStore';
+import { useThemeStore } from '../../../store/themeStore';
 import type { Layout, QuadrantDef, QuadrantKey } from '../../../types/multi-view-canvas.types';
 
 const QUADRANTS: Record<QuadrantKey, QuadrantDef> = {
@@ -31,19 +34,23 @@ const QUADRANTS: Record<QuadrantKey, QuadrantDef> = {
 };
 
 /**
- * SharedScene renders scene objects ONCE at the Canvas level (outside any View).
- * Because each <View> uses scissoring over the same root Canvas scene, these
- * objects are visible in every viewport without needing to be mounted per-View.
- * Mounting them inside each <View> would cause THREE.Object3D reparenting
- * collisions (a mesh can only have one parent — the last View's mount wins).
+ * SharedScene is mounted inside each split <View>.
+ * Drei renders a View's portal scene whenever that View has children, so
+ * root-level scene objects would not appear in split viewports.
  */
 function SharedScene() {
   const activeDialog = useCADStore((s) => s.activeDialog);
+  const activeSketch = useCADStore((s) => s.activeSketch);
+  const gridVisible = useCADStore((s) => s.gridVisible);
+  const sketchGridEnabled = useCADStore((s) => s.sketchGridEnabled);
+  const edgeOperationActive = activeDialog === 'fillet' || activeDialog === 'chamfer';
 
   return (
     <>
+      <SceneTheme />
       <ambientLight intensity={0.6} />
       <directionalLight position={[50, 80, 50]} intensity={1.0} />
+      {!edgeOperationActive && <SketchRenderer />}
       <PrimitiveBodies />
       <PrimitivePreview />
       <ExtrudedBodies />
@@ -52,7 +59,17 @@ function SharedScene() {
       <CanvasReferences />
       <FastenerBodies />
       <WorldAxes />
-      <GroundPlaneGrid />
+      {gridVisible && !activeSketch && <GroundPlaneGrid />}
+      {activeSketch && sketchGridEnabled && activeSketch.plane !== 'custom' && (
+        <SketchPlaneGrid plane={activeSketch.plane} />
+      )}
+      {activeSketch && sketchGridEnabled && activeSketch.plane === 'custom' && (
+        <SketchPlaneGrid
+          plane="custom"
+          customNormal={activeSketch.planeNormal}
+          customOrigin={activeSketch.planeOrigin}
+        />
+      )}
       <CrashBoundary label="EdgeOp" resetKey={activeDialog}>
         <FilletEdgeHighlight />
         <FilletGizmo />
@@ -163,6 +180,7 @@ function QuadrantLabel({ label, color }: { label: string; color: string }) {
 }
 
 export default function MultiViewCanvas({ layout }: { layout: Layout }) {
+  const canvasBg = useThemeStore((s) => s.colors.canvasBg);
   const containerRef = useRef<HTMLDivElement>(null!);
   const topRef = useRef<HTMLDivElement>(null!);
   const frontRef = useRef<HTMLDivElement>(null!);
@@ -198,7 +216,7 @@ export default function MultiViewCanvas({ layout }: { layout: Layout }) {
   return (
     <div
       ref={containerRef}
-      style={{ position: 'relative', width: '100%', height: '100%' }}
+      style={{ position: 'relative', width: '100%', height: '100%', background: canvasBg }}
     >
       {/* DOM grid of quadrant divs — each acts as a tracked region for its View */}
       <div
@@ -207,6 +225,7 @@ export default function MultiViewCanvas({ layout }: { layout: Layout }) {
           inset: 0,
           display: 'grid',
           gridTemplate,
+          zIndex: 2,
         }}
       >
         {/* eslint-disable react-hooks/refs -- refs passed as prop, not read during render */}
@@ -216,7 +235,7 @@ export default function MultiViewCanvas({ layout }: { layout: Layout }) {
             ref={q.ref}
             style={{
               position: 'relative',
-              border: '1px solid #2a2a2a',
+              border: '1px solid rgba(42, 42, 42, 0.55)',
               overflow: 'hidden',
             }}
           >
@@ -233,19 +252,17 @@ export default function MultiViewCanvas({ layout }: { layout: Layout }) {
         frameloop="demand"
         style={{ position: 'absolute', inset: 0 }}
         gl={{ antialias: true, alpha: false }}
+        onCreated={({ gl }) => {
+          gl.setClearColor(canvasBg);
+          gl.toneMapping = THREE.ACESFilmicToneMapping;
+          gl.toneMappingExposure = 1.2;
+        }}
       >
-        {/*
-          SharedScene is rendered ONCE here at the Canvas root level, outside any
-          <View>. All Views scissor over the same underlying Canvas/scene, so these
-          objects are visible in every viewport. This avoids the THREE.Object3D
-          single-parent constraint: mounting the same mesh inside multiple <View>
-          portals would reparent it, leaving only the last View populated.
-        */}
-        <SharedScene />
         <View.Port />
         {/* eslint-disable react-hooks/refs -- refs passed to track prop */}
         {quadrantList.map((q, i) => (
           <View key={q.def.key} index={i + 1} track={q.ref}>
+            <SharedScene />
             <QuadrantCamera kind={q.def.key} />
             <MultiViewScene kind={q.def.key} />
           </View>

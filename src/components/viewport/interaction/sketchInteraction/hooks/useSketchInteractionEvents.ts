@@ -80,6 +80,11 @@ interface UseSketchInteractionEventsParams {
   sketchTextHeight: number;
   sketchTextBold: boolean;
   sketchTextItalic: boolean;
+  sketchTextCharSpacing: number;
+  sketchTextFlipH: boolean;
+  sketchTextFlipV: boolean;
+  sketchTextHAlign: 'left' | 'center' | 'right';
+  sketchTextVAlign: 'top' | 'middle' | 'bottom';
   commitSketchTextEntities: ReturnType<typeof useCADStore.getState>['commitSketchTextEntities'];
   sketch3DMode: boolean;
   setSketch3DActivePlane: ReturnType<typeof useCADStore.getState>['setSketch3DActivePlane'];
@@ -137,6 +142,11 @@ export function useSketchInteractionEvents({
   sketchTextHeight,
   sketchTextBold,
   sketchTextItalic,
+  sketchTextCharSpacing,
+  sketchTextFlipH,
+  sketchTextFlipV,
+  sketchTextHAlign,
+  sketchTextVAlign,
   commitSketchTextEntities,
   projectLiveLink,
   cancelSketchProjectSurfaceTool,
@@ -336,6 +346,37 @@ export function useSketchInteractionEvents({
       }
     };
 
+    // Returns the textGroupId whose bounding box (in plane coords) contains the
+    // point, or null. Used by double-click to re-open the Text panel for editing.
+    const findTextGroupAt = (worldPoint: THREE.Vector3): string | null => {
+      const p = worldToSketch2D(worldPoint);
+      const boxes = new Map<string, { uMin: number; uMax: number; vMin: number; vMax: number; height: number }>();
+      for (const entity of activeSketch.entities) {
+        if (!entity.textGroupId) continue;
+        let box = boxes.get(entity.textGroupId);
+        if (!box) {
+          box = { uMin: Infinity, uMax: -Infinity, vMin: Infinity, vMax: -Infinity, height: entity.textMeta?.height ?? 0 };
+          boxes.set(entity.textGroupId, box);
+        }
+        if (entity.textMeta?.height) box.height = entity.textMeta.height;
+        for (const pt of entity.points) {
+          const d = worldToSketch2D(new THREE.Vector3(pt.x, pt.y, pt.z));
+          if (d.u < box.uMin) box.uMin = d.u;
+          if (d.u > box.uMax) box.uMax = d.u;
+          if (d.v < box.vMin) box.vMin = d.v;
+          if (d.v > box.vMax) box.vMax = d.v;
+        }
+      }
+      for (const [gid, box] of boxes) {
+        if (!Number.isFinite(box.uMin)) continue;
+        const pad = (box.height || (box.vMax - box.vMin)) * 0.18 || 0.5;
+        if (p.u >= box.uMin - pad && p.u <= box.uMax + pad && p.v >= box.vMin - pad && p.v <= box.vMax + pad) {
+          return gid;
+        }
+      }
+      return null;
+    };
+
     const deleteSelectedSketchEntities = () => {
       const state = useCADStore.getState();
       const sketch = state.activeSketch;
@@ -352,12 +393,22 @@ export function useSketchInteractionEvents({
       return true;
     };
 
+    // Entity types whose defining points are draggable in select mode.
+    // Matches SketchPointHandles HANDLE_ENTITY_TYPES so every visible handle is reachable.
+    const DRAGGABLE_TYPES = new Set([
+      'line', 'construction-line', 'centerline',
+      'rectangle', 'polygon', 'slot',
+      'circle', 'arc',
+      'ellipse', 'elliptical-arc',
+      'point', 'spline',
+    ]);
+
     const findNearestEditablePoint = (worldPoint: THREE.Vector3): SketchPointDragTarget | null => {
       let best: SketchPointDragTarget | null = null;
       let bestDist = SELECT_DRAG_PICK_RADIUS;
 
       for (const entity of activeSketch.entities) {
-        if (!['line', 'construction-line', 'centerline', 'rectangle', 'circle', 'arc'].includes(entity.type)) continue;
+        if (!DRAGGABLE_TYPES.has(entity.type) || entity.linked || entity.textGroupId) continue;
         entity.points.forEach((point, pointIndex) => {
           const distance = worldPoint.distanceTo(new THREE.Vector3(point.x, point.y, point.z));
           if (distance < bestDist) {
@@ -370,22 +421,10 @@ export function useSketchInteractionEvents({
       return best;
     };
 
+    // Live-solving drag: moves the point AND runs the constraint solver with that
+    // point pinned, so coincident corners stay welded and H/V edges stay aligned.
     const updateDraggedPoint = (target: SketchPointDragTarget, point: THREE.Vector3) => {
-      const latestSketch = useCADStore.getState().activeSketch;
-      if (!latestSketch) return;
-      replaceSketchEntities(
-        latestSketch.entities.map((entity) => {
-          if (entity.id !== target.entityId) return entity;
-          return {
-            ...entity,
-            points: entity.points.map((existingPoint, pointIndex) => (
-              pointIndex === target.pointIndex
-                ? { ...existingPoint, x: point.x, y: point.y, z: point.z }
-                : existingPoint
-            )),
-          };
-        }),
-      );
+      useCADStore.getState().dragSketchPoint(target.entityId, target.pointIndex, point.x, point.y, point.z);
     };
 
     const handleMouseMove = (event: MouseEvent) => {
@@ -543,6 +582,65 @@ export function useSketchInteractionEvents({
       }
       const sketchPoint: SketchPoint = { id: crypto.randomUUID(), x: commitPoint.x, y: commitPoint.y, z: commitPoint.z };
 
+      if (activeTool === 'sketch-mirror') {
+        const state = useCADStore.getState();
+        const selectedId = findNearestSelectableEntity(commitPoint);
+        const mode = state.sketchMirrorSelectionMode ?? 'objects';
+
+        if (!selectedId) {
+          setStatusMessage(mode === 'line'
+            ? 'Mirror: click a sketch line to use as the mirror line'
+            : 'Mirror: click sketch entities to include or remove them');
+          event.preventDefault();
+          event.stopPropagation();
+          return;
+        }
+
+        const entity = activeSketch.entities.find((candidate) => candidate.id === selectedId);
+        if (mode === 'line') {
+          const isLine = entity?.type === 'line' || entity?.type === 'construction-line' || entity?.type === 'centerline';
+          if (!isLine) {
+            setStatusMessage('Mirror Line: choose a line, construction line, or centerline');
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          state.setSketchMirrorLineId(selectedId);
+          state.setSelectedEntityIds([...state.sketchMirrorObjectIds, selectedId]);
+          setStatusMessage('Mirror Line selected');
+        } else {
+          if (selectedId === state.sketchMirrorLineId) {
+            setStatusMessage('Mirror: the mirror line cannot also be an object');
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+          }
+          const nextObjectIds = state.sketchMirrorObjectIds.includes(selectedId)
+            ? state.sketchMirrorObjectIds.filter((id) => id !== selectedId)
+            : [...state.sketchMirrorObjectIds, selectedId];
+          state.setSketchMirrorObjectIds(nextObjectIds);
+          state.setSelectedEntityIds(state.sketchMirrorLineId ? [...nextObjectIds, state.sketchMirrorLineId] : nextObjectIds);
+          setStatusMessage(`${nextObjectIds.length} mirror object${nextObjectIds.length === 1 ? '' : 's'} selected`);
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      // Text-on-path: in along-path mode a click selects the baseline curve
+      // instead of placing text at the point.
+      if (activeTool === 'sketch-text' && useCADStore.getState().sketchTextType === 'along-path') {
+        const pickId = findNearestSelectableEntity(commitPoint);
+        if (pickId) {
+          useCADStore.getState().commitTextAlongPath(pickId);
+        } else {
+          setStatusMessage('Text on path: click a sketch curve (line, arc, circle, or spline) as the baseline');
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
       if (handleSpecialSketchClick({
         activeTool,
         point: commitPoint,
@@ -559,6 +657,11 @@ export function useSketchInteractionEvents({
         sketchTextHeight,
         sketchTextBold,
         sketchTextItalic,
+        sketchTextCharSpacing,
+        sketchTextFlipH,
+        sketchTextFlipV,
+        sketchTextHAlign,
+        sketchTextVAlign,
         commitSketchTextEntities,
       })) {
         return;
@@ -588,6 +691,7 @@ export function useSketchInteractionEvents({
         addSketchEntity: addSketchEntityWrapped,
         addSketchConstraint,
         replaceSketchEntities,
+        replaceActiveSketchGeometry: useCADStore.getState().replaceActiveSketchGeometry,
         cycleEntityLinetype,
         setStatusMessage,
         polygonSides,
@@ -717,11 +821,28 @@ export function useSketchInteractionEvents({
       }
     };
 
+    // Double-click a text object → re-open the Text panel in edit mode.
+    // Works in select mode (where single-click handlers bail early).
+    const handleDoubleClick = (event: MouseEvent) => {
+      if (event.button !== 0) return;
+      const point = getRawWorldPoint(event);
+      if (!point) return;
+      const groupId = findTextGroupAt(point);
+      if (!groupId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      useCADStore.getState().startSketchTextEdit(groupId);
+    };
+
     const handlePointerDown = (event: PointerEvent) => {
       if (event.button !== 0) return;
       if (activeTool === 'select') {
-        const point = getWorldPoint(event);
-        if (!point) return;
+        // Use raw (non-snapped) point for endpoint detection so clicking on a
+        // handle sphere always finds the entity point even when the endpoint is
+        // not on a grid intersection.  Grid snap is still applied during drag.
+        const rawPoint = getRawWorldPoint(event);
+        if (!rawPoint) return;
+        const point = rawPoint;
         const additive = event.ctrlKey || event.metaKey;
         const selectedEntityId = findNearestSelectableEntity(point);
         const target = additive ? null : findNearestEditablePoint(point);
@@ -739,6 +860,7 @@ export function useSketchInteractionEvents({
         state.pushUndo();
         pointDragStartEntitiesRef.current = state.activeSketch?.entities ?? null;
         pointDragRef.current = target;
+        gl.domElement.style.cursor = 'grabbing';
         setStatusMessage('Dragging sketch point');
         event.preventDefault();
         event.stopPropagation();
@@ -779,6 +901,7 @@ export function useSketchInteractionEvents({
       if (activeTool === 'select') {
         if (!pointDragRef.current) return;
         pointDragRef.current = null;
+        gl.domElement.style.cursor = '';
         useCADStore.getState().solveSketch?.();
         const state = useCADStore.getState();
         if (state.activeSketch?.overConstrained && pointDragStartEntitiesRef.current) {
@@ -823,6 +946,7 @@ export function useSketchInteractionEvents({
     canvas.addEventListener('pointerup', handlePointerUp);
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('click', handleClick);
+    canvas.addEventListener('dblclick', handleDoubleClick);
     canvas.addEventListener('contextmenu', handleContextMenu);
     window.addEventListener('keydown', handleKeyDown);
 
@@ -832,6 +956,7 @@ export function useSketchInteractionEvents({
       canvas.removeEventListener('pointerup', handlePointerUp);
       canvas.removeEventListener('mousemove', handleMouseMove);
       canvas.removeEventListener('click', handleClick);
+      canvas.removeEventListener('dblclick', handleDoubleClick);
       canvas.removeEventListener('contextmenu', handleContextMenu);
       window.removeEventListener('keydown', handleKeyDown);
     };
@@ -858,6 +983,11 @@ export function useSketchInteractionEvents({
     sketchTextHeight,
     sketchTextBold,
     sketchTextItalic,
+    sketchTextCharSpacing,
+    sketchTextFlipH,
+    sketchTextFlipV,
+    sketchTextHAlign,
+    sketchTextVAlign,
     commitSketchTextEntities,
     cancelSketchProjectSurfaceTool,
     camera,

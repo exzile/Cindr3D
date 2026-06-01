@@ -46,17 +46,24 @@ export default function SketchInteraction() {
   const conicRho = useCADStore((s) => s.conicRho);
   const blendCurveMode = useCADStore((s) => s.blendCurveMode);
   const themeColors = useThemeStore((s) => s.colors);
-  // D12: Sketch Text
-  const sketchTextContent = useCADStore((s) => s.sketchTextContent);
-  const sketchTextHeight  = useCADStore((s) => s.sketchTextHeight);
-  // SK-A6: formatting flags
-  const sketchTextBold    = useCADStore((s) => s.sketchTextBold);
-  const sketchTextItalic  = useCADStore((s) => s.sketchTextItalic);
+  const sketchTextContent      = useCADStore((s) => s.sketchTextContent);
+  const sketchTextHeight       = useCADStore((s) => s.sketchTextHeight);
+  const sketchTextBold         = useCADStore((s) => s.sketchTextBold);
+  const sketchTextItalic       = useCADStore((s) => s.sketchTextItalic);
+  const sketchTextCharSpacing  = useCADStore((s) => s.sketchTextCharSpacing);
+  const sketchTextFlipH        = useCADStore((s) => s.sketchTextFlipH);
+  const sketchTextFlipV        = useCADStore((s) => s.sketchTextFlipV);
+  const sketchTextHAlign       = useCADStore((s) => s.sketchTextHAlign);
+  const sketchTextVAlign       = useCADStore((s) => s.sketchTextVAlign);
   const commitSketchTextEntities = useCADStore((s) => s.commitSketchTextEntities);
   // D45: Project / Include live-link toggle
   const projectLiveLink = useCADStore((s) => s.projectLiveLink);
   // D46: Project to Surface
   const cancelSketchProjectSurfaceTool = useCADStore((s) => s.cancelSketchProjectSurfaceTool);
+  // D47: Intersection Curve
+  const cancelSketchIntersectionCurveTool = useCADStore((s) => s.cancelSketchIntersectionCurveTool);
+  // D48: Spun Profile
+  const cancelSketchSpunProfileTool = useCADStore((s) => s.cancelSketchSpunProfileTool);
   // D28: Dimension tool
   const activeDimensionType = useCADStore((s) => s.activeDimensionType);
   const dimensionOffset = useCADStore((s) => s.dimensionOffset);
@@ -623,6 +630,8 @@ export default function SketchInteraction() {
     setStatusMessage,
     projectLiveLink,
     cancelSketchProjectSurfaceTool,
+    cancelSketchIntersectionCurveTool,
+    cancelSketchSpunProfileTool,
   });
 
   useSketchDimensionTool({
@@ -679,6 +688,11 @@ export default function SketchInteraction() {
     sketchTextHeight,
     sketchTextBold,
     sketchTextItalic,
+    sketchTextCharSpacing,
+    sketchTextFlipH,
+    sketchTextFlipV,
+    sketchTextHAlign,
+    sketchTextVAlign,
     commitSketchTextEntities,
     projectLiveLink,
     cancelSketchProjectSurfaceTool,

@@ -530,11 +530,17 @@
 .timeline-context-submenu {
   position: fixed;
   min-width: 184px;
-  border: 1px solid color-mix(in srgb, var(--border) 70%, var(--accent) 30%);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--surface-2, var(--bg-panel)) 92%, black 8%);
-  box-shadow: 0 14px 36px color-mix(in srgb, black 34%, transparent);
-  padding: 5px;
+  overflow: hidden;
+  border: 1px solid var(--glass-pane-border);
+  border-radius: 12px;
+  background: var(--glass-pane-bg);
+  box-shadow: var(--glass-pane-shadow);
+  padding: 6px;
+  font-family: var(--font-ui-compact);
+  font-feature-settings: 'kern' 1, 'liga' 1;
+  line-height: 1.32;
+  backdrop-filter: var(--glass-pane-filter);
+  -webkit-backdrop-filter: var(--glass-pane-filter);
   z-index: 1000;
 }
 
@@ -544,20 +550,32 @@
   gap: 8px;
   width: 100%;
   min-height: 28px;
-  border: none;
-  border-radius: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
   padding: 5px 8px;
-  background: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent),
+    transparent;
   color: var(--text-secondary, #aaa);
   cursor: pointer;
+  font-family: var(--font-ui-compact);
   font-size: 12px;
+  font-weight: 620;
+  line-height: 1.24;
   text-align: left;
-  transition: background 100ms ease, color 100ms ease;
+  transition: background 120ms ease, border-color 120ms ease, box-shadow 120ms ease, color 120ms ease, transform 120ms ease;
 }
 
 .timeline-context-menu__btn:hover {
-  background: color-mix(in srgb, var(--bg-hover) 82%, var(--accent) 10%);
+  transform: translateX(1px);
+  border-color: color-mix(in srgb, var(--accent) 24%, transparent);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 255, 255, 0.24), transparent 42%),
+    color-mix(in srgb, var(--bg-hover) 82%, var(--accent) 10%);
   color: var(--text-primary, #fff);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 4px 10px rgba(15, 23, 42, 0.08);
 }
 
 .timeline-context-menu__btn.danger {
@@ -565,13 +583,14 @@
 }
 
 .timeline-context-menu__btn.danger:hover {
+  border-color: color-mix(in srgb, var(--error, #f44336) 34%, transparent);
   background: color-mix(in srgb, var(--error, #f44336) 14%, var(--bg-hover));
 }
 
 .timeline-context-menu__sep {
   height: 1px;
-  margin: 5px 4px;
-  background: color-mix(in srgb, var(--border-light, rgba(255,255,255,0.07)) 82%, transparent);
+  margin: 6px 7px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--border-light, rgba(255,255,255,0.07)) 88%, transparent), transparent);
 }
 
 .timeline-submenu-container {

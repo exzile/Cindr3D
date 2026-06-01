@@ -404,6 +404,7 @@ const createDocumentTransientReset = (): Partial<CADState> => ({
   editingSplineEntityId: null,
   hoveredSplinePointIndex: null,
   draggingSplinePointIndex: null,
+  sketchEditingArcId: null,
   sketch3DActivePlane: null,
 
   activeFormBodyId: null,

@@ -6,16 +6,46 @@
   bottom: 48px;
   left: 50%;
   transform: translateX(-50%);
-  background: #12122a;
-  border: 1px solid #333366;
-  border-radius: 8px;
+  background: var(--glass-pane-bg);
+  border: 1px solid var(--glass-pane-border);
+  border-radius: 12px;
   padding: 12px 16px;
   min-width: 240px;
-  z-index: 200;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
-  color: #e0e0ff;
-  font-family: system-ui, sans-serif;
+  z-index: 1000;
+  box-shadow: var(--glass-pane-shadow);
+  backdrop-filter: var(--glass-pane-filter);
+  -webkit-backdrop-filter: var(--glass-pane-filter);
+  color: var(--text-primary, #111827);
+  font-family: var(--font-ui-compact);
   font-size: 13px;
+  isolation: isolate;
+  pointer-events: auto;
+  overflow: hidden;
+}
+
+.sketch-tool-panel::before {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--glass-pane-shine);
+  opacity: 0.86;
+  pointer-events: none;
+}
+
+.sketch-tool-panel::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 7px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--glass-pane-glint);
+  filter: blur(0.2px);
+  opacity: 0.48;
+  pointer-events: none;
 }
 
 .sketch-tool-panel__header {
@@ -23,21 +53,38 @@
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.sketch-tool-panel.is-dragging .sketch-tool-panel__header {
+  cursor: grabbing;
+}
+
+.sketch-tool-panel.is-dragging {
+  will-change: transform;
 }
 
 .sketch-tool-panel__dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #44aaff;
+  background: var(--accent, #0ea5e9);
   display: inline-block;
+}
+
+.sketch-tool-panel__grip {
+  color: var(--text-secondary, #64748b);
+  font-weight: 700;
+  line-height: 1;
 }
 
 .sketch-tool-panel__title {
   font-weight: 700;
   letter-spacing: 1px;
   font-size: 11px;
-  color: #aaaacc;
+  color: var(--text-secondary, #64748b);
 }
 
 .sketch-tool-panel__row {
@@ -54,10 +101,12 @@
 
 .sketch-tool-panel__input {
   width: 80px;
-  background: #1e1e3a;
-  border: 1px solid #333366;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent),
+    color-mix(in srgb, var(--bg-input, var(--bg-primary, #ffffff)) 76%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-light, rgba(100, 116, 139, 0.35)) 78%, transparent);
   border-radius: 4px;
-  color: #e0e0ff;
+  color: var(--text-primary, #111827);
   padding: 3px 6px;
   font-size: 12px;
 }
@@ -68,7 +117,7 @@
 
 .sketch-tool-panel__axis-label {
   font-size: 11px;
-  color: #aaaacc;
+  color: var(--text-secondary, #64748b);
   margin-bottom: 6px;
 }
 
@@ -82,7 +131,7 @@
 
 .sketch-tool-panel__hint {
   font-size: 11px;
-  color: #666688;
+  color: var(--text-secondary, #64748b);
   margin-bottom: 8px;
 }
 
@@ -93,17 +142,157 @@
 }
 
 .sketch-tool-panel__btn {
-  flex: 1;
-  padding: 6px 0;
+  padding: 6px 12px;
   border-radius: 4px;
-  border: none;
+  border: 1px solid var(--border-light, rgba(100, 116, 139, 0.35));
   cursor: pointer;
   font-weight: 600;
   font-size: 12px;
-  color: #fff;
-  background: #333355;
+  color: var(--text-primary, #111827);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent),
+    color-mix(in srgb, var(--bg-secondary, #f8fafc) 72%, transparent);
+  transition: background 140ms ease, border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.sketch-tool-panel__btn:hover:not(:disabled) {
+  background: var(--bg-hover, #eef2f7);
+  transform: translateY(-1px);
 }
 
 .sketch-tool-panel__btn--primary {
-  background: #0078d7;
+  background: var(--accent, #2563eb);
+  border-color: color-mix(in srgb, var(--accent, #2563eb) 70%, transparent);
+  color: #fff;
+}
+
+.sketch-tool-panel__btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+  transform: none;
+}
+
+.sketch-mirror-palette {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 252px;
+  right: auto;
+  z-index: 1001;
+}
+
+.sketch-mirror-palette__body {
+  display: grid;
+  gap: 8px;
+  padding: 8px 10px 4px;
+}
+
+.sketch-mirror-palette__row {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) 22px;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+}
+
+.sketch-mirror-palette__collector {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-light, rgba(100, 116, 139, 0.4));
+  color: var(--text-primary, #111827);
+  background: var(--bg-input, var(--bg-primary, #ffffff));
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+.sketch-mirror-palette__collector:hover,
+.sketch-mirror-palette__collector.is-active {
+  border-color: var(--accent, #2563eb);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #2563eb) 18%, transparent);
+  background: var(--accent-light, color-mix(in srgb, var(--accent, #2563eb) 10%, var(--bg-primary, #ffffff)));
+}
+
+.sketch-mirror-palette__clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text-secondary, #64748b);
+  background: transparent;
+  cursor: pointer;
+}
+
+.sketch-mirror-palette__clear:hover:not(:disabled) {
+  color: var(--danger, #dc2626);
+  background: color-mix(in srgb, var(--danger, #dc2626) 10%, transparent);
+}
+
+.sketch-mirror-palette__clear:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.sketch-mirror-palette__hint {
+  min-height: 16px;
+  padding: 2px 0 0;
+}
+
+.sketch-mirror-palette__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.sketch-mirror-palette__info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-right: auto;
+  border-radius: 50%;
+  color: var(--bg-primary, #ffffff);
+  background: var(--text-secondary, #64748b);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.sketch-mirror-palette__button {
+  min-width: 64px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.sketch-mirror-palette__button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.sketch-mirror-palette__button--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.sketch-mirror-palette__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }

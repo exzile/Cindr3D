@@ -50,6 +50,23 @@ export function createSketchEntityActions({ set, get }: CADSliceContext): Partia
       set({ activeSketch: nextSketch, sketches: upsertSketch(sketches, nextSketch) });
     },
 
+    // Replace entities AND constraints atomically. Unlike replaceSketchEntities
+    // (which keeps every constraint whose entities survive), this lets callers
+    // drop specific constraints — e.g. the fillet/chamfer removing the corner
+    // weld so the solver can't pull the trimmed lines back to a sharp corner.
+    replaceActiveSketchGeometry: (entities, constraints) => {
+      const { activeSketch, sketches } = get();
+      if (!activeSketch) return;
+      const liveIds = new Set(entities.map((e) => e.id));
+      const nextSketch = {
+        ...activeSketch,
+        entities,
+        constraints: constraints.filter((c) => c.entityIds.every((id) => liveIds.has(id))),
+        dimensions: activeSketch.dimensions?.filter((d) => d.entityIds.every((id) => liveIds.has(id.split('::')[0]))) ?? [],
+      };
+      set({ activeSketch: nextSketch, sketches: upsertSketch(sketches, nextSketch) });
+    },
+
     cycleEntityLinetype: (entityId) => {
       const { activeSketch, sketches } = get();
       if (!activeSketch) return;

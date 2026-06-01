@@ -1,19 +1,25 @@
-import { useRef, useState, useEffect } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore';
 import type { ToolButtonProps } from '../../types/toolbar.types';
+import { useMenuClose } from './useMenuClose';
 
 export function ToolButton({ icon, label, tool, active, onClick, disabled, large, colorClass, dropdown }: ToolButtonProps) {
   const activeTool = useCADStore((s) => s.activeTool);
   const setActiveTool = useCADStore((s) => s.setActiveTool);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const { closing, startClose } = useMenuClose();
   const btnRef = useRef<HTMLButtonElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [dropPos, setDropPos] = useState({ top: 0, left: 0 });
 
   const isActive = active ?? (tool ? activeTool === tool : false);
   const hasDropdown = !!dropdown;
+
+  const closeDropdown = useCallback(() => {
+    startClose(() => setDropdownOpen(false));
+  }, [startClose]);
 
   const handleClick = () => {
     if (disabled) return;
@@ -23,11 +29,15 @@ export function ToolButton({ icon, label, tool, active, onClick, disabled, large
 
   const openDropdown = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (dropdownOpen) {
+      closeDropdown();
+      return;
+    }
     if (btnRef.current) {
       const rect = btnRef.current.getBoundingClientRect();
       setDropPos({ top: rect.bottom + 2, left: rect.left });
     }
-    setDropdownOpen(!dropdownOpen);
+    setDropdownOpen(true);
   };
 
   // Close on click outside
@@ -37,12 +47,12 @@ export function ToolButton({ icon, label, tool, active, onClick, disabled, large
       const target = e.target as Node;
       if (btnRef.current && !btnRef.current.contains(target) &&
           dropdownRef.current && !dropdownRef.current.contains(target)) {
-        setDropdownOpen(false);
+        closeDropdown();
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [dropdownOpen]);
+  }, [dropdownOpen, closeDropdown]);
 
   return (
     <div className="ribbon-button-wrapper">
@@ -60,28 +70,24 @@ export function ToolButton({ icon, label, tool, active, onClick, disabled, large
         >
           <span className="ribbon-button-label">{label}</span>
           {hasDropdown && (
-            <span
-              className="ribbon-dropdown-affordance"
-              aria-hidden="true"
-            >
+            <span className="ribbon-dropdown-affordance" aria-hidden="true">
               <ChevronDown size={10} className="ribbon-dropdown-arrow" />
             </span>
           )}
         </span>
       </button>
-      {dropdown && dropdownOpen && createPortal(
+      {dropdownOpen && createPortal(
         <div
           ref={dropdownRef}
-          className="ribbon-dropdown-menu"
+          className={`ribbon-dropdown-menu${closing ? ' closing' : ''}`}
           style={{ position: 'fixed', top: dropPos.top, left: dropPos.left }}
-          onMouseLeave={() => setDropdownOpen(false)}
         >
-          {dropdown.map((item, i) => (
+          {dropdown!.map((item, i) => (
             <button
               type="button"
               key={i}
               className={`ribbon-dropdown-item${item.divider ? ' ribbon-dropdown-item--divider' : ''}`}
-              onClick={() => { item.onClick(); setDropdownOpen(false); }}
+              onClick={() => { item.onClick(); closeDropdown(); }}
             >
               {item.icon && <span className="ribbon-dropdown-item-icon">{item.icon}</span>}
               {item.label}

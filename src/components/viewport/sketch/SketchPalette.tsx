@@ -4,9 +4,17 @@ import { SketchPaletteDisplaySection } from './sketchPalette/SketchPaletteDispla
 import { SketchPaletteHeader } from './sketchPalette/SketchPaletteHeader';
 import { SketchPaletteOptionsSection } from './sketchPalette/SketchPaletteOptionsSection';
 import { useSketchPaletteState } from './sketchPalette/useSketchPaletteState';
+import { useDraggablePanel } from './useDraggablePanel';
 
 export default function SketchPalette() {
   const state = useSketchPaletteState();
+  const {
+    dragHandleProps,
+    isDragging,
+    panelEventProps,
+    panelRef,
+    panelStyle,
+  } = useDraggablePanel();
   const [dismissedSketchId, setDismissedSketchId] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [lineType, setLineType] = useState<'normal' | 'construction'>('normal');
@@ -21,11 +29,17 @@ export default function SketchPalette() {
   if (!state.activeSketch || dismissed) return null;
 
   return (
-    <div className="sketch-palette">
+    <div
+      ref={panelRef}
+      className={`sketch-palette${isDragging ? ' is-dragging' : ''}`}
+      style={panelStyle}
+      {...panelEventProps}
+    >
       <SketchPaletteHeader
         state={state}
         collapsed={collapsed}
         dismissed={dismissed}
+        dragHandleProps={dragHandleProps}
         setCollapsed={setCollapsed}
         setDismissed={setDismissed}
       />

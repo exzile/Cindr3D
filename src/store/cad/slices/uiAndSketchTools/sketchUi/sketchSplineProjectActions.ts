@@ -6,6 +6,8 @@ export function createSketchSplineProjectActions({ set, get }: CADSliceContext):
     editingSplineEntityId: null,
     hoveredSplinePointIndex: null,
     draggingSplinePointIndex: null,
+    sketchEditingArcId: null,
+    setSketchEditingArcId: (id) => set({ sketchEditingArcId: id }),
     setEditingSplineEntityId: (id) => set({ editingSplineEntityId: id }),
     setHoveredSplinePointIndex: (index) => set({ hoveredSplinePointIndex: index }),
     setDraggingSplinePointIndex: (index) => set({ draggingSplinePointIndex: index }),
@@ -26,6 +28,15 @@ export function createSketchSplineProjectActions({ set, get }: CADSliceContext):
         sketches: get().sketches.map((sketch) => (sketch.id === nextSketch.id ? nextSketch : sketch)),
       });
     },
+    dragSketchPoint: (entityId, pointIndex, x, y, z) => {
+      // Move the point first (synchronous set), then solve with it pinned so
+      // constraints drive the rest of the geometry. For an unconstrained entity
+      // the solve is a no-op and the point simply stays where it was dropped.
+      get().updateSplineControlPoint(entityId, pointIndex, x, y, z);
+      if (!get().sketchComputeDeferred) {
+        get().solveSketch({ fixedPoint: { entityId, pointIndex } });
+      }
+    },
     projectLiveLink: true,
     setProjectLiveLink: (value) => set({ projectLiveLink: value }),
     cancelSketchProjectTool: () => set({ activeTool: "select", statusMessage: "Project cancelled" }),
@@ -44,6 +55,24 @@ export function createSketchSplineProjectActions({ set, get }: CADSliceContext):
     cancelSketchProjectSurfaceTool: () => set({
       activeTool: "select",
       statusMessage: "Project to surface cancelled",
+    }),
+
+    startSketchIntersectionCurveTool: () => set({
+      activeTool: "sketch-intersection-curve",
+      statusMessage: "Intersection Curve: click the first surface",
+    }),
+    cancelSketchIntersectionCurveTool: () => set({
+      activeTool: "select",
+      statusMessage: "Intersection Curve cancelled",
+    }),
+
+    startSketchSpunProfileTool: () => set({
+      activeTool: "sketch-spun-profile",
+      statusMessage: "Spun Profile: click a cylindrical or revolved face",
+    }),
+    cancelSketchSpunProfileTool: () => set({
+      activeTool: "select",
+      statusMessage: "Spun Profile cancelled",
     }),
   };
 }

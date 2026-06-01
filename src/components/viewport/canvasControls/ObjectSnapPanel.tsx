@@ -23,53 +23,44 @@ export default function ObjectSnapPanel({ onClose }: { onClose: () => void }) {
   const snapToTangent = useCADStore((s) => s.snapToTangent);
   const setSnapToTangent = useCADStore((s) => s.setSnapToTangent);
 
-  const SNAP_TYPES = [
-    { label: 'Endpoint', value: snapToEndpoint, set: setSnapToEndpoint, indicator: '⬛', color: '#ff8844' },
-    { label: 'Midpoint', value: snapToMidpoint, set: setSnapToMidpoint, indicator: '◆', color: '#ffcc44' },
-    { label: 'Center', value: snapToCenter, set: setSnapToCenter, indicator: '⊕', color: '#44aaff' },
-    { label: 'Intersection', value: snapToIntersection, set: setSnapToIntersection, indicator: '✕', color: '#44ff88' },
-    { label: 'Perpendicular', value: snapToPerpendicular, set: setSnapToPerpendicular, indicator: '⊾', color: '#cc88ff' },
-    { label: 'Tangent', value: snapToTangent, set: setSnapToTangent, indicator: '◯', color: '#ff88cc' },
+  const snapTypes = [
+    { label: 'Endpoint', value: snapToEndpoint, set: setSnapToEndpoint, color: '#f97316' },
+    { label: 'Midpoint', value: snapToMidpoint, set: setSnapToMidpoint, color: '#eab308' },
+    { label: 'Center', value: snapToCenter, set: setSnapToCenter, color: '#0ea5e9' },
+    { label: 'Intersection', value: snapToIntersection, set: setSnapToIntersection, color: '#22c55e' },
+    { label: 'Perpendicular', value: snapToPerpendicular, set: setSnapToPerpendicular, color: '#a855f7' },
+    { label: 'Tangent', value: snapToTangent, set: setSnapToTangent, color: '#ec4899' },
   ] as const;
 
   return (
-    <div className="cc-panel" style={{ minWidth: 170 }}>
+    <div className="cc-panel cc-panel--snaps">
       <div className="cc-panel-title">Object Snaps</div>
       <div className="cc-panel-section">
-        {/* Master toggle */}
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 4px', cursor: 'pointer', fontWeight: 600, fontSize: 11 }}>
+        <label className="cc-panel-check cc-panel-check--master">
           <input
             type="checkbox"
             checked={objectSnapEnabled}
             onChange={(e) => setObjectSnapEnabled(e.target.checked)}
           />
-          Enable Object Snaps
+          <span>Enable Object Snaps</span>
         </label>
-        <div style={{ height: 1, background: '#333355', margin: '4px 0' }} />
-        {/* Per-type toggles */}
-        {SNAP_TYPES.map(({ label, value, set, indicator, color }) => (
-          <label
-            key={label}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              padding: '3px 4px',
-              cursor: objectSnapEnabled ? 'pointer' : 'not-allowed',
-              opacity: objectSnapEnabled ? 1 : 0.45,
-              fontSize: 11,
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={value}
-              disabled={!objectSnapEnabled}
-              onChange={(e) => set(e.target.checked)}
-            />
-            <span style={{ color, fontSize: 12, fontFamily: 'monospace', width: 14 }}>{indicator}</span>
-            {label}
-          </label>
-        ))}
+        <div className="cc-panel-snap-grid">
+          {snapTypes.map(({ label, value, set, color }) => (
+            <label
+              key={label}
+              className={`cc-panel-snap${objectSnapEnabled ? '' : ' is-disabled'}`}
+            >
+              <input
+                type="checkbox"
+                checked={value}
+                disabled={!objectSnapEnabled}
+                onChange={(e) => set(e.target.checked)}
+              />
+              <span className="cc-panel-snap-dot" style={{ background: color }} />
+              <span>{label}</span>
+            </label>
+          ))}
+        </div>
       </div>
     </div>
   );
