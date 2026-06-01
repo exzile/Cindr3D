@@ -42,13 +42,13 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #
 # ── ENTITY / DRAWING TOOLS ────────────────────────────────────────────────────
 #
-# [ ] SKETCH-1.1 SketchFixedSpline — Fusion's fixed/frozen spline type that does NOT
+# [x] SKETCH-1.1 SketchFixedSpline — Fusion's fixed/frozen spline type that does NOT
 #     deform under constraints (used for imported external curve data, STEP round-trip).
 #     No 'fixed-spline' entity type exists. Add entity type that renders as a regular
 #     spline but is excluded from the solver (treated like a Fix-constrained entity).
 #     Low priority; required for clean STEP/DXF import of spline geometry.
 #
-# [ ] SKETCH-1.2 BreakLink — Fusion lets you break the associativity of a projected /
+# [x] SKETCH-1.2 BreakLink — Fusion lets you break the associativity of a projected /
 #     intersected curve so it becomes a standalone editable entity. We project curves
 #     with `linked: true` but there is no action to toggle linked->false. Add a
 #     right-click context-menu action (and toolbar button) that clears `linked` on
@@ -56,7 +56,7 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #
 # ── EDITING TOOLS ─────────────────────────────────────────────────────────────
 #
-# [ ] SKETCH-1.3 Mirror along a picked sketch line — our commitSketchMirror only
+# [x] SKETCH-1.3 Mirror along a picked sketch line — our commitSketchMirror only
 #     supports 3 fixed axes (horizontal, vertical, diagonal). Fusion lets you pick any
 #     existing sketch line as the mirror axis and reflects the selection across it.
 #     Implementation: when the user picks a line entity as the axis, compute the
@@ -65,7 +65,7 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #     File: sketchTransformActions.ts (extend commitSketchMirror); SketchMirrorPanel.tsx
 #     (add "Pick Line" step before the commit button).
 #
-# [ ] SKETCH-1.4 Offset Curves (HIGHEST PRIORITY — currently a SILENT NO-OP) —
+# [x] SKETCH-1.4 Offset Curves (HIGHEST PRIORITY — currently a SILENT NO-OP) —
 #     the toolbar button and hotkey 'O' activate 'sketch-offset', but NO commit handler
 #     exists in any commitHandlers file and commitSketchOffset does not exist in the
 #     store. The user clicks and nothing happens. Fusion's Offset creates parallel
@@ -81,7 +81,7 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #     Wire: add 'sketch-offset' case to the commit handler chain (editingHandlers or
 #       lineEditingHandlers). Panel: reuse the existing SketchTransformPanel pattern.
 #
-# [ ] SKETCH-1.5 Break / Split point on curve — 'break' is in the Tool type union
+# [x] SKETCH-1.5 Break / Split point on curve — 'break' is in the Tool type union
 #     (core.ts) but has NO commit handler. Clicking does nothing. Fusion's Break splits
 #     a curve at the click point into two separate entities, automatically adding a
 #     coincident constraint at the split point.
@@ -91,14 +91,14 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #     polygon. Add a 'break' case to lineEditingHandlers.ts.
 #
 # ── CONSTRAINTS ───────────────────────────────────────────────────────────────
-# [ ] SKETCH-1.6 Smooth constraint (SmoothConstraint.h) — G2 curvature continuity
+# [x] SKETCH-1.6 Smooth constraint (SmoothConstraint.h) — G2 curvature continuity
 #     PLUS co-linear curvature vectors at a junction (no twist / curvature direction
 #     discontinuity). Different from our existing Curvature constraint which only
 #     enforces equal magnitude. Add ConstraintType 'smooth'; solver residuals: match
 #     curvature magnitude AND the direction of the curvature vector (osculating circle
 #     axis) at the shared endpoint.
 #
-# [ ] SKETCH-1.7 Horizontal/Vertical Points constraints
+# [x] SKETCH-1.7 Horizontal/Vertical Points constraints
 #     (HorizontalPointsConstraint.h, VerticalPointsConstraint.h) — constrains two
 #     arbitrary (non-adjacent) points to share the same U or V coordinate in the
 #     sketch plane. Different from constraining a LINE to be horizontal/vertical.
@@ -117,14 +117,14 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #
 # ── DIMENSIONS ────────────────────────────────────────────────────────────────
 #
-# [~] SKETCH-1.9 Angular dimension wire-up — DimensionType 'angular' is in the union
+# [x] SKETCH-1.9 Angular dimension wire-up — DimensionType 'angular' is in the union
 #     and the constraint types include 'angular'. Verify end-to-end: (a) does the
 #     Dimension tool let the user click two lines to produce an angular dim? (b) does
 #     the solver actually solve dimension-angular residuals? Fix any gap in the click
 #     handler → addDimension → solver path. Regression test: two lines at 45°,
 #     apply angular dim of 60°, verify lines rotate to meet it.
 #
-# [ ] SKETCH-1.10 Offset Curves Dimension (SketchOffsetCurvesDimension.h) — a
+# [x] SKETCH-1.10 Offset Curves Dimension (SketchOffsetCurvesDimension.h) — a
 #     parametric dimension on the distance between an original curve and its offset
 #     copy (see SKETCH-1.4). Required to make Offset Curves fully parametric: changing
 #     the dimension value re-runs the offset. Add DimensionType 'offset-curves' +
@@ -135,7 +135,7 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #     distance from a point to a tangent line of a circle. Niche. Low priority.
 #
 # ── VISUAL / UX GAPS ──────────────────────────────────────────────────────────
-# [ ] SKETCH-1.12 Per-entity DOF color — Fusion colors unconstrained curves BLUE and
+# [x] SKETCH-1.12 Per-entity DOF color — Fusion colors unconstrained curves BLUE and
 #     fully-constrained curves BLACK. We set fullyConstrained / overConstrained on the
 #     whole Sketch but never color individual entities by degree-of-freedom. After each
 #     solver run, mark each entity's points as 'free' or 'fixed' based on whether the
@@ -143,12 +143,12 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #     Files: SketchEntityRenderer (or equivalent), ConstraintSolver.ts (expose per-
 #     point fixed status in SolverResult).
 #
-# [ ] SKETCH-1.13 Constraint icons on canvas — Fusion shows small glyphs (padlock,
+# [x] SKETCH-1.13 Constraint icons on canvas — Fusion shows small glyphs (padlock,
 #     two parallel bars, right-angle symbol, etc.) near the constrained geometry.
 #     We render no visual indicators. Add lightweight SVG overlays (or Three.js sprites)
 #     positioned at constraint midpoints. Medium complexity, high UX value.
 #
-# [ ] SKETCH-1.14 Closing-gap auto-snap at draw time — when the current draw point is
+# [x] SKETCH-1.14 Closing-gap auto-snap at draw time — when the current draw point is
 #     within ~0.5 mm of the sketch's first drawn point, snap to it exactly and show a
 #     "close loop" indicator. This PREVENTS the gap from occurring (the gap-heal fix
 #     already shipped handles existing/imported sketches retroactively). Implementation:
@@ -156,7 +156,7 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #     SketchPoints; if within the snap threshold, substitute the first point's
 #     coordinates and mark the loop as closed.
 #
-# [ ] SKETCH-1.15 Curve-curve intersection snap — SnapType union has 'intersection'
+# [x] SKETCH-1.15 Curve-curve intersection snap — SnapType union has 'intersection'
 #     but the snap engine may only find grid/endpoint/midpoint/center snaps in practice.
 #     Verify and add snap candidates at the parametric intersection of any two sketch
 #     curves (solve for t1,t2 such that C1(t1) == C2(t2) and offer as a snap point).
@@ -197,7 +197,7 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #     Fix: live H/V/coincident inference glyphs in freehand handlers; have autoConstrain
 #     Sketch call solveSketch() after adding. (Overlaps SKETCH-2.A10.)
 #
-# [~] SKETCH-2.B11  Rectangle edges have no solver DOF; arc pick uses full circle (BUG).
+# [x] SKETCH-2.B11  Rectangle edges have no solver DOF; arc pick uses full circle (BUG).
 #     Rectangles store 2 points; edges are derived corners (ConstraintSolver.ts:207-220),
 #     so perpendicular/parallel on a rectangle EDGE silently does nothing. Arc picking
 #     (useSketchConstraintTool.ts:105) tests |dist-radius| against the FULL circle, so you
@@ -209,13 +209,13 @@ Keep this file focused on active work. Open task sections retain their detailed 
 # CCW (if endAngle<=startAngle add 2pi). Any handler computing angles must guarantee the
 # intended arc is the CCW one or it renders the complementary (wrong-side) arc.
 #
-# [ ] SKETCH-2.C6  spline-control is NOT a control-point curve (GAP). curveHandlers.ts:451
+# [x] SKETCH-2.C6  spline-control is NOT a control-point curve (GAP). curveHandlers.ts:451
 #     accumulates points; finalize (sketchEventHelpers.ts:27-40) builds a CatmullRom that
 #     INTERPOLATES every click. A true control-point spline treats clicks as a control hull
 #     the curve does NOT pass through. So 'spline' (fit) and 'spline-control' produce
 #     identical curves. Fix: real B-spline/Bezier (de Boor / de Casteljau) over the hull.
 #
-# [~] SKETCH-2.C7  blend-curve is G1 only; the G1/G2 toggle is cosmetic (GAP). curveEditing
+# [x] SKETCH-2.C7  blend-curve is G1 only; the G1/G2 toggle is cosmetic (GAP). curveEditing
 #     Handlers.ts:21-61 always builds a G1 (tangent-matched) cubic Bezier; blendCurveMode
 #     'g2' is shown in status text but never changes the math. Fix: implement G2 (curvature-
 #     matched) blend when mode==='g2', or remove the toggle.
@@ -252,10 +252,10 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #   [ ] B5.c  Test: two points + a vertical centerline -> points become mirror images.
 #
 # ── P4: REMAINING DRAWING + INFERENCE ─────────────────────────────────────────
-#   [ ] C6  spline-control: build a real B-spline/Bezier over the control hull (de Boor
+#   [x] C6  spline-control: build a real B-spline/Bezier over the control hull (de Boor
 #           / de Casteljau) in sketchEventHelpers.ts:27-40 instead of CatmullRom, so the
 #           curve does NOT interpolate the clicks (true control-point behavior).
-#   [ ] C7  blend-curve G2 (curveEditingHandlers.ts:21-61): when blendCurveMode==='g2'
+#   [x] C7  blend-curve G2 (curveEditingHandlers.ts:21-61): when blendCurveMode==='g2'
 #           build a curvature-matched (quintic) blend; else keep G1. Or remove the toggle.
 # BROWSER QA — OCC-21/22 + 21.4e geometry (NEEDS A HUMAN IN THE LIVE 3D APP)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -400,38 +400,38 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #   manual QA in Claude Preview (localhost:5173) opening each Create primitive.
 
 # ── P1: dialog-style migration (the user-reported issue) ────────────────────
-# [ ] PRIM-1  Migrate PrimitivesDialog.tsx (Box/Cylinder/Sphere/Torus) OFF the
+# [x] PRIM-1  Migrate PrimitivesDialog.tsx (Box/Cylinder/Sphere/Torus) OFF the
 #             legacy DialogShell + settings-grid + form-group + raw <input> onto
 #             the tool-panel / tp-* style. Copy CoilDialog.tsx as the reference
 #             (tool-panel-overlay > tool-panel > tp-header/tp-body/tp-row/
 #             tp-input-group/tp-unit/tp-select/tp-actions). Import ToolPanel.css.
 #             Use <ExpressionInput> for numeric fields, tp-toggle for booleans.
 #             Goal: visually identical to the Coil dialog + sketch palette panels.
-# [ ] PRIM-2  Migrate PipeDialog.tsx the same way (also still on DialogShell +
+# [x] PRIM-2  Migrate PipeDialog.tsx the same way (also still on DialogShell +
 #             form-group + raw checkbox). Keep its edit-feature support.
-# [ ] PRIM-3  Per-tool header icon color square (tp-header-icon) for each
+# [x] PRIM-3  Per-tool header icon color square (tp-header-icon) for each
 #             primitive, matching the Create-menu icon colors, like CoilDialog's.
 
 # ── P2: Fusion parameter + operation parity ─────────────────────────────────
-# [ ] PRIM-4  Add an Operation field to Box/Cylinder/Sphere/Torus/Coil dialogs:
+# [x] PRIM-4  Add an Operation field to Box/Cylinder/Sphere/Torus/Coil dialogs:
 #             New Body / Join / Cut / Intersect / New Component (Fusion
 #             FeatureOperations). Today only Pipe exposes operation (and only
 #             New Body/Join/Cut). Thread the chosen op through addPrimitive →
 #             the feature params so a downstream boolean can honor it.
-# [ ] PRIM-5  Rename fields to Fusion conventions and switch radius→diameter:
+# [x] PRIM-5  Rename fields to Fusion conventions and switch radius→diameter:
 #             Box Width/Height/Depth → Length/Width/Height; Cylinder
 #             Radius Bottom/Top → Diameter (+ Height); Sphere Radius → Diameter;
 #             Torus Major Radius/Tube Radius → Torus Diameter + Section Diameter
 #             (optionally Section Position Inside/OnCenter/Outside). Keep storing
 #             radii internally (PrimitiveBodies/addPrimitive read radius/tubeRadius)
 #             but show diameter = 2*radius in the UI to match Fusion.
-# [ ] PRIM-6  Decide the fate of the non-Fusion "Radius Top" tapered-cylinder
+# [x] PRIM-6  Decide the fate of the non-Fusion "Radius Top" tapered-cylinder
 #             field (Fusion Cylinder has no taper; taper also breaks OCC edge-pick,
 #             see PrimitiveBodies.tsx:88-91). Either drop it for parity or relabel
 #             it clearly as a Cindr3D extension. Document the choice here.
 
 # ── P3: edit + live preview parity ──────────────────────────────────────────
-# [ ] PRIM-7  Add edit support to PrimitivesDialog (double-click a primitive
+# [x] PRIM-7  Add edit support to PrimitivesDialog (double-click a primitive
 #             feature reopens its dialog pre-filled, like CoilDialog/PipeDialog
 #             use editingFeatureId). Needs an updatePrimitiveParams store action
 #             that rebuilds the OCC body in place (PrimitiveBodies already rebuilds
@@ -441,7 +441,7 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #             off the current dialog params before commit.
 
 # ── P4: dedupe + deeper parity ──────────────────────────────────────────────
-# [ ] PRIM-9  Remove the DEAD/duplicate 'primitive-coil' path. The Create menu
+# [x] PRIM-9  Remove the DEAD/duplicate 'primitive-coil' path. The Create menu
 #             wires Coil → 'coil' (CoilDialog); 'primitive-coil' (PrimitivesDialog
 #             kind="coil" + addPrimitive kind="coil", params outerRadius/wireRadius/
 #             turns) is unreachable from the menu AND uses divergent param names
@@ -450,12 +450,12 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #             kind==='coil' branch from PrimitivesDialog, and the coil branch from
 #             addPrimitive (primitiveFeatureActions.ts) so coil is single-sourced
 #             through CoilDialog. Verify nothing else dispatches 'primitive-coil'.
-# [ ] PRIM-10 Coil section parity: Fusion CoilFeatureSectionTypes are Circular/
+# [x] PRIM-10 Coil section parity: Fusion CoilFeatureSectionTypes are Circular/
 #             Square/TriangularExternal/TriangularInternal (we have circle/square/
 #             triangle — no ext/int) and CoilFeatureSectionPositions Inside/
 #             OnCenter/Outside (we have none). Also add the 4th Fusion coil type
 #             "Spiral" (flat spiral) to CoilDialog's Type select.
-# [ ] PRIM-11 Pipe section parity: Fusion PipeSectionTypes are Circular/Square/
+# [x] PRIM-11 Pipe section parity: Fusion PipeSectionTypes are Circular/Square/
 #             Triangular (we only do circular) and Pipe input exposes section
 #             SIZE + distanceOne/distanceTwo (partial-path sweep) + Intersect/
 #             New Component ops. Add section-type select + a path-extent control.

@@ -601,7 +601,7 @@ function computeResiduals(
         if (!entityA || !entityB) break;
 
         // For non-spline entities curvature is zero — no constraint needed.
-        if (entityA.type !== 'spline' || entityB.type !== 'spline') {
+        if ((entityA.type !== 'spline' && entityA.type !== 'fixed-spline') || (entityB.type !== 'spline' && entityB.type !== 'fixed-spline')) {
           residuals.push(0);
           break;
         }
@@ -940,7 +940,8 @@ export function solveConstraints(
   const stepSize = options?.stepSize ?? 1.0;
 
   // B9: separate whole-entity fix from pointIndices-based partial fix.
-  const fixedEntityIds = new Set<string>();
+  // SKETCH-1.1: fixed-spline entities are always excluded from the solver (frozen geometry).
+  const fixedEntityIds = new Set<string>(entities.filter((e) => e.type === 'fixed-spline').map((e) => e.id));
   const fixedPoints = new Map<string, Set<number>>();
   for (const c of constraints) {
     if (c.type !== 'fix') continue;

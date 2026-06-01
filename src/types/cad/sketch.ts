@@ -74,7 +74,8 @@ export interface SketchEntity {
     | 'centerline'
     | 'ellipse'
     | 'elliptical-arc'
-    | 'isoparametric';
+    | 'isoparametric'
+    | 'fixed-spline';
   points: SketchPoint[];
   closed?: boolean;
   radius?: number;
