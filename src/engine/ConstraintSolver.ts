@@ -14,7 +14,7 @@ export interface SolverPoint {
 }
 
 export interface SolverConstraint {
-  type: SketchConstraint['type'] | 'dimension-linear' | 'dimension-aligned' | 'dimension-radial' | 'dimension-diameter' | 'dimension-arc-length' | 'dimension-linear-diameter' | 'dimension-ellipse-major' | 'dimension-ellipse-minor' | 'dimension-concentric-gap' | 'dimension-angular';
+  type: SketchConstraint['type'] | 'dimension-linear' | 'dimension-aligned' | 'dimension-radial' | 'dimension-diameter' | 'dimension-arc-length' | 'dimension-linear-diameter' | 'dimension-ellipse-major' | 'dimension-ellipse-minor' | 'dimension-concentric-gap' | 'dimension-angular' | 'dimension-offset-curves';
   entityIds: string[];
   pointIndices?: number[];
   value?: number;
@@ -352,6 +352,9 @@ export function dimensionsToSolverConstraints(dimensions: SketchDimension[] = []
         // SKETCH-1.9: angular dimension — value stored in degrees
         case 'angular':
           return [{ type: 'dimension-angular', entityIds: dimension.entityIds, value: dimension.value }];
+        // SKETCH-1.10: offset-curves dimension — perpendicular distance between parallel entities
+        case 'offset-curves':
+          return [{ type: 'dimension-offset-curves', entityIds: dimension.entityIds, value: dimension.value }];
         default:
           return [];
       }
@@ -587,8 +590,10 @@ function computeResiduals(
         residuals.push(aLen > 1e-10 ? crossBA / aLen - (c.value ?? 0) : crossBA - (c.value ?? 0));
         break;
       }
+      case 'smooth':
       case 'curvature': {
         // G2 curvature continuity between two spline entities at their junction.
+        // 'smooth' adds collinear curvature vector constraint (same as G2 for planar curves).
         // entityIds: [entityAId, entityBId]  (A's end meets B's start)
         if (c.entityIds.length < 2) break;
         const entityA = entityMap.get(c.entityIds[0]);
@@ -822,6 +827,38 @@ function computeResiduals(
         const dot = (adx / aLen) * (bdx / bLen) + (ady / aLen) * (bdy / bLen);
         const targetCos = Math.cos((c.value ?? 90) * Math.PI / 180);
         residuals.push(dot - targetCos);
+        break;
+      }
+      case 'dimension-offset-curves': {
+        // SKETCH-1.10: perpendicular distance between two parallel entities (or radius diff for circles)
+        if (c.entityIds.length < 2) break;
+        const eOCA = entityMap.get(c.entityIds[0]);
+        const eOCB = entityMap.get(c.entityIds[1]);
+        if (!eOCA || !eOCB) break;
+        const targetDist = c.value ?? 0;
+        // Circle/arc case: enforce |rB - rA| = value
+        if ((eOCA.type === 'circle' || eOCA.type === 'arc') && (eOCB.type === 'circle' || eOCB.type === 'arc')
+            && eOCA.radius !== undefined && eOCB.radius !== undefined) {
+          const scalarA = pointMap.get(`${eOCA.id}::radius`);
+          const scalarB = pointMap.get(`${eOCB.id}::radius`);
+          const rA = scalarA ? scalarA.x : eOCA.radius;
+          const rB = scalarB ? scalarB.x : eOCB.radius;
+          residuals.push(Math.abs(rB - rA) - targetDist);
+          break;
+        }
+        // Line case: perpendicular distance between the two parallel lines
+        if (eOCA.points.length < 2 || eOCB.points.length < 2) break;
+        const ocA0 = getPoint(eOCA.id, 0, pointMap);
+        const ocA1 = getPoint(eOCA.id, eOCA.points.length - 1, pointMap);
+        const ocB0 = getPoint(eOCB.id, 0, pointMap);
+        // Direction of line A (normalized in 2D solver space)
+        const ocDx = ocA1.x - ocA0.x, ocDy = ocA1.y - ocA0.y;
+        const ocLen = Math.sqrt(ocDx * ocDx + ocDy * ocDy) || 1;
+        // Perpendicular to line A: (-dy, dx) / len
+        const ocPerpX = -ocDy / ocLen, ocPerpY = ocDx / ocLen;
+        // Signed distance from A0 to B0 along perpendicular
+        const ocSignedDist = (ocB0.x - ocA0.x) * ocPerpX + (ocB0.y - ocA0.y) * ocPerpY;
+        residuals.push(Math.abs(ocSignedDist) - targetDist);
         break;
       }
       case 'horizontal-points': {

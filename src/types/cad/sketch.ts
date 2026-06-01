@@ -31,7 +31,8 @@ export type ConstraintType =
   | 'polygon'
   | 'line-parallel-surface'
   | 'horizontal-points'
-  | 'vertical-points';
+  | 'vertical-points'
+  | 'smooth';
 
 export interface SketchConstraint {
   id: string;
@@ -99,7 +100,7 @@ export type DimensionOrientation = 'horizontal' | 'vertical' | 'auto';
  * Concrete type a *committed* dimension can have. Always resolved — a stored
  * SketchDimension is never 'auto'.
  */
-export type DimensionType = 'linear' | 'angular' | 'radial' | 'diameter' | 'arc-length' | 'aligned' | 'linear-diameter' | 'ellipse-major' | 'ellipse-minor' | 'concentric-gap';
+export type DimensionType = 'linear' | 'angular' | 'radial' | 'diameter' | 'arc-length' | 'aligned' | 'linear-diameter' | 'ellipse-major' | 'ellipse-minor' | 'concentric-gap' | 'offset-curves';
 
 /**
  * Type selectable in the Dimension panel. 'auto' is the Fusion-style modeless
