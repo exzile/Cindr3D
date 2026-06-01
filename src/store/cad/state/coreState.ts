@@ -55,6 +55,7 @@ export interface CADCoreState {
   cycleEntityLinetype: (entityId: string) => void;
   /** S6: remove the 'linked' flag on a projected entity so it becomes an independent editable entity */
   breakProjectionLink: (entityId: string) => void;
+  breakAllProjectionLinks: (entityIds?: string[]) => void;
   copySketch: (id: string) => void;
   deleteSketch: (id: string) => void;
   renameSketch: (id: string, name: string) => void;
@@ -256,9 +257,9 @@ export interface CADCoreState {
   // Sketch offset (D20)
   sketchOffsetDistance: number;
   setSketchOffsetDistance: (d: number) => void;
-  // Sketch mirror (D21)
-  sketchMirrorAxis: 'horizontal' | 'vertical' | 'diagonal';
-  setSketchMirrorAxis: (axis: 'horizontal' | 'vertical' | 'diagonal') => void;
+  // Sketch mirror (D21) — axis can be a fixed direction or a picked entity ID
+  sketchMirrorAxis: 'horizontal' | 'vertical' | 'diagonal' | string;
+  setSketchMirrorAxis: (axis: string) => void;
   commitSketchMirror: () => void;
   // Conic curve rho (D11)
   conicRho: number;

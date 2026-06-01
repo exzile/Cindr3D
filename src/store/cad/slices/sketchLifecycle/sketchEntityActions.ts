@@ -80,5 +80,25 @@ export function createSketchEntityActions({ set, get }: CADSliceContext): Partia
         statusMessage: 'Projection link broken - entity is now independent',
       });
     },
+
+    // SKETCH-1.2: Break link on all linked entities (or only the given subset)
+    breakAllProjectionLinks: (entityIds) => {
+      const { activeSketch, sketches } = get();
+      if (!activeSketch) return;
+      const breakSet = entityIds ? new Set(entityIds) : null;
+      const updated = activeSketch.entities.map((e) => {
+        if (!e.linked) return e;
+        if (breakSet && !breakSet.has(e.id)) return e;
+        return { ...e, linked: false };
+      });
+      const brokenCount = updated.filter((e, i) => !e.linked && activeSketch.entities[i].linked).length;
+      if (brokenCount === 0) { return; }
+      const next = { ...activeSketch, entities: updated };
+      set({
+        activeSketch: next,
+        sketches: upsertSketch(sketches, next),
+        statusMessage: `Break Link: ${brokenCount} projection link${brokenCount > 1 ? 's' : ''} cleared`,
+      });
+    },
   };
 }

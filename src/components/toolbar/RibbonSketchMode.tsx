@@ -8,7 +8,7 @@ import {
   LocateFixed, FlipHorizontal, GitMerge, Zap,
   Grid3X3, Magnet, FileUp, MousePointer2, Square, Crosshair,
   ArrowLeftRight, ArrowUpDown,
-  Check, ChevronDown, X, Grid,
+  Check, ChevronDown, X, Grid, Unlink,
 } from 'lucide-react';
 import { useCADStore } from '../../store/cadStore';
 import { RibbonSection } from './FlyoutMenu';
@@ -56,6 +56,9 @@ export function RibbonSketchMode({
   const autoConstrainSketch = useCADStore((s) => s.autoConstrainSketch);
   const startSketchTextTool = useCADStore((s) => s.startSketchTextTool);
   const startSketchProjectSurfaceTool = useCADStore((s) => s.startSketchProjectSurfaceTool);
+  const breakAllProjectionLinks = useCADStore((s) => s.breakAllProjectionLinks);
+  const activeSketch = useCADStore((s) => s.activeSketch);
+  const hasLinkedEntities = (activeSketch?.entities ?? []).some((e) => e.linked);
   const sketchGridEnabled = useCADStore((s) => s.sketchGridEnabled);
   const setSketchGridEnabled = useCADStore((s) => s.setSketchGridEnabled);
   const sketchSnapEnabled = useCADStore((s) => s.sketchSnapEnabled);
@@ -146,6 +149,14 @@ export function RibbonSketchMode({
         <ToolButton icon={<ArrowUpFromLine size={20} />} label="Project" active={activeTool === 'sketch-project'} onClick={() => { setActiveTool('sketch-project' as T); setStatusMessage('Project: click a solid face to project its boundary onto the sketch plane'); }} colorClass="icon-blue" />
         <ToolButton icon={<Scissors size={20} />} label="Intersect" active={activeTool === 'sketch-intersect'} onClick={() => { setActiveTool('sketch-intersect' as T); setStatusMessage('Click a solid face to create intersection curve with sketch plane'); }} colorClass="icon-blue" />
         <ToolButton icon={<Download size={20} />} label="Proj Surface" active={activeTool === 'sketch-project-surface'} onClick={startSketchProjectSurfaceTool} colorClass="icon-blue" />
+        {hasLinkedEntities && (
+          <ToolButton
+            icon={<Unlink size={20} />}
+            label="Break Link"
+            colorClass="icon-blue"
+            onClick={() => { breakAllProjectionLinks(); setStatusMessage('Break Link: projection links cleared'); }}
+          />
+        )}
         <ToolButton icon={<Type size={20} />} label="Text" active={activeTool === 'sketch-text'} onClick={startSketchTextTool} colorClass="icon-blue" />
         <ToolButton
           icon={<Grid size={20} />}
@@ -178,6 +189,8 @@ export function RibbonSketchMode({
         <ToolButton icon={<CornerDownRight size={20} />} label="Perpendicular" active={activeTool === 'constrain-perpendicular'} onClick={() => { setActiveTool('constrain-perpendicular' as T); setStatusMessage('Perpendicular: click two lines to apply constraint'); }} colorClass="icon-orange" />
         <ToolButton icon={<ArrowLeftRight size={20} />} label="Horizontal" active={activeTool === 'constrain-horizontal'} onClick={() => { setActiveTool('constrain-horizontal' as T); setStatusMessage('Horizontal: click a line or two points to apply constraint'); }} colorClass="icon-orange" />
         <ToolButton icon={<ArrowUpDown size={20} />} label="Vertical" active={activeTool === 'constrain-vertical'} onClick={() => { setActiveTool('constrain-vertical' as T); setStatusMessage('Vertical: click a line or two points to apply constraint'); }} colorClass="icon-orange" />
+        <ToolButton icon={<ArrowLeftRight size={20} />} label="H Points" active={activeTool === 'constrain-horizontal-points'} onClick={() => { setActiveTool('constrain-horizontal-points' as T); setStatusMessage('Horizontal Points: click two points on separate entities to align their U-coordinates'); }} colorClass="icon-orange" />
+        <ToolButton icon={<ArrowUpDown size={20} />} label="V Points" active={activeTool === 'constrain-vertical-points'} onClick={() => { setActiveTool('constrain-vertical-points' as T); setStatusMessage('Vertical Points: click two points on separate entities to align their V-coordinates'); }} colorClass="icon-orange" />
         <ToolButton icon={<Tangent size={20} />} label="Tangent" active={activeTool === 'constrain-tangent'} onClick={() => { setActiveTool('constrain-tangent' as T); setStatusMessage('Tangent: click two curves to apply constraint'); }} colorClass="icon-orange" />
         <ToolButton icon={<Equal size={20} />} label="Equal" active={activeTool === 'constrain-equal'} onClick={() => { setActiveTool('constrain-equal' as T); setStatusMessage('Equal: click two entities to apply constraint'); }} colorClass="icon-orange" />
         <ToolButton icon={<LocateFixed size={20} />} label="Midpoint" active={activeTool === 'constrain-midpoint'} onClick={() => { setActiveTool('constrain-midpoint' as T); setStatusMessage('Midpoint: click a point and a line to apply constraint'); }} colorClass="icon-orange" />

@@ -29,7 +29,9 @@ export type ConstraintType =
   | 'line-on-surface'
   | 'distance-surface'
   | 'polygon'
-  | 'line-parallel-surface';
+  | 'line-parallel-surface'
+  | 'horizontal-points'
+  | 'vertical-points';
 
 export interface SketchConstraint {
   id: string;

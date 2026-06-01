@@ -802,6 +802,28 @@ function computeResiduals(
         residuals.push((lp1.x - lp0.x) * nu + (lp1.y - lp0.y) * nv);
         break;
       }
+      case 'horizontal-points': {
+        // SKETCH-1.7: two arbitrary points share the same U coordinate (p1.u == p2.u)
+        if (c.entityIds.length < 2) break;
+        const ehpA = entityMap.get(c.entityIds[0]);
+        const ehpB = entityMap.get(c.entityIds[1]);
+        if (!ehpA || !ehpB) break;
+        const phpA = getPoint(ehpA.id, c.pointIndices?.[0] ?? 0, pointMap);
+        const phpB = getPoint(ehpB.id, c.pointIndices?.[1] ?? 0, pointMap);
+        residuals.push(phpA.x - phpB.x);
+        break;
+      }
+      case 'vertical-points': {
+        // SKETCH-1.7: two arbitrary points share the same V coordinate (p1.v == p2.v)
+        if (c.entityIds.length < 2) break;
+        const evpA = entityMap.get(c.entityIds[0]);
+        const evpB = entityMap.get(c.entityIds[1]);
+        if (!evpA || !evpB) break;
+        const pvpA = getPoint(evpA.id, c.pointIndices?.[0] ?? 0, pointMap);
+        const pvpB = getPoint(evpB.id, c.pointIndices?.[1] ?? 0, pointMap);
+        residuals.push(pvpA.y - pvpB.y);
+        break;
+      }
       default:
         break;
     }

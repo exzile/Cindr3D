@@ -172,7 +172,8 @@ export function useSketchConstraintTool({
     const requiredCount = getRequiredConstraintCount(constraintType);
 
     // B3: constraints that bond specific endpoints need pointIndices.
-    const POINT_INDEX_TYPES: ConstraintType[] = ['coincident', 'midpoint', 'concentric', 'symmetric'];
+    // SKETCH-1.7: h/v-points constrain specific endpoints, so they need pointIndices
+    const POINT_INDEX_TYPES: ConstraintType[] = ['coincident', 'midpoint', 'concentric', 'symmetric', 'horizontal-points', 'vertical-points'];
     // Accumulate (pointIndex, entityId) pairs across multi-click constraints.
     const pendingPointIndices: number[] = [];
 
