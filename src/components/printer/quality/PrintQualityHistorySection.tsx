@@ -8,6 +8,7 @@
  * `usePrintCompletionScore` (mounted in `DuetNotifications`) feeds records
  * into this list automatically — this component is purely render.
  */
+import { useMemo } from 'react';
 import { ChevronDown, ScanLine } from 'lucide-react';
 import { useVisionStore } from '../../../store/visionStore';
 import { PrintQualityCard } from './PrintQualityCard';
@@ -25,8 +26,10 @@ export function PrintQualityHistorySection({
   setIsOpen,
   activePrinterId,
 }: PrintQualityHistorySectionProps) {
-  const records = useVisionStore((s) =>
-    s.recentDiagnoses.filter((r) => r.printerId === activePrinterId),
+  const recentDiagnoses = useVisionStore((s) => s.recentDiagnoses);
+  const records = useMemo(
+    () => recentDiagnoses.filter((r) => r.printerId === activePrinterId),
+    [activePrinterId, recentDiagnoses],
   );
 
   return (

@@ -46,6 +46,10 @@ export interface CADCoreState {
   finishSketch: () => void;
   cancelSketch: () => void;
   addSketchEntity: (entity: SketchEntity) => void;
+  /** Add multiple entities + constraints atomically: 1 undo entry, 1 state update, 1 solver run.
+   *  Pass skipSolve=true when geometry is analytically exact (polygon/rectangle) to avoid an
+   *  O(n³) full-sketch solve for points that already satisfy their constraints. */
+  addSketchEntitiesAndConstraintsBatch: (entities: SketchEntity[], constraints: SketchConstraint[], skipSolve?: boolean) => void;
   replaceSketchEntities: (entities: SketchEntity[]) => void;
   /** D57: toggle a single entity's linetype (line ↔ construction-line ↔ centerline) */
   cycleEntityLinetype: (entityId: string) => void;
@@ -62,6 +66,8 @@ export interface CADCoreState {
   autoConstrainSketch: () => void;
   /** D27: Run the Newton-Raphson constraint solver on the active sketch. */
   solveSketch: () => void;
+  /** B6.c: entity IDs in fully-constrained solver components — used for DOF coloring. */
+  sketchConstrainedEntityIds: string[];
   /** CORR-7: when true, constraint solver is not called automatically on entity/constraint changes */
   sketchComputeDeferred: boolean;
   setSketchComputeDeferred: (v: boolean) => void;
@@ -207,6 +213,12 @@ export interface CADCoreState {
   // Sketch tool options
   sketchPolygonSides: number;
   setSketchPolygonSides: (sides: number) => void;
+  /** Id of the polygon constraint whose inline editor popup is open (null = none). */
+  editingPolygonConstraintId: string | null;
+  setEditingPolygonConstraintId: (id: string | null) => void;
+  /** Regenerate a regular polygon with a new side count, keeping its center,
+   *  circumradius and orientation. */
+  regeneratePolygon: (constraintId: string, newSides: number) => void;
   sketchFilletRadius: number;
   setSketchFilletRadius: (r: number) => void;
   sketchSlotWidth: number;

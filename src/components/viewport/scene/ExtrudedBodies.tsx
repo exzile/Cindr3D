@@ -310,6 +310,13 @@ export default function ExtrudedBodies() {
     [features, isActive, hasActiveDownstreamEdgeModification],
   );
 
+  const tangentReferenceFeatures = useMemo(
+    () => storedMeshFeaturesFiltered.filter(
+      (feature) => feature.type === 'fillet' || feature.type === 'chamfer',
+    ),
+    [storedMeshFeaturesFiltered],
+  );
+
   // Keep the persistent geometry caches in sync from committed OCC meshes so
   // Prepare/export can resolve body geometry from committed OCC/stored meshes.
   useEffect(() => {
@@ -415,7 +422,7 @@ export default function ExtrudedBodies() {
       ))}
       {/* Fusion-style tangent reference lines around fillets/chamfers (visual only,
           non-selectable). Same active-feature set as the meshes above. */}
-      {storedMeshFeaturesFiltered.map((feature) => (
+      {tangentReferenceFeatures.map((feature) => (
         <TangentEdgeLines
           key={`tangent-${feature.id}`}
           mesh={feature.mesh}

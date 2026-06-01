@@ -16,6 +16,7 @@ import VisualStyleEffect from './scene/VisualStyleEffect';
 import SliceEffect from './scene/SliceEffect';
 import SketchRenderer from './scene/SketchRenderer';
 import SketchConstraintOverlay from './scene/SketchConstraintOverlay';
+import PolygonConstraintOverlay from './scene/PolygonConstraintOverlay';
 import SketchDimensionAnnotations from './scene/SketchDimensionAnnotations';
 import SketchDimensionPreview from './scene/SketchDimensionPreview';
 import SketchSplineHandles from './scene/SketchSplineHandles';
@@ -73,7 +74,7 @@ import { EffectComposer, SSAO } from '@react-three/postprocessing';
 import MultiViewCanvas from './multiview/MultiViewCanvas';
 import { ViewportPanels } from './ViewportPanels';
 import { ViewportOverlays } from './ViewportOverlays';
-import { useViewCubeQuaternion } from './hooks/useViewCubeQuaternion';
+import { publishViewCubeQuaternion } from './hooks/useViewCubeQuaternion';
 import { useWindowLassoSelection } from './hooks/useWindowLassoSelection';
 
 
@@ -131,7 +132,6 @@ export default function Viewport() {
   // context menu on a stationary right-click, not after a right-drag pan.
   // Window/lasso select needs the live camera for screen-space projection.
   // Captured in Canvas.onCreated so it's available to pointerUp handlers.
-  const { camQuat, handleQuaternionChange } = useViewCubeQuaternion();
   const {
     cameraRef,
     containerRef,
@@ -249,6 +249,7 @@ export default function Viewport() {
           <>
             <SketchRenderer />
             <SketchConstraintOverlay />
+            <PolygonConstraintOverlay />
             <SketchDimensionAnnotations />
             <SketchDimensionPreview />
             <SketchSplineHandles />
@@ -303,7 +304,7 @@ export default function Viewport() {
         <AnalysisOverlay />
 
         {/* Camera controller — also feeds quaternion to ViewCube */}
-        <CameraController onQuaternionChange={handleQuaternionChange} />
+        <CameraController onQuaternionChange={publishViewCubeQuaternion} />
         {/* NAV-20: Perspective / Orthographic switcher */}
         <CameraProjectionSwitcher />
         {/* NAV-6: Look At face pick */}
@@ -357,7 +358,6 @@ export default function Viewport() {
       )}
 
       <ViewportOverlays
-        camQuat={camQuat}
         viewportCtxMenu={viewportCtxMenu}
         onCloseContextMenu={() => setViewportCtxMenu(null)}
         onOrientViewCube={handleViewCubeOrient}

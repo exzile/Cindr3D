@@ -3,6 +3,8 @@ import './Timeline.css';
 import {
   CheckSquare,
   ChevronRight,
+  PanelRightClose,
+  PanelRightOpen,
   PauseCircle,
   PlayCircle,
   SkipBack,
@@ -22,6 +24,7 @@ export default function Timeline() {
   const finishBaseFeature = useCADStore((s) => s.finishBaseFeature);
   const reorderFeature = useCADStore((s) => s.reorderFeature);
   const [dragOverEnd, setDragOverEnd] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const playIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -120,6 +123,25 @@ export default function Timeline() {
     return rows;
   };
 
+  if (collapsed) {
+    return (
+      <div className="timeline-panel timeline-panel--collapsed">
+        <button
+          className="timeline-rail-button"
+          title="Expand Timeline"
+          aria-label="Expand Timeline"
+          onClick={() => setCollapsed(false)}
+        >
+          <PanelRightOpen size={16} />
+        </button>
+        <span className="timeline-rail-label">Timeline</span>
+        <span className="timeline-rail-count" title={`${features.length} features`}>
+          {features.length}
+        </span>
+      </div>
+    );
+  }
+
   return (
     <div className="timeline-panel">
       {!historyEnabled && (
@@ -206,6 +228,14 @@ export default function Timeline() {
             {isPlaying ? <PauseCircle size={11} /> : <PlayCircle size={11} />}
           </button>
           <span className="feature-count" title={`${features.length} features`}>{features.length}</span>
+          <button
+            className="timeline-nav__btn timeline-nav__btn--panel"
+            title="Collapse Timeline"
+            aria-label="Collapse Timeline"
+            onClick={() => setCollapsed(true)}
+          >
+            <PanelRightClose size={12} />
+          </button>
         </div>
       </div>
 

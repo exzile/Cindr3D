@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { SketchPreviewHelpers } from './types';
 
 export function renderEllipsePreview(activeTool: string, h: SketchPreviewHelpers): boolean {
-  const { start, startV, mousePos, drawingPoints, t1, t2, addLine } = h;
+  const { start, startV, mousePos, drawingPoints, t1, t2, addLine, circlePoints, constructionMat } = h;
 
   const buildEllipse = (
     majorLen: number,
@@ -22,27 +22,43 @@ export function renderEllipsePreview(activeTool: string, h: SketchPreviewHelpers
     return pts;
   };
 
+  const pn = t1.clone().cross(t2).normalize();
+  // Full-diameter axis line through the centre (Fusion shows axes both ways).
+  const axisLine = (dir: THREE.Vector3, len: number) =>
+    [startV.clone().addScaledVector(dir, -len), startV.clone().addScaledVector(dir, len)];
+
   switch (activeTool) {
     case 'ellipse': {
       if (drawingPoints.length === 1) {
-        addLine([startV, mousePos]);
+        // Step 1 — "Place first axis point": defining the major axis. Show the
+        // full major axis through the centre, a dashed reference circle (radius =
+        // major), and a dashed perpendicular guide for the minor direction.
+        const majorVec = mousePos.clone().sub(startV);
+        const majorLen = majorVec.length();
+        if (majorLen > 0.001) {
+          const majorDir = majorVec.clone().normalize();
+          const minorDir = majorDir.clone().cross(pn).normalize();
+          addLine(circlePoints(startV, majorLen), constructionMat);
+          addLine(axisLine(majorDir, majorLen));
+          addLine(axisLine(minorDir, majorLen * 0.6), constructionMat);
+        } else {
+          addLine([startV, mousePos]);
+        }
       } else if (drawingPoints.length === 2) {
+        // Step 2 — "Place point on ellipse": defining the minor axis. Show the
+        // reference circle, both axes, and the live ellipse.
         const majorPt = drawingPoints[1];
         const majorVec = new THREE.Vector3(majorPt.x - start.x, majorPt.y - start.y, majorPt.z - start.z);
         const majorLen = majorVec.length();
         if (majorLen > 0.001) {
           const majorDir = majorVec.clone().normalize();
-          const pn = t1.clone().cross(t2).normalize();
           const minorDir = majorDir.clone().cross(pn).normalize();
           const minorLen = Math.abs(mousePos.clone().sub(startV).dot(minorDir));
           const rotation = Math.atan2(majorDir.dot(t2), majorDir.dot(t1));
+          addLine(circlePoints(startV, majorLen), constructionMat);
           addLine(buildEllipse(majorLen, minorLen, rotation));
-          const majorV = new THREE.Vector3(majorPt.x, majorPt.y, majorPt.z);
-          addLine([startV, majorV]);
-          addLine([
-            startV,
-            startV.clone().addScaledVector(t1, minorDir.dot(t1) * minorLen).addScaledVector(t2, minorDir.dot(t2) * minorLen),
-          ]);
+          addLine(axisLine(majorDir, majorLen));
+          if (minorLen > 0.001) addLine(axisLine(minorDir, minorLen), constructionMat);
         }
       }
       return true;
@@ -57,7 +73,6 @@ export function renderEllipsePreview(activeTool: string, h: SketchPreviewHelpers
         const majorLen = majorVec.length();
         if (majorLen > 0.001) {
           const majorDir = majorVec.clone().normalize();
-          const pn = t1.clone().cross(t2).normalize();
           const minorDir = majorDir.clone().cross(pn).normalize();
           const minorLen = Math.abs(mousePos.clone().sub(startV).dot(minorDir));
           const rotation = Math.atan2(majorDir.dot(t2), majorDir.dot(t1));
@@ -70,7 +85,6 @@ export function renderEllipsePreview(activeTool: string, h: SketchPreviewHelpers
         const majorLen = majorVec.length();
         if (majorLen > 0.001) {
           const majorDir = majorVec.clone().normalize();
-          const pn = t1.clone().cross(t2).normalize();
           const minorDir = majorDir.clone().cross(pn).normalize();
           const to3 = new THREE.Vector3(
             drawingPoints[2].x - start.x,

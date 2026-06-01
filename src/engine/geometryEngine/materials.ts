@@ -9,7 +9,22 @@ export function tagShared<T extends THREE.Material | THREE.BufferGeometry>(obj: 
 }
 
 export const SKETCH_MATERIAL = tagShared(new THREE.LineBasicMaterial({
+  color: 0x006fb8,
+  linewidth: 2,
+  depthTest: false,
+  depthWrite: false,
+}));
+
+export const OPEN_SKETCH_MATERIAL = tagShared(new THREE.LineBasicMaterial({
   color: 0x00aaff,
+  linewidth: 2,
+  depthTest: false,
+  depthWrite: false,
+}));
+
+/** B6.c: Fully-constrained sketch entities (black, matching Fusion 360 DOF coloring). */
+export const SKETCH_CONSTRAINED_MATERIAL = tagShared(new THREE.LineBasicMaterial({
+  color: 0x1f2937,
   linewidth: 2,
   depthTest: false,
   depthWrite: false,

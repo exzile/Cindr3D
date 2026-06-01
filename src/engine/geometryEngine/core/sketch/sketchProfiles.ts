@@ -476,20 +476,198 @@ export function entitiesToShapes(
   const tolerance = 1e-3;
 
   const chainable: { entity: SketchEntity; endpoints: [{ u: number; v: number }, { u: number; v: number }] }[] = [];
+  const lineCandidates: { entity: SketchEntity; endpoints: [{ u: number; v: number }, { u: number; v: number }] }[] = [];
 
   for (const entity of entities) {
     if (CLOSED_PRIMITIVE_TYPES.has(entity.type)) {
       const shape = entitiesToShape([entity], project);
       if (shape) shapes.push(shape);
+    } else if (entity.type === 'line') {
+      const endpoints = getEntityEndpoints(entity, project);
+      if (endpoints) lineCandidates.push({ entity, endpoints });
     } else if (BOUNDARY_TYPES.has(entity.type)) {
       const endpoints = getEntityEndpoints(entity, project);
       if (endpoints) chainable.push({ entity, endpoints });
     }
   }
 
+  if (lineCandidates.length > 0) {
+    const splitTs = lineCandidates.map(() => [0, 1]);
+    const cross = (ax: number, ay: number, bx: number, by: number) => ax * by - ay * bx;
+    const addT = (list: number[], t: number) => {
+      if (t < -1e-7 || t > 1 + 1e-7) return;
+      const clamped = Math.min(1, Math.max(0, t));
+      if (!list.some((existing) => Math.abs(existing - clamped) <= 1e-5)) list.push(clamped);
+    };
+
+    for (let i = 0; i < lineCandidates.length; i++) {
+      const a = lineCandidates[i].endpoints[0];
+      const b = lineCandidates[i].endpoints[1];
+      const rx = b.u - a.u;
+      const ry = b.v - a.v;
+      for (let j = i + 1; j < lineCandidates.length; j++) {
+        const c = lineCandidates[j].endpoints[0];
+        const d = lineCandidates[j].endpoints[1];
+        const sx = d.u - c.u;
+        const sy = d.v - c.v;
+        const denom = cross(rx, ry, sx, sy);
+        if (Math.abs(denom) <= 1e-9) continue;
+        const qpx = c.u - a.u;
+        const qpy = c.v - a.v;
+        const ti = cross(qpx, qpy, sx, sy) / denom;
+        const tj = cross(qpx, qpy, rx, ry) / denom;
+        if (ti >= -1e-7 && ti <= 1 + 1e-7 && tj >= -1e-7 && tj <= 1 + 1e-7) {
+          addT(splitTs[i], ti);
+          addT(splitTs[j], tj);
+        }
+      }
+    }
+
+    const lineExtent = (() => {
+      let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+      for (const candidate of lineCandidates) {
+        for (const point of candidate.endpoints) {
+          if (point.u < minU) minU = point.u; if (point.u > maxU) maxU = point.u;
+          if (point.v < minV) minV = point.v; if (point.v > maxV) maxV = point.v;
+        }
+      }
+      return Math.hypot(maxU - minU, maxV - minV);
+    })();
+    const splitKeyTolerance = Math.min(1.0, Math.max(tolerance, 0.02 * lineExtent));
+    const endpointKey = (p: { u: number; v: number }) =>
+      `${Math.round(p.u / splitKeyTolerance)},${Math.round(p.v / splitKeyTolerance)}`;
+    const splitSegments: typeof chainable = [];
+    const degree = new Map<string, number>();
+    const addDegree = (key: string) => degree.set(key, (degree.get(key) ?? 0) + 1);
+    const pointAt = (entity: SketchEntity, t: number): SketchPoint => {
+      const a = entity.points[0];
+      const b = entity.points[entity.points.length - 1];
+      return {
+        id: crypto.randomUUID(),
+        x: a.x + (b.x - a.x) * t,
+        y: a.y + (b.y - a.y) * t,
+        z: a.z + (b.z - a.z) * t,
+      };
+    };
+
+    for (let i = 0; i < lineCandidates.length; i++) {
+      const candidate = lineCandidates[i];
+      const ts = splitTs[i].sort((a, b) => a - b);
+      for (let k = 0; k < ts.length - 1; k++) {
+        const t0 = ts[k];
+        const t1v = ts[k + 1];
+        if (Math.abs(t1v - t0) <= 1e-5) continue;
+        const p0 = {
+          u: candidate.endpoints[0].u + (candidate.endpoints[1].u - candidate.endpoints[0].u) * t0,
+          v: candidate.endpoints[0].v + (candidate.endpoints[1].v - candidate.endpoints[0].v) * t0,
+        };
+        const p1 = {
+          u: candidate.endpoints[0].u + (candidate.endpoints[1].u - candidate.endpoints[0].u) * t1v,
+          v: candidate.endpoints[0].v + (candidate.endpoints[1].v - candidate.endpoints[0].v) * t1v,
+        };
+        const synthetic: SketchEntity = {
+          ...candidate.entity,
+          points: [pointAt(candidate.entity, t0), pointAt(candidate.entity, t1v)],
+        };
+        splitSegments.push({ entity: synthetic, endpoints: [p0, p1] });
+        addDegree(endpointKey(p0));
+        addDegree(endpointKey(p1));
+      }
+    }
+
+    const validSplitSegments = splitSegments.filter((segment) => {
+      const a = endpointKey(segment.endpoints[0]);
+      const b = endpointKey(segment.endpoints[1]);
+      return (degree.get(a) ?? 0) >= 2 && (degree.get(b) ?? 0) >= 2;
+    });
+
+    const hasInteriorSplit = splitTs.some((ts) => ts.some((t) => t > 1e-5 && t < 1 - 1e-5));
+    if (hasInteriorSplit) {
+      const nodePoints = new Map<string, { u: number; v: number }>();
+      const graph = new Map<string, Set<string>>();
+      const addGraphEdge = (a: string, b: string, pa: { u: number; v: number }, pb: { u: number; v: number }) => {
+        nodePoints.set(a, nodePoints.get(a) ?? pa);
+        nodePoints.set(b, nodePoints.get(b) ?? pb);
+        const la = graph.get(a) ?? new Set<string>();
+        const lb = graph.get(b) ?? new Set<string>();
+        la.add(b); lb.add(a);
+        graph.set(a, la); graph.set(b, lb);
+      };
+      for (const segment of validSplitSegments) {
+        addGraphEdge(
+          endpointKey(segment.endpoints[0]),
+          endpointKey(segment.endpoints[1]),
+          segment.endpoints[0],
+          segment.endpoints[1],
+        );
+      }
+
+      const cycleKey = (cycle: string[]) => {
+        const variants: string[] = [];
+        for (let i = 0; i < cycle.length; i++) variants.push([...cycle.slice(i), ...cycle.slice(0, i)].join('|'));
+        const reversed = [...cycle].reverse();
+        for (let i = 0; i < reversed.length; i++) variants.push([...reversed.slice(i), ...reversed.slice(0, i)].join('|'));
+        return variants.sort()[0];
+      };
+      const cycleArea = (cycle: string[]) => {
+        let area = 0;
+        for (let i = 0, j = cycle.length - 1; i < cycle.length; j = i++) {
+          const a = nodePoints.get(cycle[j]);
+          const b = nodePoints.get(cycle[i]);
+          if (!a || !b) return 0;
+          area += a.u * b.v - b.u * a.v;
+        }
+        return Math.abs(area) * 0.5;
+      };
+      const cycles = new Map<string, string[]>();
+      const maxCycleLength = 16;
+      const dfs = (start: string, current: string, path: string[], usedNodes: Set<string>) => {
+        if (path.length > maxCycleLength) return;
+        for (const next of graph.get(current) ?? []) {
+          if (next === start && path.length >= 3) {
+            const key = cycleKey(path);
+            if (!cycles.has(key) && cycleArea(path) > 1e-4) cycles.set(key, [...path]);
+            continue;
+          }
+          if (usedNodes.has(next)) continue;
+          usedNodes.add(next);
+          path.push(next);
+          dfs(start, next, path, usedNodes);
+          path.pop();
+          usedNodes.delete(next);
+        }
+      };
+      for (const start of graph.keys()) dfs(start, start, [start], new Set([start]));
+
+      for (const cycle of cycles.values()) {
+        const points = cycle
+          .map((key) => nodePoints.get(key))
+          .filter((point): point is { u: number; v: number } => Boolean(point))
+          .map((point) => new THREE.Vector2(point.u, point.v));
+        if (points.length >= 3) shapes.push(new THREE.Shape(points));
+      }
+    }
+
+    for (const segment of validSplitSegments) {
+      chainable.push(segment);
+    }
+  }
+
   const used = new Set<number>();
+  const chainExtent = (() => {
+    if (chainable.length === 0) return 0;
+    let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+    for (const item of chainable) {
+      for (const point of item.endpoints) {
+        if (point.u < minU) minU = point.u; if (point.u > maxU) maxU = point.u;
+        if (point.v < minV) minV = point.v; if (point.v > maxV) maxV = point.v;
+      }
+    }
+    return Math.hypot(maxU - minU, maxV - minV);
+  })();
+  const joinTolerance = Math.min(1.0, Math.max(tolerance, 0.02 * chainExtent));
   const ptClose = (a: { u: number; v: number }, b: { u: number; v: number }) =>
-    Math.hypot(a.u - b.u, a.v - b.v) <= tolerance;
+    Math.hypot(a.u - b.u, a.v - b.v) <= joinTolerance;
 
   for (let seed = 0; seed < chainable.length; seed++) {
     if (used.has(seed)) continue;

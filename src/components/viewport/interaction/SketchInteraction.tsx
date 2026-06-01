@@ -4,20 +4,21 @@ import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { useThemeStore } from '../../../store/themeStore';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
-import type { SketchPoint } from '../../../types/cad';
+import type { SketchPoint, SnapType } from '../../../types/cad';
 import { renderSketchPreview } from './sketchInteraction/previewTool';
 import { useSketchProjectionTools } from './sketchInteraction/hooks/useSketchProjectionTools';
 import { useSketchDimensionTool } from './sketchInteraction/hooks/useSketchDimensionTool';
 import { useSketchConstraintTool } from './sketchInteraction/hooks/useSketchConstraintTool';
 import { useSketchInteractionEvents } from './sketchInteraction/hooks/useSketchInteractionEvents';
 import { SketchInteractionHud } from './sketchInteraction/SketchInteractionHud';
+import type { InferenceResult } from './sketchInteraction/sketchInference';
 
 const _tmpP0 = new THREE.Vector3();
 const _tmpP1 = new THREE.Vector3();
 const _tmpSeg = new THREE.Vector3();
 
 export default function SketchInteraction() {
-  const { camera, gl, raycaster, scene } = useThree();
+  const { camera, gl, raycaster, scene, size: viewportSize } = useThree();
   const activeTool = useCADStore((s) => s.activeTool);
   const activeSketch = useCADStore((s) => s.activeSketch);
   const addSketchEntity = useCADStore((s) => s.addSketchEntity);
@@ -91,16 +92,16 @@ export default function SketchInteraction() {
   useEffect(() => { drawingPointsRef.current = drawingPoints; }, [drawingPoints]);
   useEffect(() => { mousePosRef.current = mousePos; }, [mousePos]);
   // D65: snap indicator target
-  const [snapTarget, setSnapTarget] = useState<{ worldPos: THREE.Vector3; type: 'endpoint' | 'midpoint' | 'center' | 'intersection' | 'perpendicular' | 'tangent' } | null>(null);
+  const [snapTarget, setSnapTarget] = useState<{ worldPos: THREE.Vector3; type: SnapType } | null>(null);
   // Midpoint hover markers — segments whose midpoint should be shown as a dim triangle
   const [hoverMidpoints, setHoverMidpoints] = useState<THREE.Vector3[]>([]);
   const previewRef = useRef<THREE.Group>(null);
   // Stable preview materials — created once, never recreated per frame
   const previewMaterial = useRef(new THREE.LineBasicMaterial({
-    color: 0xffaa00, linewidth: 2, depthTest: false, depthWrite: false,
+    color: 0xc2410c, linewidth: 2, depthTest: false, depthWrite: false,
   }));
   const constructionPreviewMaterial = useRef(new THREE.LineDashedMaterial({
-    color: 0xff8800, linewidth: 1, dashSize: 0.3, gapSize: 0.18, depthTest: false, depthWrite: false,
+    color: 0x7c2d12, linewidth: 1, dashSize: 0.3, gapSize: 0.18, depthTest: false, depthWrite: false,
   }));
   const centerlinePreviewMaterial = useRef(new THREE.LineDashedMaterial({
     color: 0x00aa55, linewidth: 1, dashSize: 0.7, gapSize: 0.2, depthTest: false, depthWrite: false,
@@ -108,6 +109,9 @@ export default function SketchInteraction() {
 
   // Scratch Vector3 for useFrame — avoids per-frame allocation
   const startVRef = useRef(new THREE.Vector3());
+  // Scratch objects for getRawWorldPoint — avoids per-mousemove allocation
+  const _mouseScratch = useRef(new THREE.Vector2());
+  const _intersectionScratch = useRef(new THREE.Vector3());
 
   // D42: click-drag tangent arc detection for line tool
   const isDraggingArcRef = useRef(false);
@@ -123,17 +127,26 @@ export default function SketchInteraction() {
   // S7: plane-pick pending — set true when Tab is pressed to redirect draw plane
   const planePickPendingRef = useRef(false);
 
+  // A10: inference result ref — shared between event handler (writes) and useFrame (reads).
+  const inferenceRef = useRef<InferenceResult | null>(null);
+  // A10: dashed material for inference guide lines (orange-ish, distinct from construction).
+  const inferenceGuideMaterial = useRef(new THREE.LineDashedMaterial({
+    color: 0xf97316, linewidth: 1, dashSize: 0.4, gapSize: 0.2, depthTest: false, depthWrite: false, transparent: true, opacity: 0.8,
+  }));
+
   // Dispose the shared preview materials when SketchInteraction unmounts.
   useEffect(() => {
     const mat = previewMaterial.current;
     const constMat = constructionPreviewMaterial.current;
     const cenMat = centerlinePreviewMaterial.current;
     const constrModeMat = constructionModePreviewMaterial.current;
+    const inferMat = inferenceGuideMaterial.current;
     return () => {
       mat.dispose();
       constMat.dispose();
       cenMat.dispose();
       constrModeMat.dispose();
+      inferMat.dispose();
     };
   }, []);
 
@@ -143,6 +156,7 @@ export default function SketchInteraction() {
     setDrawingPoints([]);
     setMousePos(null);
     setSnapTarget(null);
+    inferenceRef.current = null;
     // S9/S10: reset inline-arc and construction-mode toggles on tool change
     lineArcModeRef.current = false;
     drawingConstructionRef.current = false;
@@ -191,10 +205,13 @@ export default function SketchInteraction() {
 
   const snapToGrid = useCallback((point: THREE.Vector3): THREE.Vector3 => {
     // D207: sketchSnapEnabled controls snap-to-grid; snapEnabled is global geometry snap
+    // objectSnapEnabled is the master snap toggle: when off, nothing snaps (including grid).
+    if (!objectSnapEnabled) return point;
     if (!snapEnabled && !sketchSnapEnabled) return point;
     if (!activeSketch) return point;
 
-    const snap = gridSize / 10;
+    // A1: snap to the displayed grid spacing, not gridSize/10; honor per-sketch override.
+    const snap = (activeSketch as { gridSize?: number }).gridSize ?? gridSize;
     const origin = activeSketch.planeOrigin ?? new THREE.Vector3(0, 0, 0);
     const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
     const fromOrigin = point.clone().sub(origin);
@@ -204,36 +221,57 @@ export default function SketchInteraction() {
     return origin.clone()
       .addScaledVector(t1, u)
       .addScaledVector(t2, v);
-  }, [snapEnabled, sketchSnapEnabled, gridSize, activeSketch]);
+  }, [objectSnapEnabled, snapEnabled, sketchSnapEnabled, gridSize, activeSketch]);
 
   // D65 / S8 / NAV-24: find nearest snap candidate within snap radius.
   // Supports endpoint, midpoint, center, intersection (existing) +
   // perpendicular and tangent (NAV-24).
-  const SNAP_RADIUS = 4;
-  const SKETCH_PLANE_SNAP_TOLERANCE = 0.05;
+  const SNAP_PIXELS = 12; // screen-space snap radius in pixels (A2)
   const findSnapCandidate = useCallback((worldPt: THREE.Vector3, drawStart?: THREE.Vector3 | null) => {
     if (!activeSketch || !snapEnabled) return null;
     // NAV-24: master object-snap gate
     if (!objectSnapEnabled) return null;
+    // A2: compute world-units-per-pixel at cursor depth for zoom-independent snap radius.
+    const camToPoint = worldPt.clone().sub(camera.position);
+    const depth = Math.max(camToPoint.length(), 0.1);
+    let worldUnitsPerPx = 1;
+    if ((camera as THREE.PerspectiveCamera).isPerspectiveCamera) {
+      const pc = camera as THREE.PerspectiveCamera;
+      worldUnitsPerPx = (2 * Math.tan((pc.fov * Math.PI / 180) / 2) * depth) / viewportSize.height;
+    } else if ((camera as THREE.OrthographicCamera).isOrthographicCamera) {
+      const oc = camera as THREE.OrthographicCamera;
+      worldUnitsPerPx = (oc.top - oc.bottom) / viewportSize.height;
+    }
+    const SNAP_RADIUS = SNAP_PIXELS * worldUnitsPerPx;
     let bestDist = SNAP_RADIUS;
-    let best: { worldPos: THREE.Vector3; type: 'endpoint' | 'midpoint' | 'center' | 'intersection' | 'perpendicular' | 'tangent' } | null = null;
+    let bestPriority = 99;
+    let best: { worldPos: THREE.Vector3; type: SnapType } | null = null;
+    // A3: priority order (lower = higher priority). A higher-priority snap within
+    // SNAP_RADIUS beats a lower-priority snap that is geometrically closer.
+    const SNAP_PRIORITY: Record<string, number> = {
+      endpoint: 1, center: 1,
+      intersection: 2,
+      midpoint: 3, perpendicular: 3, tangent: 3,
+      nearest: 4,
+      grid: 5,
+    };
     const considerCandidate = (
       worldPos: THREE.Vector3,
-      type: 'endpoint' | 'midpoint' | 'center' | 'intersection' | 'perpendicular' | 'tangent',
+      type: SnapType,
     ) => {
       const d = worldPt.distanceTo(worldPos);
-      if (d < bestDist) {
+      if (d > SNAP_RADIUS) return; // outside grab radius — ignore
+      const priority = SNAP_PRIORITY[type] ?? 4;
+      // A higher-priority type wins even if slightly farther; same priority → closest wins
+      if (priority < bestPriority || (priority === bestPriority && d < bestDist)) {
         bestDist = d;
+        bestPriority = priority;
         best = { worldPos: worldPos.clone(), type };
       }
     };
 
-    // Collect line-like entities for intersection / perpendicular testing
-    const lineEntities = activeSketch.entities.filter(
-      (e) =>
-        (e.type === 'line' || e.type === 'construction-line' || e.type === 'centerline') &&
-        e.points.length >= 2,
-    );
+    // Compute sketch axes once — getSketchAxes is not free on custom planes
+    const { t1: snapT1, t2: snapT2 } = GeometryEngine.getSketchAxes(activeSketch);
 
     for (const e of activeSketch.entities) {
       if ((e.type === 'line' || e.type === 'construction-line' || e.type === 'centerline') && e.points.length >= 2) {
@@ -265,11 +303,43 @@ export default function SketchInteraction() {
             }
           }
         }
-      } else if ((e.type === 'circle' || e.type === 'arc') && e.points.length >= 1) {
-        // Center snap
+        // A5: nearest on-curve snap for line segments
+        {
+          const P0 = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
+          const P1 = new THREE.Vector3(e.points[e.points.length - 1].x, e.points[e.points.length - 1].y, e.points[e.points.length - 1].z);
+          const seg = P1.clone().sub(P0);
+          const segLen2 = seg.lengthSq();
+          if (segLen2 > 1e-10) {
+            const t = Math.max(0, Math.min(1, worldPt.clone().sub(P0).dot(seg) / segLen2));
+            considerCandidate(P0.clone().addScaledVector(seg, t), 'nearest');
+          }
+        }
+      } else if ((e.type === 'circle' || e.type === 'arc' || e.type === 'ellipse' || e.type === 'elliptical-arc') && e.points.length >= 1) {
+        // Center snap — A6: include ellipse / elliptical-arc (center = points[0])
         if (snapToCenter) {
           const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
           considerCandidate(center, 'center');
+        }
+        // A7: arc midpoint = point at (startAngle + endAngle) / 2 on the arc
+        if (snapToMidpoint && e.type === 'arc' && typeof e.startAngle === 'number' && typeof e.endAngle === 'number') {
+          const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
+          const r = e.radius ?? 0;
+          let ea = e.endAngle;
+          if (ea <= e.startAngle) ea += 2 * Math.PI;
+          const midA = (e.startAngle + ea) / 2;
+          const midPt = center.clone()
+            .addScaledVector(snapT1, Math.cos(midA) * r)
+            .addScaledVector(snapT2, Math.sin(midA) * r);
+          considerCandidate(midPt, 'midpoint');
+        }
+        // A5: nearest on-curve snap for circles and arcs (radial projection)
+        if ((e.type === 'circle' || e.type === 'arc') && (e.radius ?? 0) > 0) {
+          const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
+          const toWorld = worldPt.clone().sub(center);
+          const dist = toWorld.length();
+          if (dist > 1e-6) {
+            considerCandidate(center.clone().addScaledVector(toWorld, e.radius! / dist), 'nearest');
+          }
         }
         // Tangent snap: when drawing a line (drawStart set), find tangent point on circle
         // where the line from drawStart to that point is tangent to the circle.
@@ -284,21 +354,20 @@ export default function SketchInteraction() {
             ? e.radius!
             : center.distanceTo(new THREE.Vector3(e.points[1].x, e.points[1].y, e.points[1].z));
           if (r > 1e-6) {
-            const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
             const dVec = center.clone().sub(drawStart);
             const dist = dVec.length();
             if (dist > r) {
               // Project dVec onto sketch UV to compute the base angle in sketch-plane space
-              const du = dVec.dot(t1);
-              const dv = dVec.dot(t2);
+              const du = dVec.dot(snapT1);
+              const dv = dVec.dot(snapT2);
               const alpha = Math.asin(r / dist);
               const baseAngle = Math.atan2(dv, du);
               for (const sign of [-1, 1]) {
                 const angle = baseAngle + sign * (Math.PI / 2 - alpha);
                 // Build tangent point in world space via t1*cos + t2*sin
                 const tp = center.clone()
-                  .addScaledVector(t1, Math.cos(angle) * r)
-                  .addScaledVector(t2, Math.sin(angle) * r);
+                  .addScaledVector(snapT1, Math.cos(angle) * r)
+                  .addScaledVector(snapT2, Math.sin(angle) * r);
                 considerCandidate(tp, 'tangent');
               }
             }
@@ -307,34 +376,137 @@ export default function SketchInteraction() {
       }
     }
 
+    // A8: emit exact geometric endpoints from entity data instead of scanning all mesh vertices.
+    // This is O(entities) rather than O(all mesh verts) and is tessellation-independent.
     if (snapToEndpoint) {
-      const plane = getSketchPlane();
-      const worldVertex = new THREE.Vector3();
-      const seen = new Set<string>();
-
-      scene.traverse((obj) => {
-        const mesh = obj as THREE.Mesh;
-        if (!mesh.isMesh || !mesh.visible || !mesh.geometry) return;
-        const geometry = mesh.geometry as THREE.BufferGeometry;
-        const positions = geometry.getAttribute('position');
-        if (!positions) return;
-
-        for (let index = 0; index < positions.count; index += 1) {
-          worldVertex.fromBufferAttribute(positions, index).applyMatrix4(mesh.matrixWorld);
-          if (Math.abs(plane.distanceToPoint(worldVertex)) > SKETCH_PLANE_SNAP_TOLERANCE) continue;
-
-          const key = `${worldVertex.x.toFixed(3)},${worldVertex.y.toFixed(3)},${worldVertex.z.toFixed(3)}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          considerCandidate(worldVertex, 'endpoint');
+      for (const e of activeSketch!.entities) {
+        if (e.type === 'line' || e.type === 'construction-line' || e.type === 'centerline') {
+          // Already handled above in the per-entity loop — skip (endpoint/midpoint done there)
+          continue;
         }
-      });
+        if (e.type === 'arc' && e.points.length >= 1 && typeof e.startAngle === 'number' && typeof e.endAngle === 'number') {
+          // Arc endpoints: start point and end point on the arc
+          const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
+          const r = e.radius ?? 0;
+          for (const angle of [e.startAngle, e.endAngle]) {
+            const pt = center.clone()
+              .addScaledVector(snapT1, Math.cos(angle) * r)
+              .addScaledVector(snapT2, Math.sin(angle) * r);
+            considerCandidate(pt, 'endpoint');
+          }
+        }
+        if (e.type === 'spline' && e.points.length >= 2) {
+          // Spline knots: all control/fit points are endpoints
+          for (const pt of e.points) {
+            considerCandidate(new THREE.Vector3(pt.x, pt.y, pt.z), 'endpoint');
+          }
+        }
+        if (e.type === 'rectangle' && e.points.length >= 2) {
+          // Legacy rectangle: offer its 4 derived corners as endpoints
+          const origin_r = activeSketch!.planeOrigin;
+          const p0 = e.points[0], p1 = e.points[1];
+          const d0 = new THREE.Vector3(p0.x - origin_r.x, p0.y - origin_r.y, p0.z - origin_r.z);
+          const d1 = new THREE.Vector3(p1.x - origin_r.x, p1.y - origin_r.y, p1.z - origin_r.z);
+          const u0 = d0.dot(snapT1), v0 = d0.dot(snapT2);
+          const u1 = d1.dot(snapT1), v1 = d1.dot(snapT2);
+          for (const [u, v] of [[u0,v0],[u1,v0],[u1,v1],[u0,v1]] as [number,number][]) {
+            considerCandidate(
+              origin_r.clone().addScaledVector(snapT1, u).addScaledVector(snapT2, v),
+              'endpoint',
+            );
+          }
+        }
+      }
     }
 
-    // S8 / NAV-24: brute-force line-line intersection snap
+    // S8 / NAV-24 + A4: intersection snaps — line-line, line-circle, circle-circle
     if (snapToIntersection) {
-      for (let i = 0; i < lineEntities.length; i++) {
-        const a = lineEntities[i];
+      const lineEntities = activeSketch!.entities.filter(
+        (e) =>
+          (e.type === 'line' ||
+            e.type === 'construction-line' ||
+            e.type === 'centerline') &&
+          e.points.length >= 2,
+      );
+      const circleEntities = activeSketch!.entities.filter(
+        (e) => (e.type === 'circle' || e.type === 'arc') && e.points.length >= 1 && (e.radius ?? 0) > 0
+      );
+
+      // Limit O(n²) intersection tests to lines near the cursor (generous 10× snap radius).
+      // With many polygon edges this avoids ~51k pair checks per mousemove.
+      const intersectRadius = SNAP_RADIUS * 10;
+      const nearLines = lineEntities.length > 30
+        ? lineEntities.filter((e) => {
+            const p0 = e.points[0];
+            const p1 = e.points[e.points.length - 1];
+            const mx = (p0.x + p1.x) * 0.5, my = (p0.y + p1.y) * 0.5, mz = (p0.z + p1.z) * 0.5;
+            const halfLen = Math.sqrt((p1.x - p0.x) ** 2 + (p1.y - p0.y) ** 2 + (p1.z - p0.z) ** 2) * 0.5;
+            return worldPt.distanceTo(new THREE.Vector3(mx, my, mz)) <= intersectRadius + halfLen;
+          })
+        : lineEntities;
+
+      // A4a: line-circle intersections (analytic)
+      for (const line of nearLines) {
+        const L0 = new THREE.Vector3(line.points[0].x, line.points[0].y, line.points[0].z);
+        const L1 = new THREE.Vector3(line.points[line.points.length - 1].x, line.points[line.points.length - 1].y, line.points[line.points.length - 1].z);
+        const Ld = L1.clone().sub(L0);
+        const lLen = Ld.length();
+        if (lLen < 1e-6) continue;
+        for (const circ of circleEntities) {
+          const C = new THREE.Vector3(circ.points[0].x, circ.points[0].y, circ.points[0].z);
+          const r = circ.radius ?? 0;
+          // Parametric line: P = L0 + t * Ld; quadratic in t: |P-C|^2 = r^2
+          const oc = L0.clone().sub(C);
+          const a2 = Ld.dot(Ld);
+          const b2 = 2 * oc.dot(Ld);
+          const c2 = oc.dot(oc) - r * r;
+          const disc = b2 * b2 - 4 * a2 * c2;
+          if (disc < 0) continue;
+          const sqrtDisc = Math.sqrt(disc);
+          for (const sign of [-1, 1]) {
+            const t = (-b2 + sign * sqrtDisc) / (2 * a2);
+            if (t < -0.05 || t > 1.05) continue; // outside segment (with tolerance)
+            const pt = L0.clone().addScaledVector(Ld, t);
+            considerCandidate(pt, 'intersection');
+          }
+        }
+      }
+
+      // A4b: circle-circle intersections (analytic)
+      for (let i = 0; i < circleEntities.length; i++) {
+        const eA = circleEntities[i];
+        const cA = new THREE.Vector3(eA.points[0].x, eA.points[0].y, eA.points[0].z);
+        const rA = eA.radius ?? 0;
+        for (let j = i + 1; j < circleEntities.length; j++) {
+          const eB = circleEntities[j];
+          const cB = new THREE.Vector3(eB.points[0].x, eB.points[0].y, eB.points[0].z);
+          const rB = eB.radius ?? 0;
+          const d = cA.distanceTo(cB);
+          if (d < 1e-6 || d > rA + rB + 1e-4 || d < Math.abs(rA - rB) - 1e-4) continue;
+          // Project onto sketch plane to solve 2D intersection
+          const oA = cA.clone().sub(activeSketch!.planeOrigin);
+          const oB = cB.clone().sub(activeSketch!.planeOrigin);
+          const uA = oA.dot(snapT1), vA = oA.dot(snapT2);
+          const uB = oB.dot(snapT1), vB = oB.dot(snapT2);
+          const du = uB - uA, dv = vB - vA;
+          const a3 = (rA * rA - rB * rB + du * du + dv * dv) / (2 * d * d);
+          const midU = uA + a3 * du, midV = vA + a3 * dv;
+          const h2 = rA * rA / (d * d) - a3 * a3;
+          if (h2 < 0) continue;
+          const h = Math.sqrt(h2);
+          const px = h * dv, py = -h * du;
+          for (const s of [-1, 1]) {
+            const iu = midU + s * px, iv = midV + s * py;
+            const ip = activeSketch!.planeOrigin.clone()
+              .addScaledVector(snapT1, iu)
+              .addScaledVector(snapT2, iv);
+            considerCandidate(ip, 'intersection');
+          }
+        }
+      }
+
+      for (let i = 0; i < nearLines.length; i++) {
+        const a = nearLines[i];
         const A0 = new THREE.Vector3(a.points[0].x, a.points[0].y, a.points[0].z);
         const Ad = new THREE.Vector3(
           a.points[a.points.length - 1].x - a.points[0].x,
@@ -345,8 +517,8 @@ export default function SketchInteraction() {
         if (aLen < 1e-6) continue;
         Ad.divideScalar(aLen);
 
-        for (let j = i + 1; j < lineEntities.length; j++) {
-          const b = lineEntities[j];
+        for (let j = i + 1; j < nearLines.length; j++) {
+          const b = nearLines[j];
           const B0 = new THREE.Vector3(b.points[0].x, b.points[0].y, b.points[0].z);
           const Bd = new THREE.Vector3(
             b.points[b.points.length - 1].x - b.points[0].x,
@@ -381,11 +553,11 @@ export default function SketchInteraction() {
     }
 
     return best;
-  }, [activeSketch, snapEnabled, objectSnapEnabled, snapToEndpoint, snapToMidpoint, snapToCenter, snapToIntersection, snapToPerpendicular, snapToTangent, getSketchPlane, scene]);
+  }, [activeSketch, snapEnabled, objectSnapEnabled, snapToEndpoint, snapToMidpoint, snapToCenter, snapToIntersection, snapToPerpendicular, snapToTangent, getSketchPlane, scene, camera, viewportSize]);
 
   // Returns midpoints of all line segments the cursor is hovering near (within HOVER_RADIUS of
   // the perpendicular foot on the segment). Used to show dim triangle markers before snapping.
-  const HOVER_MIDPOINT_RADIUS = SNAP_RADIUS * 2;
+  const HOVER_MIDPOINT_RADIUS = SNAP_PIXELS * 2; // ~24px in world units at typical zoom
   const findHoverMidpoints = useCallback((worldPt: THREE.Vector3): THREE.Vector3[] => {
     if (!activeSketch || (!snapEnabled && !sketchSnapEnabled) || !objectSnapEnabled || !snapToMidpoint) {
       return [];
@@ -424,14 +596,14 @@ export default function SketchInteraction() {
   // points (e.g. midpoints of odd-length lines) are always reachable.
   const getRawWorldPoint = useCallback((event: MouseEvent): THREE.Vector3 | null => {
     const rect = gl.domElement.getBoundingClientRect();
-    const mouse = new THREE.Vector2(
+    _mouseScratch.current.set(
       ((event.clientX - rect.left) / rect.width) * 2 - 1,
-      -((event.clientY - rect.top) / rect.height) * 2 + 1
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
     );
-    raycaster.setFromCamera(mouse, camera);
+    raycaster.setFromCamera(_mouseScratch.current, camera);
     const plane = getSketchPlane();
-    const intersection = new THREE.Vector3();
-    return raycaster.ray.intersectPlane(plane, intersection) ? intersection : null;
+    const hit = raycaster.ray.intersectPlane(plane, _intersectionScratch.current);
+    return hit ? hit.clone() : null;
   }, [camera, gl, raycaster, getSketchPlane]);
 
   const getWorldPoint = useCallback((event: MouseEvent): THREE.Vector3 | null => {
@@ -529,18 +701,22 @@ export default function SketchInteraction() {
     dragScreenStartRef,
     isDraggingArcRef,
     dragJustFinishedRef,
+    inferenceRef,
   });
 
+
+  // Stable scratch objects for inference guide line reuse across frames.
+  const _inferGuideGeom = useRef<THREE.BufferGeometry | null>(null);
+  const _inferGuideLine = useRef<THREE.Line | null>(null);
 
   // Preview of current drawing operation
   useFrame(({ invalidate }) => {
     if (!previewRef.current) return;
-    invalidate(); // keep sketch preview updating in frameloop="demand" mode
     // S10: when construction-mode toggle is active, use cyan dashed material for preview
     const activeLine = drawingConstructionRef.current
       ? constructionModePreviewMaterial.current
       : previewMaterial.current;
-    renderSketchPreview({
+    const drew = renderSketchPreview({
       previewGroup: previewRef.current,
       drawingPoints,
       mousePos,
@@ -553,7 +729,32 @@ export default function SketchInteraction() {
       centerlineMat: centerlinePreviewMaterial.current,
       conicRho,
       blendCurveMode,
+      polygonSides,
     });
+
+    // A10: render inference guide line when active.
+    const inf = inferenceRef.current;
+    if (inf && previewRef.current) {
+      if (!_inferGuideGeom.current) {
+        _inferGuideGeom.current = new THREE.BufferGeometry();
+        _inferGuideLine.current = new THREE.Line(_inferGuideGeom.current, inferenceGuideMaterial.current);
+        _inferGuideLine.current.renderOrder = 1002;
+        previewRef.current.add(_inferGuideLine.current);
+      } else if (!previewRef.current.children.includes(_inferGuideLine.current!)) {
+        previewRef.current.add(_inferGuideLine.current!);
+      }
+      _inferGuideGeom.current.setFromPoints([inf.guideFrom, inf.guideTo]);
+      _inferGuideLine.current!.computeLineDistances();
+      if (!drew) invalidate();
+    } else if (_inferGuideLine.current && previewRef.current.children.includes(_inferGuideLine.current)) {
+      previewRef.current.remove(_inferGuideLine.current);
+      if (!drew) invalidate();
+    }
+
+    // Only invalidate when the preview actually changed — prevents a self-sustaining
+    // render loop that causes <Html> glyphs (polygon center badges) to reproject and
+    // rewrite DOM on every frame, causing visible flicker.
+    if (drew) invalidate();
   });
 
   // Cursor crosshair at mouse position

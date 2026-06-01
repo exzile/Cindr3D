@@ -19,6 +19,24 @@ export function createSketchEntityActions({ set, get }: CADSliceContext): Partia
       }
     },
 
+    addSketchEntitiesAndConstraintsBatch: (entities, constraints, skipSolve) => {
+      const { activeSketch, sketches } = get();
+      if (!activeSketch) return;
+      get().pushUndo();
+      const nextSketch = {
+        ...activeSketch,
+        entities: [...activeSketch.entities, ...entities],
+        constraints: [...(activeSketch.constraints ?? []), ...constraints],
+      };
+      set({
+        activeSketch: nextSketch,
+        sketches: upsertSketch(sketches, nextSketch),
+      });
+      // skipSolve=true: caller guarantees geometry is analytically exact (polygon/rectangle
+      // placement). Skip the O(n³) full-sketch solve — constraints are satisfied by construction.
+      if (!skipSolve) get().solveSketch();
+    },
+
     replaceSketchEntities: (entities) => {
       const { activeSketch, sketches } = get();
       if (!activeSketch) return;

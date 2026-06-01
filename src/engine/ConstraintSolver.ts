@@ -26,7 +26,13 @@ export interface SolverResult {
   solved: boolean;
   iterations: number;
   updatedPoints: Map<string, { x: number; y: number }>;
+  /** B1: solved scalar DOFs (radius/startAngle/endAngle). Keys: "entityId::radius" etc. */
+  updatedScalars: Map<string, number>;
   residual: number;
+  /** B6: Jacobian rank at final solution. rank >= nParams → fully/over-constrained. */
+  rank: number;
+  /** B6: total number of free parameters. */
+  nParams: number;
 }
 
 // ─── Internal helpers ──────────────────────────────────────────────────────
@@ -49,6 +55,33 @@ function gaussianElimination(A: number[][], b: number[]): number[] {
     }
   }
   return M.map((row, i) => row[n] / (row[i] !== 0 ? row[i] : 1));
+}
+
+/** B6: Compute the numerical rank of matrix A (m×n) via Gaussian elimination. */
+function rankOfMatrix(A: number[][], pivotTol = 1e-9): number {
+  const m = A.length;
+  const n = m > 0 ? A[0].length : 0;
+  if (m === 0 || n === 0) return 0;
+  const M = A.map((row) => [...row]);
+  let rank = 0;
+  let col = 0;
+  for (let row = 0; row < m && col < n; col++) {
+    // Find pivot
+    let maxRow = row;
+    for (let r = row + 1; r < m; r++) {
+      if (Math.abs(M[r][col]) > Math.abs(M[maxRow][col])) maxRow = r;
+    }
+    if (Math.abs(M[maxRow][col]) < pivotTol) continue; // skip — linearly dependent
+    [M[row], M[maxRow]] = [M[maxRow], M[row]];
+    // Eliminate below
+    for (let r = row + 1; r < m; r++) {
+      const factor = M[r][col] / M[row][col];
+      for (let c = col; c < n; c++) M[r][c] -= factor * M[row][c];
+    }
+    rank++;
+    row++;
+  }
+  return rank;
 }
 
 /** Solve overdetermined/underdetermined system via normal equations: (JᵀJ)Δp = -Jᵀf */
@@ -81,12 +114,18 @@ function solveNormalEquations(J: number[][], f: number[]): number[] {
 // ─── Parameter extraction ─────────────────────────────────────────────────
 
 /**
- * Build a flat parameter vector from all free (non-fixed) point coordinates.
- * Returns the vector and a lookup from param index → { pointId, coord ('x'|'y') }.
+ * Build a flat parameter vector from all free point coordinates PLUS radius and
+ * arc-angle scalar DOFs for circle/arc entities (B1).
+ *
+ * Scalar DOF IDs use the convention  "${entityId}::radius" / "::startAngle" / "::endAngle".
+ * They are stored in pointMap as SolverPoints with y=0 (only .x is meaningful).
+ * In paramIndex, scalar DOFs only emit one entry (coord='x'); real points emit two (x+y).
  */
 function buildParams(
   entities: SketchEntity[],
-  fixedEntityIds: Set<string>
+  fixedEntityIds: Set<string>,
+  /** B9: per-entity point-index sets for partial fixing (fix with pointIndices). */
+  fixedPoints?: Map<string, Set<number>>
 ): {
   params: number[];
   pointMap: Map<string, SolverPoint>;
@@ -97,28 +136,63 @@ function buildParams(
   const params: number[] = [];
 
   for (const entity of entities) {
-    const fixed = fixedEntityIds.has(entity.id);
+    const entityFullyFixed = fixedEntityIds.has(entity.id);
+    const partialSet = fixedPoints?.get(entity.id);
+
     for (let pi = 0; pi < entity.points.length; pi++) {
       const pt = entity.points[pi];
       const id = `${entity.id}-p${pi}`;
-      if (pointMap.has(id)) continue; // deduplicate (shouldn't happen but guard)
-      pointMap.set(id, { id, x: pt.x, y: pt.y, fixed });
+      if (pointMap.has(id)) continue;
+      // B9.a: if the fix constraint specified pointIndices, only those are fixed
+      const pointFixed = entityFullyFixed || (partialSet?.has(pi) ?? false);
+      pointMap.set(id, { id, x: pt.x, y: pt.y, fixed: pointFixed });
     }
-    // Also store radius / angles as special synthetic point slots if needed
-    // (circle: points[0] = center, radius stored separately)
+    // B1: add radius as a solver DOF for circles and arcs.
+    if ((entity.type === 'circle' || entity.type === 'arc') && typeof entity.radius === 'number') {
+      const rid = `${entity.id}::radius`;
+      if (!pointMap.has(rid)) {
+        // B9.b: fix radius only when the whole entity is fixed (not for partial fix)
+        pointMap.set(rid, { id: rid, x: entity.radius, y: 0, fixed: entityFullyFixed });
+      }
+    }
+    // B1: add startAngle / endAngle as solver DOFs for arcs.
+    if (entity.type === 'arc') {
+      if (typeof entity.startAngle === 'number') {
+        const sid = `${entity.id}::startAngle`;
+        if (!pointMap.has(sid)) pointMap.set(sid, { id: sid, x: entity.startAngle, y: 0, fixed: entityFullyFixed });
+      }
+      if (typeof entity.endAngle === 'number') {
+        const eid = `${entity.id}::endAngle`;
+        if (!pointMap.has(eid)) pointMap.set(eid, { id: eid, x: entity.endAngle, y: 0, fixed: entityFullyFixed });
+      }
+    }
   }
 
-  // Build ordered param list from non-fixed points
+  // Build ordered param list.
+  // Scalar DOFs (ids containing '::') only contribute one entry (x); real points contribute two (x+y).
   for (const sp of pointMap.values()) {
-    if (!sp.fixed) {
-      paramIndex.push({ pointId: sp.id, coord: 'x' });
-      params.push(sp.x);
+    if (sp.fixed) continue;
+    const isScalar = sp.id.includes('::');
+    paramIndex.push({ pointId: sp.id, coord: 'x' });
+    params.push(sp.x);
+    if (!isScalar) {
       paramIndex.push({ pointId: sp.id, coord: 'y' });
       params.push(sp.y);
     }
   }
 
   return { params, pointMap, paramIndex };
+}
+
+/** B1: Read a scalar DOF (radius/angle) from the live pointMap, falling back to entity field. */
+function getScalarDof(
+  entityId: string,
+  suffix: 'radius' | 'startAngle' | 'endAngle',
+  pointMap: Map<string, SolverPoint>,
+  fallback: number
+): number {
+  const sp = pointMap.get(`${entityId}::${suffix}`);
+  return sp !== undefined ? sp.x : fallback;
 }
 
 /** Apply updated param vector back into pointMap. */
@@ -366,16 +440,14 @@ function computeResiduals(
         break;
       }
       case 'equal': {
-        // Equal length for lines; equal radius for circles
+        // B1/B2: equal length for lines; equal radius for circles/arcs (now that radius is a DOF)
         if (c.entityIds.length < 2) break;
         const eA = entityMap.get(c.entityIds[0]);
         const eB = entityMap.get(c.entityIds[1]);
         if (!eA || !eB) break;
-        // radius is not a solver DOF — skip equal-radius constraint between circles
-        // to avoid permanently blocking solver convergence on a non-solvable residual
-        if (eA.type === 'circle' && eB.type === 'circle') break;
         const lenOf = (e: SketchEntity): number => {
-          if (e.type === 'circle') return e.radius ?? 0;
+          if (e.type === 'circle' || e.type === 'arc')
+            return getScalarDof(e.id, 'radius', pointMap, e.radius ?? 0);
           if (e.points.length < 2) return 0;
           const p0 = getPoint(e.id, 0, pointMap);
           const p1 = getPoint(e.id, e.points.length - 1, pointMap);
@@ -417,20 +489,37 @@ function computeResiduals(
         const eA = entityMap.get(c.entityIds[0]);
         const eB = entityMap.get(c.entityIds[1]);
         if (!eA || !eB) break;
-        const line = eA.points.length >= 2 && (eA.type === 'line' || eA.type === 'construction-line' || eA.type === 'centerline') ? eA
-          : eB.points.length >= 2 && (eB.type === 'line' || eB.type === 'construction-line' || eB.type === 'centerline') ? eB
-            : null;
-        const curve = line === eA ? eB : eA;
-        if (!line || !(curve.type === 'circle' || curve.type === 'arc')) break;
-        const a0 = getPoint(line.id, 0, pointMap);
-        const a1 = getPoint(line.id, line.points.length - 1, pointMap);
-        const center = getPoint(curve.id, 0, pointMap);
-        const dx = a1.x - a0.x;
-        const dy = a1.y - a0.y;
-        const len = Math.hypot(dx, dy);
-        if (len < 1e-12) break;
-        const distance = Math.abs(dy * center.x - dx * center.y + a1.x * a0.y - a1.y * a0.x) / len;
-        residuals.push(distance - (curve.radius ?? 0));
+        const isCurve = (e: SketchEntity) => e.type === 'circle' || e.type === 'arc';
+        const isLine  = (e: SketchEntity) => e.type === 'line' || e.type === 'construction-line' || e.type === 'centerline';
+
+        if (isCurve(eA) && isCurve(eB)) {
+          // B4.a: curve-curve tangency: dist(cA, cB) = rA ± rB.
+          // Choose external (rA+rB) or internal (|rA-rB|) based on current config.
+          const cA = getPoint(eA.id, 0, pointMap);
+          const cB = getPoint(eB.id, 0, pointMap);
+          const rA = getScalarDof(eA.id, 'radius', pointMap, eA.radius ?? 0);
+          const rB = getScalarDof(eB.id, 'radius', pointMap, eB.radius ?? 0);
+          const dist = Math.hypot(cB.x - cA.x, cB.y - cA.y);
+          // Pick external vs internal tangency by whichever target is closer to the current dist.
+          const external = rA + rB;
+          const internal = Math.abs(rA - rB);
+          const target = Math.abs(dist - external) <= Math.abs(dist - internal) ? external : internal;
+          residuals.push(dist - target);
+        } else {
+          // line-curve tangency
+          const line = isLine(eA) ? eA : isLine(eB) ? eB : null;
+          const curve = line === eA ? eB : eA;
+          if (!line || !isCurve(curve)) break;
+          const a0 = getPoint(line.id, 0, pointMap);
+          const a1 = getPoint(line.id, line.points.length - 1, pointMap);
+          const center = getPoint(curve.id, 0, pointMap);
+          const dx = a1.x - a0.x;
+          const dy = a1.y - a0.y;
+          const len = Math.hypot(dx, dy);
+          if (len < 1e-12) break;
+          const distance = Math.abs(dy * center.x - dx * center.y + a1.x * a0.y - a1.y * a0.x) / len;
+          residuals.push(distance - getScalarDof(curve.id, 'radius', pointMap, curve.radius ?? 0));
+        }
         break;
       }
       case 'symmetric': {
@@ -619,7 +708,8 @@ function computeResiduals(
         const ref = parseDimensionReference(c.entityIds[0]);
         const entity = ref ? entityMap.get(ref.entityId) : null;
         if (!entity || !Number.isFinite(c.value)) break;
-        const radius = entity.radius ?? 0;
+        // B1: read radius from solver params so the dimension actually drives geometry
+        const radius = getScalarDof(entity.id, 'radius', pointMap, entity.radius ?? 0);
         residuals.push(radius - (c.type === 'dimension-diameter' ? (c.value ?? 0) / 2 : c.value ?? 0));
         break;
       }
@@ -637,9 +727,10 @@ function computeResiduals(
         const ref = parseDimensionReference(c.entityIds[0]);
         const entity = ref ? entityMap.get(ref.entityId) : null;
         if (!entity || !Number.isFinite(c.value)) break;
-        const r = entity.radius ?? 0;
-        const startAngle = entity.startAngle ?? 0;
-        let end = entity.endAngle ?? 2 * Math.PI;
+        // B1: read all three DOFs from solver params
+        const r = getScalarDof(entity.id, 'radius', pointMap, entity.radius ?? 0);
+        const startAngle = getScalarDof(entity.id, 'startAngle', pointMap, entity.startAngle ?? 0);
+        let end = getScalarDof(entity.id, 'endAngle', pointMap, entity.endAngle ?? 2 * Math.PI);
         while (end <= startAngle) end += 2 * Math.PI;
         const currentArcLength = r * (end - startAngle);
         residuals.push(currentArcLength - (c.value ?? 0));
@@ -650,7 +741,7 @@ function computeResiduals(
         const ref2 = parseDimensionReference(c.entityIds[0]);
         const ent2 = ref2 ? entityMap.get(ref2.entityId) : null;
         if (!ent2 || !Number.isFinite(c.value)) break;
-        residuals.push((ent2.radius ?? 0) - (c.value ?? 0) / 2);
+        residuals.push(getScalarDof(ent2.id, 'radius', pointMap, ent2.radius ?? 0) - (c.value ?? 0) / 2);
         break;
       }
       case 'dimension-ellipse-major': {
@@ -675,8 +766,8 @@ function computeResiduals(
         const entCg1 = refCg1 ? entityMap.get(refCg1.entityId) : null;
         const entCg2 = refCg2 ? entityMap.get(refCg2.entityId) : null;
         if (!entCg1 || !entCg2 || !Number.isFinite(c.value)) break;
-        const r1 = entCg1.radius ?? 0;
-        const r2 = entCg2.radius ?? 0;
+        const r1 = getScalarDof(entCg1.id, 'radius', pointMap, entCg1.radius ?? 0);
+        const r2 = getScalarDof(entCg2.id, 'radius', pointMap, entCg2.radius ?? 0);
         residuals.push(Math.abs(r2 - r1) - (c.value ?? 0));
         break;
       }
@@ -761,28 +852,42 @@ function computeJacobian(
 export function solveConstraints(
   entities: SketchEntity[],
   constraints: SolverConstraint[],
-  options?: { maxIterations?: number; tolerance?: number; stepSize?: number }
+  options?: { maxIterations?: number; tolerance?: number; stepSize?: number; forceRank?: boolean }
 ): SolverResult {
   const maxIterations = options?.maxIterations ?? 100;
   const tolerance = options?.tolerance ?? 1e-6;
   const stepSize = options?.stepSize ?? 1.0;
 
-  // Collect entity ids that should be fixed
-  const fixedEntityIds = new Set<string>(
-    constraints.filter((c) => c.type === 'fix').flatMap((c) => c.entityIds)
-  );
+  // B9: separate whole-entity fix from pointIndices-based partial fix.
+  const fixedEntityIds = new Set<string>();
+  const fixedPoints = new Map<string, Set<number>>();
+  for (const c of constraints) {
+    if (c.type !== 'fix') continue;
+    for (const entityId of c.entityIds) {
+      if (c.pointIndices && c.pointIndices.length > 0) {
+        if (!fixedPoints.has(entityId)) fixedPoints.set(entityId, new Set());
+        for (const pi of c.pointIndices) fixedPoints.get(entityId)!.add(pi);
+      } else {
+        fixedEntityIds.add(entityId);
+      }
+    }
+  }
 
   const entityMap = new Map<string, SketchEntity>(entities.map((e) => [e.id, e]));
 
-  const { params: initialParams, pointMap, paramIndex } = buildParams(entities, fixedEntityIds);
+  const { params: initialParams, pointMap, paramIndex } = buildParams(entities, fixedEntityIds, fixedPoints);
 
   // Nothing can move; still evaluate residuals so fixed, inconsistent geometry is blocked.
   if (initialParams.length === 0 || constraints.length === 0) {
     const residuals = computeResiduals(constraints, entityMap, pointMap);
     const residual = residuals.length === 0 ? 0 : Math.max(...residuals.map(Math.abs));
     const updatedPoints = new Map<string, { x: number; y: number }>();
-    for (const [id, sp] of pointMap) updatedPoints.set(id, { x: sp.x, y: sp.y });
-    return { solved: residual < tolerance, iterations: 0, updatedPoints, residual };
+    const updatedScalarsEarly = new Map<string, number>();
+    for (const [id, sp] of pointMap) {
+      if (id.includes('::')) updatedScalarsEarly.set(id, sp.x);
+      else updatedPoints.set(id, { x: sp.x, y: sp.y });
+    }
+    return { solved: residual < tolerance, iterations: 0, updatedPoints, updatedScalars: updatedScalarsEarly, residual, rank: 0, nParams: 0 };
   }
 
   let params = [...initialParams];
@@ -816,13 +921,35 @@ export function solveConstraints(
   // Final apply
   applyParams(params, paramIndex, pointMap);
 
+  // B6: compute Jacobian rank at the final solution for DOF/over-constraint detection.
+  // Skip when the geometry was already within tolerance before any Newton step — the
+  // system is self-consistent so it cannot be over-constrained, and the O(n³) rank
+  // computation would dominate commit time for large exactly-placed shapes (Plan C).
+  const nParams = params.length;
+  let finalRank = 0;
+  if (finalIter > 0 || finalResidual >= tolerance || options?.forceRank) {
+    const finalJ = computeJacobian(params, paramIndex, constraints, entityMap, pointMap);
+    finalRank = rankOfMatrix(finalJ);
+  }
+
   const updatedPoints = new Map<string, { x: number; y: number }>();
-  for (const [id, sp] of pointMap) updatedPoints.set(id, { x: sp.x, y: sp.y });
+  const updatedScalars = new Map<string, number>();
+  for (const [id, sp] of pointMap) {
+    if (id.includes('::')) {
+      // B1: scalar DOF (radius / startAngle / endAngle)
+      updatedScalars.set(id, sp.x);
+    } else {
+      updatedPoints.set(id, { x: sp.x, y: sp.y });
+    }
+  }
 
   return {
     solved: finalResidual < tolerance,
     iterations: finalIter,
     updatedPoints,
+    updatedScalars,
     residual: finalResidual,
+    rank: finalRank,
+    nParams,
   };
 }

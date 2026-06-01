@@ -120,9 +120,10 @@ describe('occTransformBodyWithInstance', () => {
 
   it('returns null and still disposes the trsf when the transform throws', () => {
     const oc = makeFakeOcc();
-    oc.BRepBuilderAPI_Transform_2 = class {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (oc as any).BRepBuilderAPI_Transform_2 = class {
       constructor() { throw new Error('boom'); }
-      Shape() { return null; }
+      Shape() { return null as any; }
       delete() { transformerDeleted++; }
     };
     const mat = new THREE.Matrix4().identity();

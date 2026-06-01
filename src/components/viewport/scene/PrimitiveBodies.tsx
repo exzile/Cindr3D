@@ -305,7 +305,8 @@ export default function PrimitiveBodies() {
 
   const specs = useMemo(() => {
     const out: Array<{ spec: PrimitiveSpec; hidden: boolean }> = [];
-    for (const f of features) {
+    for (let index = 0; index < features.length; index += 1) {
+      const f = features[index];
       if (f.type !== 'primitive') continue;
       if (!f.visible || f.suppressed) continue;
       // Skip-if-mesh guard: a fillet/chamfer applied to this primitive has
@@ -313,10 +314,7 @@ export default function PrimitiveBodies() {
       // stored-mesh path; rendering it here too would double-up.
       if (f.mesh) continue;
       if (!isComponentVisible(components, f.componentId)) continue;
-      if (rollbackIndex >= 0) {
-        const idx = features.indexOf(f);
-        if (idx > rollbackIndex) continue;
-      }
+      if (rollbackIndex >= 0 && index > rollbackIndex) continue;
       const spec = buildPrimitiveSpec(f);
       if (!spec) continue;
       // When a downstream fillet/chamfer has a result mesh, hide the

@@ -13,6 +13,7 @@ export function ToolButton({ icon, label, tool, active, onClick, disabled, large
   const [dropPos, setDropPos] = useState({ top: 0, left: 0 });
 
   const isActive = active ?? (tool ? activeTool === tool : false);
+  const hasDropdown = !!dropdown;
 
   const handleClick = () => {
     if (disabled) return;
@@ -48,19 +49,25 @@ export function ToolButton({ icon, label, tool, active, onClick, disabled, large
       <button
         type="button"
         ref={btnRef}
-        className={`ribbon-button ${isActive ? 'active' : ''} ${disabled ? 'disabled' : ''} ${large ? 'large' : ''}`}
+        className={`ribbon-button ${isActive ? 'active' : ''} ${disabled ? 'disabled' : ''} ${large ? 'large' : ''} ${hasDropdown ? 'has-dropdown' : ''} ${dropdownOpen ? 'dropdown-open' : ''}`}
         onClick={handleClick}
-        title={label}
+        title={hasDropdown ? `${label} tools` : label}
       >
         <div className={`ribbon-button-icon ${colorClass || ''}`}>{icon}</div>
-        <span className="ribbon-button-label">{label}</span>
-        {dropdown && (
-          <ChevronDown
-            size={10}
-            className="ribbon-dropdown-arrow"
-            onClick={openDropdown}
-          />
-        )}
+        <span
+          className={`ribbon-button-label-row ${hasDropdown ? 'dropdown-trigger' : ''}`}
+          onClick={hasDropdown ? openDropdown : undefined}
+        >
+          <span className="ribbon-button-label">{label}</span>
+          {hasDropdown && (
+            <span
+              className="ribbon-dropdown-affordance"
+              aria-hidden="true"
+            >
+              <ChevronDown size={10} className="ribbon-dropdown-arrow" />
+            </span>
+          )}
+        </span>
       </button>
       {dropdown && dropdownOpen && createPortal(
         <div

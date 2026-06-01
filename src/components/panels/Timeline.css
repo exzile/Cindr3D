@@ -1,6 +1,8 @@
 /* ===== Timeline Panel (Design) ===== */
 .timeline-panel {
   width: var(--timeline-width, 260px);
+  min-width: var(--timeline-width, 260px);
+  flex: 0 0 auto;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--bg-panel) 92%, var(--accent) 8%), var(--bg-panel) 88px),
     var(--bg-panel);
@@ -9,6 +11,62 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.timeline-panel--collapsed {
+  width: 42px;
+  min-width: 42px;
+  max-width: 42px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--bg-panel) 88%, var(--accent) 12%), var(--bg-panel) 74px),
+    var(--bg-panel);
+}
+
+.timeline-rail-button {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--border-light) 76%, var(--accent) 24%);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-secondary) 86%, var(--accent) 8%);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+.timeline-rail-button:hover {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-secondary));
+  color: var(--accent);
+}
+
+.timeline-rail-label {
+  writing-mode: vertical-rl;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.timeline-rail-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, var(--accent) 28%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-secondary) 82%, var(--accent) 18%);
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .timeline-banner {
@@ -368,6 +426,14 @@
   width: 20px;
   height: 20px;
   border-radius: 6px;
+}
+
+.timeline-nav__btn--panel {
+  width: 22px;
+  height: 22px;
+  margin-left: 1px;
+  border-color: color-mix(in srgb, var(--border) 72%, transparent);
+  background: color-mix(in srgb, var(--bg-secondary) 74%, transparent);
 }
 
 .timeline-nav__btn:hover:not(:disabled),

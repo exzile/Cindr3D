@@ -40,6 +40,7 @@ import type { MenuItem } from '../../types/toolbar.types';
 import type { SketchMenuDeps } from './menuBuilderTypes';
 
 const MI = 16;
+const RIBBON_ICON = 28;
 
 export function buildSketchMenus({
   autoConstrainSketch,
@@ -131,11 +132,11 @@ export function buildSketchMenus({
     },
     {
       icon: <Hexagon size={MI} />, label: 'Polygon',
-      onClick: () => setActiveTool('polygon-inscribed'),
+      onClick: () => { setActiveTool('polygon-inscribed'); setStatusMessage('Inscribed Polygon: click to place the center, then click a vertex point (set side count in the palette)'); },
       submenu: [
-        { icon: <Hexagon size={MI} />, label: 'Inscribed Polygon', onClick: () => setActiveTool('polygon-inscribed') },
-        { icon: <Hexagon size={MI} />, label: 'Circumscribed Polygon', onClick: () => setActiveTool('polygon-circumscribed') },
-        { icon: <Hexagon size={MI} />, label: 'Edge Polygon', onClick: () => setActiveTool('polygon-edge') },
+        { icon: <Hexagon size={MI} />, label: 'Inscribed Polygon', onClick: () => { setActiveTool('polygon-inscribed'); setStatusMessage('Inscribed Polygon: click to place the center, then click a vertex point (set side count in the palette)'); } },
+        { icon: <Hexagon size={MI} />, label: 'Circumscribed Polygon', onClick: () => { setActiveTool('polygon-circumscribed'); setStatusMessage('Circumscribed Polygon: click to place the center, then click an edge-midpoint (set side count in the palette)'); } },
+        { icon: <Hexagon size={MI} />, label: 'Edge Polygon', onClick: () => { setActiveTool('polygon-edge'); setStatusMessage('Edge Polygon: click the two endpoints of one edge (set side count in the palette)'); } },
       ],
     },
     {
@@ -147,14 +148,16 @@ export function buildSketchMenus({
       ],
     },
     {
-      icon: <Circle size={MI} />, label: 'Slot',
+      icon: <Circle size={MI} />, ribbonIcon: <Circle size={RIBBON_ICON} />, label: 'Slot',
+      promoteToRibbon: true, ribbonLabel: 'Slot', ribbonTool: 'slot-center', ribbonColorClass: 'icon-blue',
+      ribbonActiveTools: ['slot-center', 'slot-overall', 'slot-center-point', 'slot-3point-arc', 'slot-center-arc'],
       onClick: () => { setActiveTool('slot-center'); setStatusMessage('Center Slot: click first centre, then second centre, then width'); },
       submenu: [
-        { icon: <Circle size={MI} />, label: 'Center to Center Slot', onClick: () => { setActiveTool('slot-center'); setStatusMessage('Center Slot: click first centre, then second centre, then width'); } },
-        { icon: <Circle size={MI} />, label: 'Overall Slot', onClick: () => { setActiveTool('slot-overall'); setStatusMessage('Overall Slot: click first end, then second end, then width'); } },
-        { icon: <Circle size={MI} />, label: 'Center Point Slot', onClick: () => { setActiveTool('slot-center-point'); setStatusMessage('Center Point Slot: click centre, then end, then width'); } },
-        { icon: <Circle size={MI} />, label: 'Three Point Arc Slot', onClick: () => { setActiveTool('slot-3point-arc'); setStatusMessage('Three Point Arc Slot: click arc start, arc end, point on arc, then width'); } },
-        { icon: <Circle size={MI} />, label: 'Center Point Arc Slot', onClick: () => { setActiveTool('slot-center-arc'); setStatusMessage('Center Point Arc Slot: click arc centre, arc start, arc end, then width'); } },
+        { icon: <Circle size={MI} />, ribbonIcon: <Circle size={RIBBON_ICON} />, label: 'Center to Center Slot', promoteToRibbon: true, ribbonLabel: 'Slot', ribbonTool: 'slot-center', ribbonColorClass: 'icon-blue', ribbonActiveTools: ['slot-center', 'slot-overall', 'slot-center-point', 'slot-3point-arc', 'slot-center-arc'], onClick: () => { setActiveTool('slot-center'); setStatusMessage('Center Slot: click first centre, then second centre, then width'); } },
+        { icon: <Circle size={MI} />, ribbonIcon: <Circle size={RIBBON_ICON} />, label: 'Overall Slot', promoteToRibbon: true, ribbonLabel: 'Slot', ribbonTool: 'slot-overall', ribbonColorClass: 'icon-blue', ribbonActiveTools: ['slot-center', 'slot-overall', 'slot-center-point', 'slot-3point-arc', 'slot-center-arc'], onClick: () => { setActiveTool('slot-overall'); setStatusMessage('Overall Slot: click first end, then second end, then width'); } },
+        { icon: <Circle size={MI} />, ribbonIcon: <Circle size={RIBBON_ICON} />, label: 'Center Point Slot', promoteToRibbon: true, ribbonLabel: 'Slot', ribbonTool: 'slot-center-point', ribbonColorClass: 'icon-blue', ribbonActiveTools: ['slot-center', 'slot-overall', 'slot-center-point', 'slot-3point-arc', 'slot-center-arc'], onClick: () => { setActiveTool('slot-center-point'); setStatusMessage('Center Point Slot: click centre, then end, then width'); } },
+        { icon: <Circle size={MI} />, ribbonIcon: <Circle size={RIBBON_ICON} />, label: 'Three Point Arc Slot', promoteToRibbon: true, ribbonLabel: 'Slot', ribbonTool: 'slot-3point-arc', ribbonColorClass: 'icon-blue', ribbonActiveTools: ['slot-center', 'slot-overall', 'slot-center-point', 'slot-3point-arc', 'slot-center-arc'], onClick: () => { setActiveTool('slot-3point-arc'); setStatusMessage('Three Point Arc Slot: click arc start, arc end, point on arc, then width'); } },
+        { icon: <Circle size={MI} />, ribbonIcon: <Circle size={RIBBON_ICON} />, label: 'Center Point Arc Slot', promoteToRibbon: true, ribbonLabel: 'Slot', ribbonTool: 'slot-center-arc', ribbonColorClass: 'icon-blue', ribbonActiveTools: ['slot-center', 'slot-overall', 'slot-center-point', 'slot-3point-arc', 'slot-center-arc'], onClick: () => { setActiveTool('slot-center-arc'); setStatusMessage('Center Point Arc Slot: click arc centre, arc start, arc end, then width'); } },
       ],
     },
     {

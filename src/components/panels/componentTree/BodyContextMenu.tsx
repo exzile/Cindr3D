@@ -18,6 +18,7 @@ export interface BodyCtxMenu {
 }
 
 interface MenuItem {
+  kind?: 'item' | 'heading';
   label: string;
   shortcut?: string;
   icon?: React.ReactNode;
@@ -25,6 +26,7 @@ interface MenuItem {
   disabled?: boolean;
   separator?: boolean;
   type?: 'opacity' | 'selectable';
+  tone?: 'organize' | 'create' | 'edit' | 'display' | 'locate' | 'danger';
   onClick: () => void;
 }
 
@@ -134,9 +136,11 @@ export function BodyContextMenu({
   };
 
   const items: MenuItem[] = [
+    { kind: 'heading', label: 'Prepare', onClick: () => {} },
     {
       label: 'Send to Prepare',
       icon: <Printer size={13} />,
+      tone: 'create',
       onClick: () => {
         const geomSrc = bodyIdGeometryCache.get(menu.bodyId);
         if (geomSrc) {
@@ -160,43 +164,62 @@ export function BodyContextMenu({
         onClose();
       },
     },
-    { separator: true, label: 'Move/Copy', shortcut: 'M', icon: <Move size={13} />, onClick: () => { setActiveDialog('move-body'); onClose(); } },
-    { label: 'Move to Group', icon: <FolderOpen size={13} />, onClick: cs('Move to Group') },
-    { separator: true, label: 'Create Components from Bodies', icon: <Box size={13} />, onClick: () => {
+    { separator: true, label: '', onClick: () => {} },
+    { kind: 'heading', label: 'Organize', onClick: () => {} },
+    { label: 'Move/Copy', shortcut: 'M', icon: <Move size={13} />, tone: 'organize', onClick: () => { setActiveDialog('move-body'); onClose(); } },
+    { label: 'Move to Group', icon: <FolderOpen size={13} />, tone: 'organize', onClick: cs('Move to Group') },
+    { label: 'Create Components from Bodies', icon: <Box size={13} />, tone: 'create', onClick: () => {
         const newCompId = createComponentFromBody(menu.bodyId);
         if (newCompId) setStatusMessage(`Created component from ${bodyName}`);
         onClose();
       } },
-    { label: 'Create Selection Set', icon: <Layers size={13} />, onClick: () => { setActiveDialog('selection-sets'); onClose(); } },
-    { separator: true, label: 'Configure', icon: <Settings size={13} />, onClick: cs('Configure') },
-    { label: 'Enable Contact Sets', icon: <Link2 size={13} />, onClick: () => { setActiveDialog('contact-sets'); onClose(); } },
-    { separator: true, label: 'Physical Material', icon: <CircleDot size={13} />, onClick: () => { onOpenMaterial(); onClose(); } },
-    { label: 'Appearance', shortcut: 'A', icon: <CircleDot size={13} />, onClick: () => { setActiveDialog('appearance'); onClose(); } },
-    { label: 'Texture Map Controls', icon: <Settings size={13} />, onClick: cs('Texture Map Controls') },
-    { label: 'Properties', icon: <MoreHorizontal size={13} />, onClick: () => { setDialogPayload(menu.bodyId); setActiveDialog('body-properties'); onClose(); } },
-    { separator: true, label: 'Save As STL', icon: <Download size={13} />, onClick: () => { triggerBodyExport(menu.bodyId, 'stl'); onClose(); } },
-    { label: 'Save As GLB', icon: <Download size={13} />, onClick: () => { triggerBodyExport(menu.bodyId, 'glb'); onClose(); } },
-    { label: 'Copy', shortcut: 'Ctrl+C', icon: <Copy size={13} />, onClick: () => {
+    { label: 'Create Selection Set', icon: <Layers size={13} />, tone: 'organize', onClick: () => { setActiveDialog('selection-sets'); onClose(); } },
+    { separator: true, label: '', onClick: () => {} },
+    { kind: 'heading', label: 'Configure', onClick: () => {} },
+    { label: 'Configure', icon: <Settings size={13} />, tone: 'edit', onClick: cs('Configure') },
+    { label: 'Enable Contact Sets', icon: <Link2 size={13} />, tone: 'edit', onClick: () => { setActiveDialog('contact-sets'); onClose(); } },
+    { separator: true, label: '', onClick: () => {} },
+    { kind: 'heading', label: 'Material', onClick: () => {} },
+    { label: 'Physical Material', icon: <CircleDot size={13} />, tone: 'edit', onClick: () => { onOpenMaterial(); onClose(); } },
+    { label: 'Appearance', shortcut: 'A', icon: <CircleDot size={13} />, tone: 'edit', onClick: () => { setActiveDialog('appearance'); onClose(); } },
+    { label: 'Texture Map Controls', icon: <Settings size={13} />, tone: 'edit', onClick: cs('Texture Map Controls') },
+    { label: 'Properties', icon: <MoreHorizontal size={13} />, tone: 'edit', onClick: () => { setDialogPayload(menu.bodyId); setActiveDialog('body-properties'); onClose(); } },
+    { separator: true, label: '', onClick: () => {} },
+    { kind: 'heading', label: 'Export', onClick: () => {} },
+    { label: 'Save As STL', icon: <Download size={13} />, tone: 'create', onClick: () => { triggerBodyExport(menu.bodyId, 'stl'); onClose(); } },
+    { label: 'Save As GLB', icon: <Download size={13} />, tone: 'create', onClick: () => { triggerBodyExport(menu.bodyId, 'glb'); onClose(); } },
+    { separator: true, label: '', onClick: () => {} },
+    { kind: 'heading', label: 'Edit', onClick: () => {} },
+    { label: 'Copy', shortcut: 'Ctrl+C', icon: <Copy size={13} />, tone: 'edit', onClick: () => {
         const newId = copyBody(menu.bodyId);
         if (newId) setStatusMessage(`Copied ${bodyName}`);
         onClose();
       } },
-    { label: 'Cut', shortcut: 'Ctrl+X', icon: <Scissors size={13} />, onClick: () => {
+    { label: 'Cut', shortcut: 'Ctrl+X', icon: <Scissors size={13} />, tone: 'edit', onClick: () => {
         setClipboardBody(menu.bodyId);
         removeBody(menu.bodyId);
         setStatusMessage(`Cut ${bodyName} — use Paste to place it`);
         onClose();
       } },
-    { label: 'Paste', shortcut: 'Ctrl+V', icon: <Copy size={13} />, onClick: () => {
+    { label: 'Paste', shortcut: 'Ctrl+V', icon: <Copy size={13} />, tone: 'edit', onClick: () => {
         const newId = pasteBody();
         if (newId) setStatusMessage('Pasted body');
         onClose();
       }, disabled: !clipboardBodyId },
     {
+      label: 'Rename',
+      icon: <MoreHorizontal size={13} />,
+      tone: 'edit',
+      onClick: () => { onClose(); onStartRename(); },
+    },
+    { separator: true, label: '', onClick: () => {} },
+    { kind: 'heading', label: 'Danger', onClick: () => {} },
+    {
       label: 'Delete',
       shortcut: 'Del',
       icon: <Trash2 size={13} />,
       danger: true,
+      tone: 'danger',
       onClick: () => {
         // Remove the full feature chain (extrude + downstream fillets/chamfers)
         // then ensure the component-store body is gone too.
@@ -206,20 +229,18 @@ export function BodyContextMenu({
         onClose();
       },
     },
-    {
-      label: 'Rename',
-      icon: <MoreHorizontal size={13} />,
-      onClick: () => { onClose(); onStartRename(); },
-    },
-    { separator: true, label: 'Display Detail Control', icon: <Settings size={13} />, onClick: () => { setDialogPayload(menu.bodyId); setActiveDialog('display-detail'); onClose(); } },
-    { label: 'Show/Hide', shortcut: 'V', icon: <Eye size={13} />, onClick: () => { toggleVisibility(menu.bodyId); onClose(); } },
-    { label: 'Isolate', icon: <ScanEye size={13} />, onClick: () => { isolateBody(menu.bodyId); setStatusMessage(`Isolated: ${bodyName}`); onClose(); } },
-    { label: 'Show All Bodies', icon: <Eye size={13} />, onClick: () => { showAllBodies(); setStatusMessage('All bodies visible'); onClose(); } },
+    { separator: true, label: '', onClick: () => {} },
+    { kind: 'heading', label: 'Visibility', onClick: () => {} },
+    { label: 'Display Detail Control', icon: <Settings size={13} />, tone: 'display', onClick: () => { setDialogPayload(menu.bodyId); setActiveDialog('display-detail'); onClose(); } },
+    { label: 'Show/Hide', shortcut: 'V', icon: <Eye size={13} />, tone: 'display', onClick: () => { toggleVisibility(menu.bodyId); onClose(); } },
+    { label: 'Isolate', icon: <ScanEye size={13} />, tone: 'locate', onClick: () => { isolateBody(menu.bodyId); setStatusMessage(`Isolated: ${bodyName}`); onClose(); } },
+    { label: 'Show All Bodies', icon: <Eye size={13} />, tone: 'display', onClick: () => { showAllBodies(); setStatusMessage('All bodies visible'); onClose(); } },
     // CTX-9: Selectable toggle — label reflects current state
     {
       label: isSelectable ? 'Make Unselectable' : 'Make Selectable',
       type: 'selectable',
       icon: <MousePointer2 size={13} />,
+      tone: 'display',
       onClick: () => {
         toggleBodySelectable(menu.bodyId);
         setStatusMessage(isSelectable ? `${bodyName}: unselectable` : `${bodyName}: selectable`);
@@ -231,14 +252,27 @@ export function BodyContextMenu({
       label: 'Opacity Control',
       type: 'opacity',
       icon: <CircleDot size={13} />,
+      tone: 'display',
       onClick: () => setOpacityOpen((prev) => !prev),
     },
-    { separator: true, label: 'Find in Window', icon: <Search size={13} />, onClick: handleFindInWindow },
+    { separator: true, label: '', onClick: () => {} },
+    { kind: 'heading', label: 'Find', onClick: () => {} },
+    { label: 'Find in Window', icon: <Search size={13} />, tone: 'locate', onClick: handleFindInWindow },
   ];
 
   return (
     <ContextMenuShell x={menu.x} y={menu.y} onClose={onClose}>
+      <div className="sketch-ctx-title">
+        <span className="sketch-ctx-title-icon sketch-ctx-title-icon-body"><Box size={14} /></span>
+        <span className="sketch-ctx-title-copy">
+          <span className="sketch-ctx-title-name">{bodyName}</span>
+          <span className="sketch-ctx-title-kind">Body</span>
+        </span>
+      </div>
       {items.map((item, i) => {
+        if (item.kind === 'heading') {
+          return <div key={i} className="sketch-ctx-heading">{item.label}</div>;
+        }
         if (item.separator) {
           return <div key={i} className="sketch-ctx-sep" />;
         }
@@ -251,7 +285,10 @@ export function BodyContextMenu({
             <button
               className={[
                 'sketch-ctx-item',
+                item.tone ? 'sketch-ctx-has-tone' : '',
+                item.tone ? `sketch-ctx-tone-${item.tone}` : '',
                 item.danger ? 'danger' : '',
+                item.danger ? 'sketch-ctx-danger-zone' : '',
                 isActive ? 'active' : '',
                 isToggledOn ? 'toggled-on' : '',
                 item.disabled ? 'disabled' : '',

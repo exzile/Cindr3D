@@ -32,12 +32,13 @@ function previewFingerprint(ctx: SketchPreviewCtx): string {
   const dp = ctx.drawingPoints
     .map((p) => `${p.x.toFixed(4)},${p.y.toFixed(4)},${p.z.toFixed(4)}`)
     .join(';');
-  return `${ctx.activeTool}|${ms}|${dp}|${ctx.isDraggingArc}|${ctx.conicRho}|${ctx.blendCurveMode}`;
+  return `${ctx.activeTool}|${ms}|${dp}|${ctx.isDraggingArc}|${ctx.conicRho}|${ctx.blendCurveMode}|${ctx.polygonSides}`;
 }
 
 export type { SketchPreviewCtx } from './previews/types';
 
-export function renderSketchPreview(ctx: SketchPreviewCtx): void {
+/** Returns true if the preview geometry was redrawn, false if the fingerprint matched (no-op). */
+export function renderSketchPreview(ctx: SketchPreviewCtx): boolean {
   const {
     previewGroup,
     drawingPoints,
@@ -51,16 +52,17 @@ export function renderSketchPreview(ctx: SketchPreviewCtx): void {
     centerlineMat,
     conicRho,
     blendCurveMode,
+    polygonSides,
   } = ctx;
 
-  if (!previewGroup) return;
+  if (!previewGroup) return false;
 
   const fp = previewFingerprint(ctx);
-  if (PREVIEW_FINGERPRINT_CACHE.get(previewGroup.uuid) === fp) return;
+  if (PREVIEW_FINGERPRINT_CACHE.get(previewGroup.uuid) === fp) return false;
   setFingerprint(previewGroup.uuid, fp);
 
   clearGroupChildren(previewGroup);
-  if (drawingPoints.length === 0 || !mousePos) return;
+  if (drawingPoints.length === 0 || !mousePos) return true;
 
   const start = drawingPoints[0];
   startV.set(start.x, start.y, start.z);
@@ -105,11 +107,13 @@ export function renderSketchPreview(ctx: SketchPreviewCtx): void {
     t2,
     conicRho,
     blendCurveMode,
+    polygonSides,
     addLine,
     circlePoints,
   };
 
-  if (renderBasicShapePreview(activeTool, helpers)) return;
-  if (renderCurveAndPolygonPreview(activeTool, helpers)) return;
+  if (renderBasicShapePreview(activeTool, helpers)) return true;
+  if (renderCurveAndPolygonPreview(activeTool, helpers)) return true;
   renderEllipsePreview(activeTool, helpers);
+  return true;
 }

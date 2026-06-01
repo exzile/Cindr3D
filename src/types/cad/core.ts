@@ -148,4 +148,5 @@ export type ViewMode = '3d' | 'sketch';
 
 export type SketchPlane = 'XY' | 'XZ' | 'YZ' | 'custom';
 
-export type SnapType = 'grid' | 'endpoint' | 'midpoint' | 'center' | 'intersection' | 'nearest';
+// A9: reconciled with runtime — perpendicular/tangent are emitted by SketchInteraction.tsx.
+export type SnapType = 'grid' | 'endpoint' | 'midpoint' | 'center' | 'intersection' | 'nearest' | 'perpendicular' | 'tangent';

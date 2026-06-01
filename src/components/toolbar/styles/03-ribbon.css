@@ -61,10 +61,30 @@
   background: transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition: background 0.16s ease, color 0.16s ease, transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
   min-width: 44px;
   height: 52px;  /* compact default — works for sketch mode */
   position: relative;
+  isolation: isolate;
+  box-shadow: none;
+}
+
+.ribbon-button::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  z-index: -1;
+  border-radius: 8px;
+  pointer-events: none;
+  opacity: 0;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--accent) 34%, transparent),
+    color-mix(in srgb, var(--accent) 12%, transparent) 52%,
+    transparent 100%
+  );
+  transform: scale(0.72);
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 /* Large variant — used in non-sketch tabs for bigger primary tools */
@@ -74,27 +94,75 @@
 }
 
 .ribbon-button:hover {
-  background: var(--bg-hover);
-  border-color: var(--border-light);
+  background: color-mix(in srgb, var(--accent) 7%, var(--bg-hover));
+  border-color: transparent;
   color: var(--text-primary);
+  box-shadow: none;
+}
+
+.ribbon-button:not(.active):hover {
+  transform: translateY(-1px);
+}
+
+.ribbon-button:not(.active):active {
+  transform: translateY(0);
+  transition-duration: 0.06s;
+}
+
+.ribbon-button.has-dropdown {
+  padding: 3px 5px 4px;
+}
+
+.ribbon-button.has-dropdown:hover,
+.ribbon-button.has-dropdown.dropdown-open {
+  border-color: transparent;
+}
+
+.ribbon-button.has-dropdown.dropdown-open {
+  background: var(--bg-active);
 }
 
 .ribbon-button.active {
-  background: var(--bg-active);
-  border-color: var(--accent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #fff 12%, transparent), transparent 42%),
+    color-mix(in srgb, var(--accent) 12%, var(--bg-active));
+  border-color: transparent;
   color: var(--accent);
-  animation: ribbon-tool-active-pulse 1.4s ease-in-out infinite;
+  box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 72%, transparent);
+  animation: ribbon-tool-active-pulse 2.4s ease-in-out infinite;
+}
+
+.ribbon-button.active::after,
+.ribbon-button.dropdown-open::after {
+  opacity: 0.82;
+  animation: ribbon-selected-radiate 2.2s ease-out infinite;
 }
 
 @keyframes ribbon-tool-active-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(0, 120, 215, 0.28);
+    box-shadow:
+      inset 0 -2px 0 color-mix(in srgb, var(--accent) 72%, transparent),
+      0 0 0 0 rgba(0, 120, 215, 0.18);
     transform: translateY(0);
   }
   50% {
-    box-shadow: 0 0 0 4px rgba(0, 120, 215, 0.08);
+    box-shadow:
+      inset 0 -2px 0 color-mix(in srgb, var(--accent) 72%, transparent),
+      0 0 0 4px rgba(0, 120, 215, 0.05);
     transform: translateY(-1px);
+  }
+}
+
+@keyframes ribbon-selected-radiate {
+  0%,
+  100% {
+    opacity: 0.42;
+    transform: scale(0.72);
+  }
+  48% {
+    opacity: 0.88;
+    transform: scale(1.04);
   }
 }
 
@@ -108,6 +176,12 @@
   align-items: center;
   justify-content: center;
   height: 26px;
+  transition: color 0.16s ease, filter 0.16s ease, transform 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.ribbon-button:hover .ribbon-button-icon {
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.14));
+  transform: translateY(-2px) scale(1.04);
 }
 
 .ribbon-button.large .ribbon-button-icon {
@@ -128,6 +202,35 @@
   color: var(--accent);
 }
 
+.ribbon-button-label-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 100%;
+  min-height: 15px;
+}
+
+.ribbon-button-label-row.dropdown-trigger {
+  width: calc(100% + 4px);
+  max-width: 100%;
+  margin-top: 1px;
+  padding: 4px 2px 0;
+  border-top: 1px solid color-mix(in srgb, var(--border-light) 86%, transparent);
+  border-radius: 0;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.ribbon-button.has-dropdown:hover .ribbon-button-label-row.dropdown-trigger {
+  border-top-color: color-mix(in srgb, var(--accent) 45%, var(--border-light));
+}
+
+.ribbon-button-label-row.dropdown-trigger:hover,
+.ribbon-button.has-dropdown.dropdown-open .ribbon-button-label-row.dropdown-trigger {
+  border-top-color: var(--accent);
+}
+
 .ribbon-button-label {
   font-size: 9px;
   font-weight: 500;
@@ -137,6 +240,11 @@
   line-height: 1.1;
   text-align: center;
   color: var(--text-secondary);
+  transition: color 0.16s ease;
+}
+
+.ribbon-button:hover .ribbon-button-label {
+  color: var(--text-primary);
 }
 
 .ribbon-button.active .ribbon-button-label {
@@ -144,21 +252,45 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ribbon-button.active {
+  .ribbon-button.active,
+  .ribbon-button.active::after,
+  .ribbon-button.dropdown-open::after {
     animation: none;
+  }
+
+  .ribbon-button.active::after,
+  .ribbon-button.dropdown-open::after {
+    opacity: 0.58;
+    transform: scale(0.92);
   }
 }
 
-.ribbon-dropdown-arrow {
-  position: absolute;
-  bottom: 2px;
-  right: 2px;
+.ribbon-dropdown-affordance {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 11px;
+  height: 11px;
+  flex: 0 0 11px;
+  margin-left: 1px;
+  border-radius: 2px;
+  background: transparent;
   color: var(--text-muted);
   cursor: pointer;
+  transition: color 0.12s ease, transform 0.12s ease;
 }
 
-.ribbon-dropdown-arrow:hover {
-  color: var(--text-secondary);
+.ribbon-button-label-row.dropdown-trigger:hover .ribbon-dropdown-affordance,
+.ribbon-button.has-dropdown.dropdown-open .ribbon-dropdown-affordance {
+  color: var(--accent);
+}
+
+.ribbon-dropdown-arrow {
+  transition: transform 0.12s ease;
+}
+
+.ribbon-button.has-dropdown.dropdown-open .ribbon-dropdown-arrow {
+  transform: rotate(180deg);
 }
 
 /* Stacked buttons (2 small buttons vertically) */
@@ -183,6 +315,11 @@
 
 .ribbon-stack .ribbon-button-label {
   font-size: 9px;
+}
+
+.ribbon-stack .ribbon-button-label-row {
+  justify-content: flex-start;
+  width: auto;
 }
 
 /* Dropdown Menu */
@@ -227,4 +364,3 @@
   align-items: center;
   color: var(--accent);
 }
-

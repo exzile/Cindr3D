@@ -38,6 +38,22 @@ export interface SketchConstraint {
   pointIndices?: number[];
   value?: number;
   surfacePlane?: { nu: number; nv: number; d: number };
+  /**
+   * For 'polygon' constraints: the regular-polygon parameters captured at
+   * creation, so the polygon can be regenerated with a different side count
+   * (the center constraint glyph + inline editor read/write this).
+   * `radius` is the cursor distance that fed the creation math — the circumradius
+   * for an inscribed polygon, the apothem for a circumscribed one. `baseAngle` is
+   * the cursor angle (vertex angle for inscribed, edge-midpoint angle for
+   * circumscribed). `kind` selects which defining circle stays fixed when the
+   * side count changes, matching Fusion.
+   */
+  polygonMeta?: {
+    center: { x: number; y: number; z: number };
+    radius: number;
+    baseAngle: number;
+    kind?: 'inscribed' | 'circumscribed';
+  };
 }
 
 export interface SketchEntity {

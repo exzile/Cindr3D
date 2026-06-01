@@ -2,6 +2,7 @@ import { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
+import { useCameraIdle } from '../hooks/useCameraIdle';
 import type { SketchEntity, SketchPoint, Sketch } from '../../../types/cad';
 
 // ── Constraint indicator colors ────────────────────────────────────────────
@@ -229,12 +230,60 @@ function makeDot(pos: THREE.Vector3, t1: THREE.Vector3, t2: THREE.Vector3, size:
   return makeCoincidentRing(pos, t1, t2, size * 0.3, color) as unknown as THREE.LineSegments;
 }
 
+/**
+ * PERF: merge every glyph into ONE LineSegments per material (colour). A sketch
+ * with many shapes can otherwise produce hundreds of individual line objects —
+ * each its own draw call — which makes panning lag. The originals' geometries
+ * are disposed here; the merged geometries are disposed by the component's
+ * cleanup effect. Materials are shared singletons and are never disposed.
+ */
+function mergeGlyphsByMaterial(objs: THREE.Object3D[]): THREE.Object3D[] {
+  const byMat = new Map<THREE.Material, number[]>();
+  for (const obj of objs) {
+    const line = obj as THREE.Line;
+    const pos = line.geometry?.getAttribute?.('position') as THREE.BufferAttribute | undefined;
+    if (!pos) continue;
+    const mat = line.material as THREE.Material;
+    let arr = byMat.get(mat);
+    if (!arr) { arr = []; byMat.set(mat, arr); }
+    const n = pos.count;
+    if (line.type === 'LineSegments') {
+      for (let i = 0; i < n; i++) arr.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+    } else {
+      // Line / LineLoop store sequential points — expand to segment pairs.
+      const loop = line.type === 'LineLoop';
+      const last = loop ? n : n - 1;
+      for (let i = 0; i < last; i++) {
+        const a = i, b = (i + 1) % n;
+        arr.push(pos.getX(a), pos.getY(a), pos.getZ(a), pos.getX(b), pos.getY(b), pos.getZ(b));
+      }
+    }
+    line.geometry?.dispose?.();
+  }
+  const merged: THREE.Object3D[] = [];
+  for (const [mat, arr] of byMat) {
+    if (arr.length === 0) continue;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
+    merged.push(new THREE.LineSegments(g, mat));
+  }
+  return merged;
+}
+
 // ── Main Component ──────────────────────────────────────────────────────────
 
 export default function SketchConstraintOverlay() {
   const activeSketch = useCADStore((s) => s.activeSketch);
+  const showConstraints = useCADStore((s) => s.showSketchConstraints);
+  // Hide the glyphs while the camera moves so they don't add draw calls every
+  // frame during panning/orbiting; they reappear when the camera settles.
+  const cameraIdle = useCameraIdle();
 
   const objects = useMemo(() => {
+    // Respect the "Constraints" visibility toggle. Besides being correct, hiding
+    // the per-constraint glyphs is a big perf win on sketches with many shapes
+    // (each constraint is its own draw call).
+    if (!showConstraints) return null;
     if (!activeSketch || !activeSketch.constraints || activeSketch.constraints.length === 0) {
       return null;
     }
@@ -414,6 +463,10 @@ export default function SketchConstraintOverlay() {
           objs.push(makeHArrow(mid, t1, t2, SIZE, c(COLOR_OFFSET)));
           break;
         }
+        case 'polygon':
+          // Polygon constraints render their own interactive center glyph in
+          // PolygonConstraintOverlay; rectangles/slots use dimensions instead.
+          break;
         default: {
           // Unknown type — place a small dot at first entity
           const entity = entities[0];
@@ -426,8 +479,8 @@ export default function SketchConstraintOverlay() {
       }
     }
 
-    return objs.length > 0 ? objs : null;
-  }, [activeSketch]);
+    return objs.length > 0 ? mergeGlyphsByMaterial(objs) : null;
+  }, [activeSketch, showConstraints]);
 
   // Dispose every constraint glyph's geometry when `objects` is replaced
   // (active sketch changed, constraints edited) or on unmount. Materials are
@@ -446,7 +499,7 @@ export default function SketchConstraintOverlay() {
     };
   }, [objects]);
 
-  if (!objects) return null;
+  if (!objects || !cameraIdle) return null;
 
   return (
     <group renderOrder={999}>

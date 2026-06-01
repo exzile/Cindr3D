@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { useCADStore } from '../../../../../store/cadStore';
 import { GeometryEngine } from '../../../../../engine/GeometryEngine';
 import type { SketchPoint } from '../../../../../types/cad';
+import { ccwArcTangent } from '../arcAngles';
 
 export function finalizeSplineFromContextMenu(
   activeTool: string,
@@ -107,13 +108,19 @@ export function commitDraggedTangentArc(params: {
   const arcRadius = Math.abs(d);
   const toStart = new THREE.Vector3(chainPt.x - cx, chainPt.y - cy, chainPt.z - cz);
   const toEnd = new THREE.Vector3(mousePos.x - cx, mousePos.y - cy, mousePos.z - cz);
+  // C2: orient the CCW arc so it leaves the chain point smoothly (no cusp).
+  const { startAngle, endAngle } = ccwArcTangent(
+    Math.atan2(toStart.dot(t2), toStart.dot(t1)),
+    Math.atan2(toEnd.dot(t2), toEnd.dot(t1)),
+    t1, t2, tangentDir,
+  );
   addSketchEntity({
     id: crypto.randomUUID(),
     type: 'arc',
     points: [{ id: crypto.randomUUID(), x: cx, y: cy, z: cz }],
     radius: arcRadius,
-    startAngle: Math.atan2(toStart.dot(t2), toStart.dot(t1)),
-    endAngle: Math.atan2(toEnd.dot(t2), toEnd.dot(t1)),
+    startAngle,
+    endAngle,
   });
   setDrawingPoints([{ id: crypto.randomUUID(), x: mousePos.x, y: mousePos.y, z: mousePos.z }]);
   setStatusMessage(`Tangent arc added (r=${arcRadius.toFixed(2)}) - click to continue line`);

@@ -104,6 +104,18 @@ function findNearestEntity(sketch: Sketch, worldPoint: THREE.Vector3): SketchEnt
       const center = new THREE.Vector3(entity.points[0].x, entity.points[0].y, entity.points[0].z);
       const distance = Math.abs(worldPoint.distanceTo(center) - entity.radius);
       if (distance < best.distance) {
+        // B11.b: for arcs, clamp the pick to the arc's angular sweep so the undrawn side
+        // cannot be selected.
+        if (entity.type === 'arc' && typeof entity.startAngle === 'number' && typeof entity.endAngle === 'number') {
+          const { t1: at1, t2: at2 } = GeometryEngine.getSketchAxes(sketch);
+          const toPoint = worldPoint.clone().sub(center);
+          const angle = Math.atan2(toPoint.dot(at2), toPoint.dot(at1));
+          let ea = entity.endAngle;
+          if (ea <= entity.startAngle) ea += 2 * Math.PI;
+          let normAngle = angle - entity.startAngle;
+          while (normAngle < 0) normAngle += 2 * Math.PI;
+          if (normAngle > ea - entity.startAngle) continue; // outside arc sweep
+        }
         best.distance = distance;
         best.entity = entity;
       }
@@ -111,6 +123,33 @@ function findNearestEntity(sketch: Sketch, worldPoint: THREE.Vector3): SketchEnt
   }
 
   return best.entity;
+}
+
+// B3: return the nearest endpoint (pointIndex) of the nearest entity so
+// coincident-style constraints bond the correct pair of endpoints.
+function findNearestEntityPoint(
+  sketch: Sketch,
+  worldPoint: THREE.Vector3,
+): { entity: SketchEntity; pointIndex: number } | null {
+  const entity = findNearestEntity(sketch, worldPoint);
+  if (!entity) return null;
+  const POINT_PICK_RADIUS = 3; // world-space mm; same scale as entityPickRadius
+  let bestIndex = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < entity.points.length; i++) {
+    const pt = entity.points[i];
+    const dist = worldPoint.distanceTo(new THREE.Vector3(pt.x, pt.y, pt.z));
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestIndex = i;
+    }
+  }
+  // Only report a specific point when the cursor is close to an endpoint;
+  // otherwise default to index 0 (centre for circles, start for lines/arcs).
+  if (bestDist > POINT_PICK_RADIUS && entity.points.length > 1) {
+    bestIndex = 0;
+  }
+  return { entity, pointIndex: bestIndex };
 }
 
 export function useSketchConstraintTool({
@@ -132,6 +171,11 @@ export function useSketchConstraintTool({
     const constraintType = activeTool.replace('constrain-', '') as ConstraintType;
     const requiredCount = getRequiredConstraintCount(constraintType);
 
+    // B3: constraints that bond specific endpoints need pointIndices.
+    const POINT_INDEX_TYPES: ConstraintType[] = ['coincident', 'midpoint', 'concentric', 'symmetric'];
+    // Accumulate (pointIndex, entityId) pairs across multi-click constraints.
+    const pendingPointIndices: number[] = [];
+
     const handleClick = (event: MouseEvent) => {
       if (event.button !== 0) {
         return;
@@ -142,7 +186,13 @@ export function useSketchConstraintTool({
         return;
       }
 
-      const entity = findNearestEntity(activeSketch, worldPoint);
+      // B3: for endpoint-sensitive constraints, find the nearest point on the entity.
+      const usePointIndices = POINT_INDEX_TYPES.includes(constraintType);
+      const hit = usePointIndices
+        ? findNearestEntityPoint(activeSketch, worldPoint)
+        : { entity: findNearestEntity(activeSketch, worldPoint), pointIndex: 0 };
+
+      const entity = hit?.entity ?? null;
       if (!entity) {
         setStatusMessage(`${constraintType}: click closer to a sketch entity`);
         return;
@@ -155,21 +205,52 @@ export function useSketchConstraintTool({
       }
 
       const nextSelection = [...currentSelection, entity.id];
+      if (usePointIndices) pendingPointIndices.push(hit!.pointIndex);
+
+      // B2.b: for 'equal', reject mixed line+circle pairs with a clear message.
+      if (constraintType === 'equal' && nextSelection.length === 2) {
+        const e0 = activeSketch.entities.find((e) => e.id === nextSelection[0]);
+        const e1 = activeSketch.entities.find((e) => e.id === nextSelection[1]);
+        const isCurveType = (e: SketchEntity) => e.type === 'circle' || e.type === 'arc';
+        const isLineType  = (e: SketchEntity) => e.type === 'line' || e.type === 'construction-line' || e.type === 'centerline';
+        if (e0 && e1 && ((isCurveType(e0) && isLineType(e1)) || (isLineType(e0) && isCurveType(e1)))) {
+          setStatusMessage('equal: pick two of the same kind (line+line or circle+circle)');
+          clearConstraintSelection();
+          pendingPointIndices.length = 0;
+          return;
+        }
+      }
+
       if (nextSelection.length < requiredCount) {
         addToConstraintSelection(entity.id);
         const remaining = requiredCount - nextSelection.length;
-        setStatusMessage(`${constraintType}: ${remaining} more entity click${remaining > 1 ? 's' : ''} needed`);
+        // B5: guide the user through symmetric selection (two entities then the axis line)
+        if (constraintType === 'symmetric') {
+          const msgs = ['pick entity 1', 'pick entity 2', 'pick symmetry axis line'];
+          setStatusMessage(`symmetric: ${msgs[nextSelection.length] ?? 'pick'}`);
+        } else {
+          setStatusMessage(`${constraintType}: ${remaining} more entity click${remaining > 1 ? 's' : ''} needed`);
+        }
         return;
+      }
+
+      // B5: solver expects [axisId, entityAId, entityBId] for symmetric.
+      // The user clicks entity1, entity2, axis — reorder to [axis, e1, e2].
+      let entityIds = nextSelection;
+      if (constraintType === 'symmetric' && nextSelection.length === 3) {
+        entityIds = [nextSelection[2], nextSelection[0], nextSelection[1]];
       }
 
       addSketchConstraint({
         id: crypto.randomUUID(),
         type: constraintType,
-        entityIds: nextSelection,
+        entityIds,
+        ...(usePointIndices && pendingPointIndices.length > 0 ? { pointIndices: [...pendingPointIndices] } : {}),
         ...(constraintType === 'offset'
           ? { value: useCADStore.getState().constraintOffsetValue }
           : {}),
       });
+      pendingPointIndices.length = 0;
       clearConstraintSelection();
     };
 

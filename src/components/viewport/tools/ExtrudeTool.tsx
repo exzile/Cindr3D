@@ -174,48 +174,43 @@ export default function ExtrudeTool() {
     return Math.abs(aD - bD) <= 1e-2;
   }, []);
 
-  const toggleSelection = useCallback((selectionId: string, additive = false) => {
+  const toggleSelection = useCallback((selectionId: string, _additive = false) => {
     if (selectedIds.includes(selectionId)) {
       const next = selectedIds.filter((id) => id !== selectionId);
       setSelectedIds(next);
       setStatusMessage(next.length > 0
-        ? `${next.length} profile${next.length > 1 ? 's' : ''} selected — drag arrow or set distance, then OK`
+        ? `${next.length} profile${next.length > 1 ? 's' : ''} selected - drag arrow or set distance, then OK`
         : 'Click a profile or face to extrude');
       return;
     }
 
     const incoming = getSketchForSelection(selectionId);
     if (!incoming) return;
-    if (selectedIds.length > 0) {
-      const first = getSketchForSelection(selectedIds[0]);
-      const incomingBaseSketchId = parseSelectionId(selectionId).sketchId;
-      const sameSourceSketch = selectedIds.every((id) => parseSelectionId(id).sketchId === incomingBaseSketchId);
-      if (first && !isSamePlane(first, incoming)) {
-        setSelectedIds([selectionId]);
-        setStatusMessage('Profile selection moved to the clicked sketch plane');
-        return;
-      }
-      // Non-additive click always replaces — Shift/Ctrl required to add profiles
-      if (!additive) {
-        setSelectedIds([selectionId]);
-        setStatusMessage('1 profile selected — drag arrow or set distance, then OK');
-        return;
-      }
-      // Additive (Shift/Ctrl) cross-sketch on same plane: replace (can only multi-select within one sketch)
-      if (!sameSourceSketch) {
-        setSelectedIds([selectionId]);
-        setStatusMessage('1 profile selected — drag arrow or set distance, then OK');
-        return;
-      }
-    } else if (!additive) {
+
+    if (selectedIds.length === 0) {
       setSelectedIds([selectionId]);
-      setStatusMessage('1 profile selected — drag arrow or set distance, then OK');
+      setStatusMessage('1 profile selected - drag arrow or set distance, then OK');
+      return;
+    }
+
+    const first = getSketchForSelection(selectedIds[0]);
+    const incomingBaseSketchId = parseSelectionId(selectionId).sketchId;
+    const sameSourceSketch = selectedIds.every((id) => parseSelectionId(id).sketchId === incomingBaseSketchId);
+    if (first && !isSamePlane(first, incoming)) {
+      setSelectedIds([selectionId]);
+      setStatusMessage('Profile selection moved to the clicked sketch plane');
+      return;
+    }
+    // Multi-select stays within one source sketch; crossing to another sketch starts a new selection.
+    if (!sameSourceSketch) {
+      setSelectedIds([selectionId]);
+      setStatusMessage('1 profile selected - drag arrow or set distance, then OK');
       return;
     }
 
     const next = [...selectedIds, selectionId];
     setSelectedIds(next);
-    setStatusMessage(`${next.length} profile${next.length > 1 ? 's' : ''} selected — drag arrow or set distance, then OK`);
+    setStatusMessage(`${next.length} profile${next.length > 1 ? 's' : ''} selected - drag arrow or set distance, then OK`);
   }, [getSketchForSelection, isSamePlane, selectedIds, setSelectedIds, setStatusMessage]);
 
   // ─── Native DOM profile picking ───────────────────────────────────────
@@ -277,41 +272,26 @@ export default function ExtrudeTool() {
 
     // Profile meshes are all coplanar on the sketch plane, so raycaster hits
     // come back with near-identical distances and the array order is unreliable.
-    // Pick the hit whose mesh has the SMALLEST world-space bounding-box area —
-    // that way clicking inside a small atomic region (lens, crescent) picks
-    // that region and NOT the enclosing original shape. Each click independently
-    // toggles exactly the region directly under the cursor.
-    //
-    // To select a larger containing shape (e.g. the whole rectangle rather
-    // than the atomic rect-minus-circles), Alt+click to pick the LARGEST
-    // profile under the cursor.
-    const _boxTmp = new THREE.Box3();
-    const _sz = new THREE.Vector3();
-    // Returns NaN for meshes with empty/invalid bounding boxes so the picker
-    // knows to skip them — a degenerate mesh (e.g. an overly-filtered thin
-    // shape) otherwise reports an infinite area and mis-sorts the picker.
+    // Pick the smallest actual triangulated region under the cursor. This makes
+    // nested profiles work like Fusion: click the rectangle area to select the
+    // rectangle-minus-inner-profile, then click the inner profile to include it.
     const meshArea = (mesh: THREE.Mesh): number => {
-      _boxTmp.setFromObject(mesh);
-      if (_boxTmp.isEmpty()) return NaN;
-      _boxTmp.getSize(_sz);
-      if (!isFinite(_sz.x) || !isFinite(_sz.y) || !isFinite(_sz.z)) return NaN;
-      const dims = [_sz.x, _sz.y, _sz.z].sort((a, b) => b - a);
-      return dims[0] * dims[1];
+      const area = Number(mesh.userData?.profileArea);
+      return Number.isFinite(area) && area > 0 ? area : NaN;
     };
-    const resolveHit = (
-      hits: THREE.Intersection[],
-      mode: 'smallest' | 'largest' = 'smallest',
-    ): THREE.Mesh | null => {
+    const resolveHit = (hits: THREE.Intersection[]): THREE.Mesh | null => {
       let best: THREE.Mesh | null = null;
-      let bestArea = mode === 'smallest' ? Infinity : -Infinity;
+      let bestArea = Infinity;
+      let bestDistance = Infinity;
       for (const hit of hits) {
         const mesh = hit.object as THREE.Mesh;
         const key = mesh.userData?.profileKey as string | undefined;
         if (!key) continue;
         const area = meshArea(mesh);
         if (!isFinite(area)) continue; // skip degenerate / empty meshes
-        if (mode === 'smallest' ? area < bestArea : area > bestArea) {
+        if (area < bestArea || (Math.abs(area - bestArea) <= 1e-6 && hit.distance < bestDistance)) {
           bestArea = area;
+          bestDistance = hit.distance;
           best = mesh;
         }
       }
@@ -322,18 +302,14 @@ export default function ExtrudeTool() {
       updateMouse(event);
       raycaster.setFromCamera(_mouse, camera);
       const hits = raycaster.intersectObjects(collectProfileMeshes(), false);
-      // Hover tracks the SAME mode the click would use (Alt = largest).
-      const mesh = resolveHit(hits, event.altKey ? 'largest' : 'smallest');
+      const mesh = resolveHit(hits);
+      canvas.style.cursor = mesh ? 'pointer' : '';
       if (mesh) {
         const key = mesh.userData.profileKey as string;
         if (hoveredIdRef.current !== key) {
           hoveredIdRef.current = key;
           setHoveredIdRef.current(key);
-          setStatusMessageRef.current(
-            event.altKey
-              ? 'Alt+click to select containing shape'
-              : 'Click to select profile — Shift/Ctrl+click to add more',
-          );
+          setStatusMessageRef.current('Click a profile to include it - click again to remove it');
         }
       } else if (hoveredIdRef.current !== null) {
         hoveredIdRef.current = null;
@@ -371,7 +347,7 @@ export default function ExtrudeTool() {
       updateMouse(event);
       raycaster.setFromCamera(_mouse, camera);
       const hits = raycaster.intersectObjects(collectProfileMeshes(), false);
-      const mesh = resolveHit(hits, event.altKey ? 'largest' : 'smallest');
+      const mesh = resolveHit(hits);
       if (mesh) {
         const key = mesh.userData.profileKey as string;
         toggleSelectionRef.current(key, event.shiftKey || event.ctrlKey || event.metaKey);
@@ -387,6 +363,7 @@ export default function ExtrudeTool() {
       canvas.removeEventListener('pointermove', handlePointerMove);
       canvas.removeEventListener('click', handleClick, true);
       cachedMeshes = null;
+      canvas.style.cursor = '';
       if (hoveredIdRef.current !== null) {
         hoveredIdRef.current = null;
         setHoveredIdRef.current(null);

@@ -112,12 +112,12 @@ export function RibbonSketchMode({
           icon={<Hexagon size={20} />}
           label="Polygon"
           active={['polygon', 'polygon-inscribed', 'polygon-circumscribed', 'polygon-edge'].includes(activeTool)}
-          onClick={() => setActiveTool('polygon-inscribed' as T)}
+          onClick={() => { setActiveTool('polygon-inscribed' as T); setStatusMessage('Inscribed Polygon: click to place the center, then click a vertex point (set side count in the palette)'); }}
           colorClass="icon-blue"
           dropdown={[
-            { label: 'Inscribed Polygon', icon: <Hexagon size={14} />, onClick: () => setActiveTool('polygon-inscribed' as T) },
-            { label: 'Circumscribed Polygon', icon: <Hexagon size={14} />, onClick: () => setActiveTool('polygon-circumscribed' as T) },
-            { label: 'Edge Polygon', icon: <Hexagon size={14} />, onClick: () => setActiveTool('polygon-edge' as T) },
+            { label: 'Inscribed Polygon', icon: <Hexagon size={14} />, onClick: () => { setActiveTool('polygon-inscribed' as T); setStatusMessage('Inscribed Polygon: click to place the center, then click a vertex point (set side count in the palette)'); } },
+            { label: 'Circumscribed Polygon', icon: <Hexagon size={14} />, onClick: () => { setActiveTool('polygon-circumscribed' as T); setStatusMessage('Circumscribed Polygon: click to place the center, then click an edge-midpoint (set side count in the palette)'); } },
+            { label: 'Edge Polygon', icon: <Hexagon size={14} />, onClick: () => { setActiveTool('polygon-edge' as T); setStatusMessage('Edge Polygon: click the two endpoints of one edge (set side count in the palette)'); } },
           ]}
         />
         <ToolButton
@@ -135,6 +135,7 @@ export function RibbonSketchMode({
         <ToolButton
           icon={<Waypoints size={20} />}
           label="Spline"
+          active={['spline', 'spline-control'].includes(activeTool)}
           onClick={() => { setActiveTool('spline' as T); setStatusMessage('Spline: click to place fit points, right-click to finish'); }}
           colorClass="icon-blue"
           dropdown={[

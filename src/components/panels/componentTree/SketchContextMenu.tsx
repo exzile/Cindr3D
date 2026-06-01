@@ -1,6 +1,6 @@
 import {
   FolderOpen, Layers, Copy, Scissors, Settings, Trash2, MoreHorizontal,
-  Eye, EyeOff, Search, PenTool, ScanEye,
+  Eye, EyeOff, Search, PenTool, ScanEye, DraftingCompass,
 } from 'lucide-react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
@@ -12,6 +12,28 @@ export interface SketchCtxMenu {
   x: number;
   y: number;
 }
+
+type SketchCtxTone =
+  | 'organize'
+  | 'create'
+  | 'edit'
+  | 'display'
+  | 'locate'
+  | 'danger';
+
+type SketchContextItem =
+  | { kind: 'heading'; label: string }
+  | { kind: 'separator' }
+  | {
+      kind?: 'action';
+      label: string;
+      shortcut?: string;
+      icon?: React.ReactNode;
+      danger?: boolean;
+      tone?: SketchCtxTone;
+      toggled?: boolean;
+      onClick: () => void;
+    };
 
 export function SketchContextMenu({ menu, onClose }: { menu: SketchCtxMenu; onClose: () => void }) {
   const editSketch                = useCADStore((s) => s.editSketch);
@@ -76,58 +98,88 @@ export function SketchContextMenu({ menu, onClose }: { menu: SketchCtxMenu; onCl
     onClose();
   };
 
-  const items: Array<{ label: string; shortcut?: string; icon?: React.ReactNode; danger?: boolean; separator?: boolean; onClick: () => void }> = [
-    { label: 'Move to Group', icon: <FolderOpen size={13} />, onClick: cs('Move to Group') },
-    { label: 'Create Selection Set', icon: <Layers size={13} />, onClick: () => { setActiveDialog('selection-sets'); onClose(); } },
-    { label: 'Offset Plane', icon: <Layers size={13} />, onClick: () => { setActiveDialog('construction-plane'); onClose(); } },
-    { separator: true, label: '', onClick: () => {} },
-    { label: 'Edit Sketch', icon: <PenTool size={13} />, onClick: () => { editSketch(menu.sketchId); onClose(); } },
-    { label: 'Copy Sketch', icon: <Copy size={13} />, onClick: () => { copySketch(menu.sketchId); onClose(); } },
-    { label: 'Redefine Sketch Plane', icon: <PenTool size={13} />, onClick: () => { setActiveDialog('redefine-sketch-plane'); onClose(); } },
-    { label: 'Slice Sketch', icon: <Scissors size={13} />, onClick: () => { sliceSketch(menu.sketchId); onClose(); } },
-    { label: 'Configure', icon: <Settings size={13} />, onClick: cs('Configure') },
-    { separator: true, label: '', onClick: () => {} },
-    { label: 'Delete', shortcut: 'Del', icon: <Trash2 size={13} />, danger: true, onClick: () => { deleteSketch(menu.sketchId); onClose(); } },
-    { label: 'Rename', icon: <MoreHorizontal size={13} />, onClick: () => { setDialogPayload(menu.sketchId); setActiveDialog('rename-sketch'); onClose(); } },
-    { separator: true, label: '', onClick: () => {} },
-    { label: 'Look At', icon: <ScanEye size={13} />, onClick: handleLookAt },
+  const items: SketchContextItem[] = [
+    { kind: 'heading', label: 'Organize' },
+    { label: 'Move to Group', icon: <FolderOpen size={13} />, tone: 'organize', onClick: cs('Move to Group') },
+    { label: 'Create Selection Set', icon: <Layers size={13} />, tone: 'organize', onClick: () => { setActiveDialog('selection-sets'); onClose(); } },
+    { kind: 'heading', label: 'Create' },
+    { label: 'Offset Plane', icon: <Layers size={13} />, tone: 'create', onClick: () => { setActiveDialog('construction-plane'); onClose(); } },
+    { kind: 'separator' },
+    { kind: 'heading', label: 'Edit' },
+    { label: 'Edit Sketch', icon: <PenTool size={13} />, tone: 'edit', onClick: () => { editSketch(menu.sketchId); onClose(); } },
+    { label: 'Copy Sketch', icon: <Copy size={13} />, tone: 'edit', onClick: () => { copySketch(menu.sketchId); onClose(); } },
+    { label: 'Redefine Sketch Plane', icon: <PenTool size={13} />, tone: 'create', onClick: () => { setActiveDialog('redefine-sketch-plane'); onClose(); } },
+    { label: 'Slice Sketch', icon: <Scissors size={13} />, tone: 'create', onClick: () => { sliceSketch(menu.sketchId); onClose(); } },
+    { label: 'Configure', icon: <Settings size={13} />, tone: 'edit', onClick: cs('Configure') },
+    { label: 'Rename', icon: <MoreHorizontal size={13} />, tone: 'edit', onClick: () => { setDialogPayload(menu.sketchId); setActiveDialog('rename-sketch'); onClose(); } },
+    { kind: 'separator' },
+    { kind: 'heading', label: 'Danger' },
+    { label: 'Delete', shortcut: 'Del', icon: <Trash2 size={13} />, danger: true, tone: 'danger', onClick: () => { deleteSketch(menu.sketchId); onClose(); } },
+    { kind: 'separator' },
+    { kind: 'heading', label: 'View' },
+    { label: 'Look At', icon: <ScanEye size={13} />, tone: 'locate', onClick: handleLookAt },
     // CTX-10: Show/Hide sketch visibility — toggles the sketch feature's visible flag
     {
       label: isVisible ? 'Hide' : 'Show',
       shortcut: 'V',
       icon: isVisible ? <EyeOff size={13} /> : <Eye size={13} />,
+      tone: 'display',
+      toggled: isVisible,
       onClick: handleToggleVisibility,
     },
     // CTX-11: Per-context display toggles (currently global — per-sketch is a future enhancement)
     {
       label: showProfile ? 'Hide Profile' : 'Show Profile',
       icon: showProfile ? <EyeOff size={13} /> : <Eye size={13} />,
+      tone: 'display',
+      toggled: showProfile,
       onClick: () => { setShowProfile(!showProfile); onClose(); },
     },
     {
       label: showProjectedGeometries ? 'Hide Projected Geometries' : 'Show Projected Geometries',
       icon: showProjectedGeometries ? <EyeOff size={13} /> : <Eye size={13} />,
+      tone: 'display',
+      toggled: showProjectedGeometries,
       onClick: () => { setShowProjectedGeometries(!showProjectedGeometries); onClose(); },
     },
     {
       label: showConstructionGeometries ? 'Hide Construction Geometries' : 'Show Construction Geometries',
       icon: showConstructionGeometries ? <EyeOff size={13} /> : <Eye size={13} />,
+      tone: 'display',
+      toggled: showConstructionGeometries,
       onClick: () => { setShowConstructionGeometries(!showConstructionGeometries); onClose(); },
     },
-    { separator: true, label: '', onClick: () => {} },
-    { label: 'Find in Window', icon: <Search size={13} />, onClick: handleFindInWindow },
-    { label: 'Find in Timeline', icon: <Search size={13} />, onClick: cs('Find in Timeline') },
+    { kind: 'separator' },
+    { kind: 'heading', label: 'Find' },
+    { label: 'Find in Window', icon: <Search size={13} />, tone: 'locate', onClick: handleFindInWindow },
+    { label: 'Find in Timeline', icon: <Search size={13} />, tone: 'locate', onClick: cs('Find in Timeline') },
   ];
 
   return (
     <ContextMenuShell x={menu.x} y={menu.y} onClose={onClose}>
+      <div className="sketch-ctx-title">
+        <span className="sketch-ctx-title-icon"><DraftingCompass size={14} /></span>
+        <span className="sketch-ctx-title-copy">
+          <span className="sketch-ctx-title-name">{menu.sketchName}</span>
+          <span className="sketch-ctx-title-kind">Sketch</span>
+        </span>
+      </div>
       {items.map((item, i) =>
-        item.separator ? (
+        item.kind === 'heading' ? (
+          <div key={i} className="sketch-ctx-heading">{item.label}</div>
+        ) : item.kind === 'separator' ? (
           <div key={i} className="sketch-ctx-sep" />
         ) : (
           <button
             key={i}
-            className={`sketch-ctx-item${item.danger ? ' danger' : ''}`}
+            className={[
+              'sketch-ctx-item',
+              item.tone ? 'sketch-ctx-has-tone' : '',
+              item.tone ? `sketch-ctx-tone-${item.tone}` : '',
+              item.danger ? 'danger' : '',
+              item.danger ? 'sketch-ctx-danger-zone' : '',
+              item.toggled ? 'toggled-on' : '',
+            ].filter(Boolean).join(' ')}
             onClick={item.onClick}
           >
             <span className="sketch-ctx-icon">{item.icon}</span>

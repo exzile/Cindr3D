@@ -6,6 +6,7 @@ import { useComponentStore } from '../../../store/componentStore';
 import { DimensionEngine } from '../../../engine/DimensionEngine';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
 import { disposeLineGeometries } from '../../../utils/threeDisposal';
+import { SKETCH_CONSTRAINED_MATERIAL } from '../../../engine/geometryEngine/materials';
 import type { Sketch } from '../../../types/cad';
 import { isComponentVisible } from './componentVisibility';
 
@@ -64,15 +65,45 @@ const pendingDimensionLabelStyle: React.CSSProperties = {
  * only recreated when the sketch reference changes (Zustand does immutable updates),
  * and disposes all child line geometries on cleanup to prevent GPU memory leaks.
  * NOTE: SKETCH_MATERIAL is a shared module-level constant — never dispose it here.
+ *
+ * B6.c: When constrainedIds is provided, renders in two passes — constrained entities
+ * in dark (Fusion-style fully-constrained color) and free entities in the default blue.
  */
-function SketchGeometry({ sketch }: { sketch: Sketch }) {
-  const group = useMemo(() => GeometryEngine.createSketchGeometry(sketch), [sketch]);
+function SketchGeometry({ sketch, constrainedIds }: { sketch: Sketch; constrainedIds?: Set<string> }) {
+  const hasConstrained = constrainedIds && constrainedIds.size > 0;
 
-  useEffect(() => {
-    return () => disposeLineGeometries(group);
-  }, [group]);
+  const freeSketch = useMemo(() => {
+    if (!hasConstrained) return sketch;
+    const entities = sketch.entities.filter(e => !constrainedIds!.has(e.id));
+    return entities.length === sketch.entities.length ? sketch : { ...sketch, entities };
+  }, [sketch, hasConstrained, constrainedIds]);
 
-  return <primitive object={group} />;
+  const constrainedSketch = useMemo(() => {
+    if (!hasConstrained) return null;
+    const entities = sketch.entities.filter(e => constrainedIds!.has(e.id));
+    return entities.length === 0 ? null : { ...sketch, entities };
+  }, [sketch, hasConstrained, constrainedIds]);
+
+  const freeGroup = useMemo(() => GeometryEngine.createSketchGeometry(freeSketch), [freeSketch]);
+  const constrainedGroup = useMemo(() => {
+    if (!constrainedSketch) return null;
+    const grp = GeometryEngine.createSketchGeometry(constrainedSketch);
+    grp.traverse((obj) => {
+      const line = obj as THREE.Line;
+      if (line.isLine) line.material = SKETCH_CONSTRAINED_MATERIAL;
+    });
+    return grp;
+  }, [constrainedSketch]);
+
+  useEffect(() => () => disposeLineGeometries(freeGroup), [freeGroup]);
+  useEffect(() => () => { if (constrainedGroup) disposeLineGeometries(constrainedGroup); }, [constrainedGroup]);
+
+  return (
+    <>
+      <primitive object={freeGroup} />
+      {constrainedGroup && <primitive object={constrainedGroup} />}
+    </>
+  );
 }
 
 /** Memoize the filtered sketch so visibility toggles don't produce
@@ -81,10 +112,12 @@ function ActiveSketchGeometry({
   sketch,
   showSketchPoints,
   showConstructionGeometries,
+  constrainedIds,
 }: {
   sketch: Sketch;
   showSketchPoints: boolean;
   showConstructionGeometries: boolean;
+  constrainedIds?: Set<string>;
 }) {
   const filteredSketch = useMemo(() => {
     const entities = sketch.entities.filter((e) => {
@@ -101,6 +134,7 @@ function ActiveSketchGeometry({
     <SketchGeometry
       key={`active-${sketch.id}-e${sketch.entities.length}-pts${showSketchPoints ? 1 : 0}-cg${showConstructionGeometries ? 1 : 0}`}
       sketch={filteredSketch}
+      constrainedIds={constrainedIds}
     />
   );
 }
@@ -579,6 +613,11 @@ export default function SketchRenderer() {
   const dimensionOffset = useCADStore((s) => s.dimensionOffset);
   const dimensionOrientation = useCADStore((s) => s.dimensionOrientation);
   const rollbackIndex = useCADStore((s) => s.rollbackIndex);
+  const sketchConstrainedEntityIds = useCADStore((s) => s.sketchConstrainedEntityIds);
+  const constrainedIdsSet = useMemo(
+    () => new Set(sketchConstrainedEntityIds),
+    [sketchConstrainedEntityIds],
+  );
   const components = useComponentStore((s) => s.components);
   const activeSketchComponentVisible = !activeSketch || isComponentVisible(components, activeSketch.componentId);
   const sketchById = useMemo(() => new Map(sketches.map((sketch) => [sketch.id, sketch])), [sketches]);
@@ -631,6 +670,7 @@ export default function SketchRenderer() {
             sketch={activeSketch}
             showSketchPoints={showSketchPoints}
             showConstructionGeometries={showConstructionGeometries}
+            constrainedIds={constrainedIdsSet}
           />
           {dimensionHoverEntityId && !pendingDimensionEntityIds.includes(dimensionHoverEntityId) && (
             <DimensionHoverHighlight sketch={activeSketch} hoverId={dimensionHoverEntityId} />
