@@ -2,6 +2,7 @@ import { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
 import { GeometryEngine } from '../../../engine/GeometryEngine';
+import { useCameraIdle } from '../hooks/useCameraIdle';
 import type { SketchEntity, SketchPoint, Sketch } from '../../../types/cad';
 
 // ── Constraint indicator colors ────────────────────────────────────────────
@@ -274,6 +275,9 @@ function mergeGlyphsByMaterial(objs: THREE.Object3D[]): THREE.Object3D[] {
 export default function SketchConstraintOverlay() {
   const activeSketch = useCADStore((s) => s.activeSketch);
   const showConstraints = useCADStore((s) => s.showSketchConstraints);
+  // Hide the glyphs while the camera moves so they don't add draw calls every
+  // frame during panning/orbiting; they reappear when the camera settles.
+  const cameraIdle = useCameraIdle();
 
   const objects = useMemo(() => {
     // Respect the "Constraints" visibility toggle. Besides being correct, hiding
@@ -495,7 +499,7 @@ export default function SketchConstraintOverlay() {
     };
   }, [objects]);
 
-  if (!objects) return null;
+  if (!objects || !cameraIdle) return null;
 
   return (
     <group renderOrder={999}>

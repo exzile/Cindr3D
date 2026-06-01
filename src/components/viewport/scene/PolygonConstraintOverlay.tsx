@@ -4,6 +4,7 @@ import * as THREE from 'three';
 import { Hexagon, X, Trash2 } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import { useThemeStore } from '../../../store/themeStore';
+import { useCameraIdle } from '../hooks/useCameraIdle';
 import type { Sketch, SketchConstraint } from '../../../types/cad';
 
 /** Center of a shape constraint, from its metadata or the member-line vertices. */
@@ -205,6 +206,11 @@ export default function PolygonConstraintOverlay() {
     [activeSketch],
   );
 
+  // The <Html> glyphs reproject + rewrite DOM every frame; hide them while the
+  // camera is moving and bring them back once it settles (no per-frame DOM cost
+  // during panning/orbiting).
+  const cameraIdle = useCameraIdle();
+
   if (!activeSketch || polygonConstraints.length === 0) return null;
 
   return (
@@ -213,6 +219,8 @@ export default function PolygonConstraintOverlay() {
         const center = shapeCenter(con, activeSketch);
         if (!center) return null;
 
+        // The open editor stays visible even mid-move (the user is interacting
+        // with it, not panning).
         if (editingId === con.id) {
           return (
             <Html key={con.id} position={center} center zIndexRange={[210, 0]} style={{ pointerEvents: 'none' }}>
@@ -220,6 +228,8 @@ export default function PolygonConstraintOverlay() {
             </Html>
           );
         }
+
+        if (!cameraIdle) return null; // hide idle glyphs during camera movement
 
         // Idle glyph: screen-facing button, click to edit.
         return (
