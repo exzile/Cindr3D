@@ -6,8 +6,6 @@ import '../common/ToolPanel.css';
 // PRIM-9: coil removed — route through CoilDialog (ActiveDialog 'coil' case)
 type PrimitiveKind = 'box' | 'cylinder' | 'sphere' | 'torus';
 
-type FeatureOperation = 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component';
-
 const KIND_COLOR: Record<PrimitiveKind, string> = {
   box: '#4a7c59',
   cylinder: '#2563eb',
@@ -50,11 +48,6 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
   const [y, setY] = useState((p.y as number) || 0);
   const [z, setZ] = useState((p.z as number) || 0);
 
-  // PRIM-4: Operation field (Fusion FeatureOperations)
-  const [operation, setOperation] = useState<FeatureOperation>(
-    (p.operation as FeatureOperation) ?? 'new-body',
-  );
-
   const addPrimitive = useCADStore((s) => s.addPrimitive);
   const updatePrimitiveParams = useCADStore((s) => s.updatePrimitiveParams);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
@@ -81,12 +74,12 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
   const handleApply = () => {
     const params: Record<string, number | string> =
       kind === 'box'
-        ? { width: boxLength, height: boxWidth, depth: boxHeight, operation }
+        ? { width: boxLength, height: boxWidth, depth: boxHeight, operation: 'new-body' }
         : kind === 'cylinder'
-          ? { radius: cylDiam / 2, radiusTop: cylDiamTop / 2, height: cylHeight, operation }
+          ? { radius: cylDiam / 2, radiusTop: cylDiamTop / 2, height: cylHeight, operation: 'new-body' }
           : kind === 'sphere'
-            ? { radius: sphDiam / 2, operation }
-            : { radius: torDiam / 2, tubeRadius: torSecDiam / 2, operation };
+            ? { radius: sphDiam / 2, operation: 'new-body' }
+            : { radius: torDiam / 2, tubeRadius: torSecDiam / 2, operation: 'new-body' };
 
     setPrimitivePreview(null);
     if (editing) {
@@ -209,23 +202,6 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
               </div>
             </div>
           )}
-
-          <div className="tp-divider" />
-
-          {/* PRIM-4: Operation */}
-          <div className="tp-section">
-            <div className="tp-row">
-              <span className="tp-label">Operation</span>
-              <select className="tp-select" value={operation}
-                onChange={(e) => setOperation(e.target.value as FeatureOperation)}>
-                <option value="new-body">New Body</option>
-                <option value="join">Join</option>
-                <option value="cut">Cut</option>
-                <option value="intersect">Intersect</option>
-                <option value="new-component">New Component</option>
-              </select>
-            </div>
-          </div>
 
           <div className="tp-divider" />
 

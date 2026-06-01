@@ -9,6 +9,7 @@ export const handleLineEditingCommit: SketchCommitHandler = (ctx) => {
     activeTool,
     activeSketch,
     sketchPoint,
+    addSketchEntity,
     replaceSketchEntities,
     cycleEntityLinetype,
     setStatusMessage,

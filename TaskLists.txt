@@ -27,6 +27,54 @@ Keep this file focused on active work. Open task sections retain their detailed 
     unbounded requestAnimationFrame retries, inactive overlays doing work, and
     profile/edge recomputation when not needed.
 
+# DEP-1: npm dependency maintenance for Dev1 (2026-06-01)
+# npm outdated/audit was reviewed after creating Dev1 from latest master.
+# Production audit: 0 vulnerabilities. Full audit: 2 moderate dev/transitive issues.
+#
+# [ ] DEP-1.1 Run `npm audit fix` and verify it clears:
+#           - brace-expansion DoS advisory in dev/transitive tooling
+#           - ws uninitialized memory disclosure in dev/transitive tooling
+#           Keep production audit at 0 vulnerabilities.
+#
+# [ ] DEP-1.2 Apply the safe in-range runtime dependency update batch:
+#           - react
+#           - react-dom
+#           - lucide-react
+#           - fflate
+#           - zustand
+#
+# [ ] DEP-1.3 Apply the safe in-range tooling/type update batch:
+#           - vite
+#           - vitest
+#           - @vitest/ui
+#           - typescript
+#           - typescript-eslint
+#           - jsdom
+#           - globals
+#           - @vitejs/plugin-react
+#           - @types/node
+#           - @types/react
+#           - @types/opentype.js
+#
+# [ ] DEP-1.4 Review separately before upgrading because these are major or
+#           viewport-sensitive changes:
+#           - eslint / @eslint/js major 10.x
+#           - opentype.js major 2.x
+#           - puppeteer major 25.x
+#           - three / @types/three 0.184.x viewport/render impact
+#           - three-bvh-csg 0.0.18 CSG/slicer impact
+#
+# [ ] DEP-1.5 Do not downgrade opencascade.js. Current beta is newer than the
+#           package registry latest reported by npm outdated.
+#
+# [ ] DEP-1.6 Verification gate after dependency changes:
+#           - npm audit --omit=dev
+#           - npm audit
+#           - npm run build
+#           - npm run test:run
+#           - manual design viewport smoke test for sketch/extrude/fillet/chamfer
+#           - manual printer calibration page smoke test
+
 # REMAINING - manual interactive-3D QA only
 # These require a human picking edges in the live 3D viewport with the real WASM kernel.
 # [ ] QA-1  Live red-flash pulse: pick the bottom edge near a fillet, dial chamfer past
@@ -413,11 +461,12 @@ Keep this file focused on active work. Open task sections retain their detailed 
 #             primitive, matching the Create-menu icon colors, like CoilDialog's.
 
 # ── P2: Fusion parameter + operation parity ─────────────────────────────────
-# [x] PRIM-4  Add an Operation field to Box/Cylinder/Sphere/Torus/Coil dialogs:
+# [ ] PRIM-4  Implement real primitive operations for Box/Cylinder/Sphere/Torus:
 #             New Body / Join / Cut / Intersect / New Component (Fusion
-#             FeatureOperations). Today only Pipe exposes operation (and only
-#             New Body/Join/Cut). Thread the chosen op through addPrimitive →
-#             the feature params so a downstream boolean can honor it.
+#             FeatureOperations). Do not expose this control in primitive dialogs
+#             until addPrimitive/PrimitiveBodies actually route the operation through
+#             boolean placement or component creation. Current primitive dialogs are
+#             intentionally New Body only to avoid misleading success messages.
 # [x] PRIM-5  Rename fields to Fusion conventions and switch radius→diameter:
 #             Box Width/Height/Depth → Length/Width/Height; Cylinder
 #             Radius Bottom/Top → Diameter (+ Height); Sphere Radius → Diameter;

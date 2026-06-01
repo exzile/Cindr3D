@@ -1,14 +1,14 @@
 <div align="center">
 
-<img src=".github/cindr3d-logo.png" alt="Cindr3D" width="180" />
+<img src=".github/cindr3d-logo.png" alt="Cindr3D" width="152" />
 
-<h1>Cindr3D</h1>
+# Cindr3D
 
-<p><strong>Browser CAD, slicing, and printer fleet control for makers and self-hosted workshops.</strong></p>
+**Browser CAD, slicing, and printer fleet control for makers and self-hosted workshops.**
 
 <p>
   <a href="https://cindr3d.com/"><img alt="Live site" src="https://img.shields.io/badge/Live-cindr3d.com-00a86b?style=for-the-badge"></a>
-  <a href="https://github.com/exzile/Cindr3D/releases/tag/v0.5.0"><img alt="Release" src="https://img.shields.io/badge/Release-v0.5.0-ff6b35?style=for-the-badge"></a>
+  <a href="https://github.com/exzile/Cindr3D/releases/tag/v0.5.1"><img alt="Latest release" src="https://img.shields.io/badge/Release-v0.5.1-ff6b35?style=for-the-badge"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-2563eb?style=for-the-badge"></a>
 </p>
 
@@ -20,272 +20,44 @@
   <img alt="OpenCascade WASM" src="https://img.shields.io/badge/OpenCascade-WASM-8b5cf6">
 </p>
 
-<p>
-  <a href="#quick-start"><strong>Quick start</strong></a> ·
-  <a href="#whats-new"><strong>What's new</strong></a> ·
-  <a href="#feature-highlights"><strong>Features</strong></a> ·
-  <a href="#orange-pi-hosting"><strong>Self-host</strong></a> ·
-  <a href="docs/ai-mcp-tools.md"><strong>AI tools</strong></a>
-</p>
+<img src=".github/readme-banner.svg" alt="Cindr3D workflow: Design to Slice to Print" width="100%" />
 
-Cindr3D brings a professional CAD-style workflow into a web app that runs locally during development or from a small Linux board such as an Orange Pi.
+<p>
+  <a href="#quick-start"><strong>Quick start</strong></a> |
+  <a href="#release-051"><strong>v0.5.1</strong></a> |
+  <a href="#capabilities"><strong>Capabilities</strong></a> |
+  <a href="#printer-support"><strong>Printer support</strong></a> |
+  <a href="#ai-and-automation"><strong>AI</strong></a> |
+  <a href="#self-hosting"><strong>Self-hosting</strong></a>
+</p>
 
 </div>
 
 > Cindr3D is not affiliated with Autodesk, Fusion 360, Duet3D, RepRapFirmware, or any slicer vendor.
 
-<details>
-<summary><strong>Table of contents</strong></summary>
-
-- [Overview](#overview)
-- [What's New](#whats-new)
-- [Feature Highlights](#feature-highlights)
-- [Print Farm Intelligence](#print-farm-intelligence)
-- [Cross-Firmware Support](#cross-firmware-support)
-- [Tech Stack](#tech-stack)
-- [Quick Start](#quick-start)
-- [Use Your Own Claude With Cindr3D](#use-your-own-claude-with-cindr3d)
-- [Roadmap](#roadmap)
-- [Development Scripts](#development-scripts)
-- [Project Layout](#project-layout)
-- [Production Builds](#production-builds)
-- [Orange Pi Hosting](#orange-pi-hosting)
-- [Self-Updater Service](#self-updater-service)
-- [Release Assets](#release-assets)
-- [Quality And Testing](#quality-and-testing)
-- [Contributing](#contributing)
-- [Security](#security)
-- [License](#license)
-
-</details>
-
 ## Overview
+
+Cindr3D combines a CAD-style design workspace, slicing/prep tools, and multi-printer operations into one browser app. It can run locally for development, from a static web host, or from a small Linux board such as an Orange Pi on a workshop network.
 
 <table>
   <tr>
-    <td><img alt="Design" src="https://img.shields.io/badge/Design-OCC%20CAD-ff8a00"><br><strong>Sketch, model, inspect</strong><br>Parametric CAD, feature timeline, B-rep operations, mesh repair, drawings, imports and exports.</td>
-    <td><img alt="Prepare" src="https://img.shields.io/badge/Prepare-Slice%20%26%20Preview-7c3aed"><br><strong>Plate, slice, simulate</strong><br>WASM slicing kernels, G-code preview, simulation playback, calibration tools, print profiles.</td>
-  </tr>
-  <tr>
-    <td><img alt="Printer" src="https://img.shields.io/badge/Printer-Fleet%20Control-0ea5e9"><br><strong>Monitor and operate</strong><br>Cross-firmware dashboards, files, macros, cameras, spools, tuning, updates, object cancellation.</td>
-    <td><img alt="AI" src="https://img.shields.io/badge/AI-BYOK%20%2B%20MCP-10b981"><br><strong>Automate locally</strong><br>Token-paired MCP server plus BYOK chat for CAD, slicer, printer, export, and inspection tools.</td>
+    <td width="25%"><strong>Design</strong><br>OpenCascade-backed sketches, B-rep solids, timeline edits, profiles, configurations, and import/export flows.</td>
+    <td width="25%"><strong>Prepare</strong><br>Plate layout, slicer kernels, G-code simulation, calibration models, print profiles, and preview tooling.</td>
+    <td width="25%"><strong>Operate</strong><br>Dashboards, cameras, macros, files, spools, power, updates, calibration, and printer history.</td>
+    <td width="25%"><strong>Automate</strong><br>BYOK chat, local MCP tools, audit logs, token pairing, and safety gates for destructive actions.</td>
   </tr>
 </table>
 
-Cindr3D combines design, print preparation, and multi-printer fleet control in one browser workspace. It's designed to run locally during development or be served from a small Linux board (Orange Pi or similar) on your home network — no cloud account required.
+## Who It Is For
 
-The project is evolving quickly. Some CAD and slicer features are experimental, but the repository is public so the implementation can be inspected, used, and improved in the open.
+| Reader | Start here | What to look for |
+|---|---|---|
+| **Maker or shop operator** | [Live site](https://cindr3d.com/) or [Quick Start](#quick-start) | Printer dashboards, profiles, calibration, camera workflows, and queue/fleet tools. |
+| **CAD contributor** | [Release 0.5.1](#release-051), [Capabilities](#capabilities), [TaskLists.txt](TaskLists.txt) | OCC modeling, sketch parity, profile selection, timeline edits, and topology tasks. |
+| **Self-hosting user** | [Self Hosting](#self-hosting) | Static deployment, Orange Pi updater service, release assets, and local-only operation. |
+| **AI/MCP user** | [AI and Automation](#ai-and-automation) | Claude Code pairing, BYOK chat, tool audit logs, token rotation, and safety gates. |
 
-## What's New
-
-> [!NOTE]
-> **v0.5.0 - 2026-05.** This release is the big DesignCAD/OCC milestone: Cindr3D moves from mostly mesh-derived modeling toward an OpenCascade-backed B-rep workflow, while also preparing the public site and documentation for a broader open-source release.
-
-| Area | v0.5.0 focus |
-|------|--------------|
-| **OCC modeling core** | Extrude, revolve, sweep, loft, primitives, booleans, split, shell, draft, offset faces, fillet, and chamfer preserve richer source topology. |
-| **Fillet / chamfer** | Stable edge anchors, circular-edge handling, tangent-chain support, live validity probes, and expanded regression coverage. |
-| **Profile extrude** | Nested sketch regions can be selected like CAD profiles: outer plate with holes, inner profiles, or targeted cuts. |
-| **Persistence** | DZND files carry OCC body metadata, profile selections, edge-modification inputs, parameters, and reconstruction data. |
-| **Release readiness** | Search metadata, sitemap, robots, Bing verification, Static Web Apps rewrites, Azure headers, wiki/help screenshots, and tests. |
-
-<details>
-<summary><strong>Full v0.5.0 notes</strong></summary>
-
-**OCC-powered Design workspace**
-
-- **OpenCascade modeling core** - extrude, revolve, sweep, loft, primitives, booleans, split, shell, draft, offset faces, fillet, and chamfer now preserve richer source topology for downstream edits.
-- **Topology-aware fillet and chamfer** - selectable edge metadata, stable edge anchors, circular-edge handling, tangent-chain support, live validity probes, and expanded regression coverage make edge operations more predictable.
-- **Profile-aware extrude** - sketches with nested regions can be used like real CAD profiles: select the outer region for a plate with holes, select inner regions independently, or cut only the intended profiles.
-- **Reliable save/reload** - DZND project files now carry OCC body metadata, profile selections, edge-modification inputs, feature parameters, and reconstruction data so refreshes preserve more of the model history.
-- **Sketch cleanup** - selected sketch entities can be deleted with Delete/Backspace or the context menu, making it easier to repair profiles before feature creation.
-
-**Direct-edit and timeline polish**
-
-- **More OCC-backed edit tools** - offset faces, draft, shell tangent-chain behavior, split/replace face, move, align, merge faces, scale, combine, and primitive creation received OCC implementation work.
-- **Modern compact timeline** - timeline entries are denser, clearer, and easier to scan, with feature dialogs wired back into more reconstructed OCC features.
-- **Module refactors** - CAD store slices, feature actions, edge-op dialogs, viewport edge picking, slicer object panels, and printer camera settings were split into focused modules with shared helpers.
-- **WASM and GPU cleanup** - transient OCC handles, tessellation buffers, preview meshes, and R3F resources received leak fixes and lifecycle hardening.
-
-**Public release readiness**
-
-- **Search-ready hosted site** - route-specific metadata, canonical URLs, sitemap, robots.txt, Bing verification, Static Web Apps rewrites, and Azure security headers are in place.
-- **Help and wiki screenshots** - printer dashboard, layout editing, Prepare G-code simulation, profile creation, and Design screenshots were added to make onboarding less guessy.
-- **Test expansion** - new tests cover selectable edges, sketch-to-wire conversion, fillet ordering, requested-radius checks, topology anchors, primitive OCC bodies, transform/pattern operations, STEP IO, and persistence.
-
-**Carried forward from earlier releases**
-
-- Browser-native CAD, in-browser slicing, Duet/Klipper/Marlin printer control, smart print-farm queue, camera monitoring, calibration tools, BYOK AI assistant, local MCP control, and self-hosted deployment remain part of the core workflow.
-
-</details>
-
-## Feature Highlights
-
-| Workspace | High-signal features |
-|-----------|----------------------|
-| **CAD & modelling** | OCC solids, profile-aware extrude, topology edge picking, timeline, configurations, drawings, imports/exports. |
-| **Slicer & preview** | Plate layout, WASM geometry kernels, calibration generators, G-code simulation, color modes, object labels. |
-| **Printer workflows** | Cross-firmware dashboards, files, macros, cameras, spools, tuning, updates, object cancellation. |
-| **AI assistant** | Local MCP bridge, BYOK chat, 29 tool calls, audit log, token rotation, optional destructive-action confirmation. |
-
-<details>
-<summary><strong>Detailed feature list</strong></summary>
-
-### 🎨 CAD & Modelling
-
-- 3D viewport with orbit, pan, zoom, view-cube navigation
-- Sketching on XY / XZ / YZ planes with constraint-driven tools (line, circle, rectangle, arc, text)
-- Parametric model library for common printable objects and hardware-ready starter geometry
-- Design configurations for named variants, parameter sets, feature suppression, and variant export
-- Drawing workspace with generated orthographic views, inferred dimensions, title block, SVG / DXF / PDF export
-- OCC-backed solid features: extrude, revolve, sweep, loft, shell, rib, split, draft, offset faces, hole, thread, chamfer, fillet
-- Topology-aware edge picking for fillet/chamfer with stable anchors, circular-edge support, and live validity checks
-- Profile-aware extrude selection for nested sketch regions, including plates with holes and independent inner profiles
-- Non-destructive boolean history with visible parent links and recompute when source bodies change
-- Mesh repair tools: manifold report, duplicate vertex weld, normal flip, auto-fix, and STL import healing
-- Mesh, surface, construction, inspect, assemble, utilities ribbon areas
-- Component tree, feature timeline, selection filters, visibility controls
-- Imports: `.f3d`, `.step`, `.stp`, `.stl`, `.obj`; project + settings bundle save/load
-- Every CAD action is callable from the local MCP server (29 tools)
-
-### 🛠️ Slicer & Preview
-
-- Plate layout with multi-object support and per-object profile overrides
-- WASM-backed geometry kernel (Clipper2, Arachne) for crisp boolean ops and variable-width walls
-- Calibration utilities (towers, first-layer test)
-- G-code preview with layer slider, simulation playback, wireframe / tube modes, multiple color schemes (type / speed / flow / width / layer-time / wall-quality / seam)
-- Bridge skin classification with bridge-fan override
-- Print, printer, and material profiles with multi-profile flows
-- 🏷️ **`M486` object labels emitted automatically** — mid-print cancellation just works on supported firmware
-
-### 🖨️ Printer Workflows (cross-firmware)
-
-Cindr3D treats Klipper, Duet/RRF, Marlin, Smoothie, grbl, and Repetier as first-class boards. Tabs adapt to whichever board is connected; common features route to firmware-specific commands automatically.
-
-**Integrations and automation**
-
-- Webhook, Discord, Slack, Telegram, and MQTT rules for `PRINT_START`, `LAYER_CHANGE`, `PAUSED`, `FAILED`, and `DONE`.
-- MQTT telemetry publishes printer status, temperatures, position, progress, and events at a configurable cadence.
-- Home Assistant bridge exposes per-printer REST/discovery payloads and accepts pause/resume/cancel actions.
-- Profile import wizard maps Cura, OrcaSlicer, Bambu Studio, and 3MF config fields into Cindr3D print profiles.
-- Power-loss recovery snapshots in-progress jobs and offers a guided resume after reconnect.
-
-**Enclosure and safety controls**
-
-- Chamber monitor/control reads RRF chamber heaters, Klipper-style sensors, or generic MQTT temperature topics.
-- Chamber targets support ramp curves, print-start preheat, completion cooldown, and door-open cooldown.
-- Air-quality card subscribes to VOC, PM2.5, and CO2 MQTT topics with warning and pause thresholds.
-- Door/enclosure sensor supports RRF/Klipper GPIO-style model data or direct MQTT reed-switch input with configurable pause/start-lock behavior.
-- Stepper Tuning dashboard adjusts per-axis current, microsteps, and StealthChop/SpreadCycle mode, with RRF/Marlin `M906`/`M350`/`M569` and Klipper `SET_TMC_CURRENT` wrappers.
-
-**Mid-print object cancellation** — three places to cancel:
-
-- 🎯 **Exclude Object tab** — full UI with click-to-arm, click-to-confirm cancel; firmware-version badge auto-disables the buttons on too-old firmware
-- 📋 **Object Cancellation dashboard card** — compact two-click cancel inline with your other panels
-- 🎬 **3D Print Preview viewport** — right-click any object for a context menu with dimensions, position, currently-printing/cancelled status, and a per-object cancel button
-
-**Live print state** is fed in cross-firmware:
-
-- **Duet** — full RRF object-model polling
-- **Klipper** — Moonraker `print_stats` + `display_status` polled at 3 s
-- **Marlin** — `M73` (`P` / `R` / `Q` / `S`) and `echo:Layer N/M` parsed from the USB serial stream
-
-**Tabs:** Dashboard, Camera, Status, Console, Job, History, Analytics, Files, Macros, Bed Map, Exclude Object, Updates, Power, Input Shaper, Pressure Advance, Spools, Timelapse, Settings (plus Filaments / Object Model / DSF Plugins on Duet only).
-
-</details>
-
-## Print Farm Intelligence
-
-Cindr3D now treats the 3D Printer workspace as a small print-farm controller, not just a single-printer monitor.
-
-| Area | What it does |
-|------|--------------|
-| **Smart Queue** | Routes jobs by machine, material, nozzle, volume, profile compatibility, and availability. |
-| **Fleet Cameras** | Shows every enabled stream, supports multiple camera types, WebRTC fallback, PTZ, and layer evidence. |
-| **Fleet Filament** | Tracks loaded spools, low-stock thresholds, material routing, and estimated filament deductions. |
-| **Automation** | Webhooks, Discord, Slack, Telegram, MQTT, Home Assistant, power-loss recovery, chamber and safety controls. |
-
-<details>
-<summary><strong>Print-farm details</strong></summary>
-
-### Smart Queue
-
-- Persistent queue survives browser restarts and reconciles with each printer's live state.
-- Route jobs by build volume, loaded material, nozzle size, printer profile compatibility, and printer availability.
-- Split "print N copies" work across multiple printers, then move, pause, cancel, or reorder queued jobs.
-- Queue tab provides the full operator view; the fleet dashboard shows a compact next-jobs preview.
-
-### Fleet Cameras
-
-- All Cameras tab shows every enabled camera stream across saved printers with status overlays, ETA/layer context, compact and expanded modes, and click-through to the printer monitor.
-- Each printer can store multiple camera streams for top, side, nozzle, or custom views. Dashboard cards can choose which stream to show.
-- Camera settings support network cameras, browser USB cameras, server USB cameras, RTSP/HLS/HTTP main streams, WebRTC/WHEP endpoints, and optional ICE/TURN servers for self-hosted remote access.
-- WebRTC is tried first when configured for sub-second latency; if the peer connection fails, the camera panel falls back to the existing MJPEG/HLS stream.
-
-### Photo Evidence And PTZ
-
-- Layer Gallery captures per-layer snapshots from enabled cameras, stores them by printer/job/layer in IndexedDB, and exports ZIP archives for later review or vision tooling.
-- PTZ controls support Amcrest/Dahua and Reolink commands directly, plus generic/ONVIF/Tapo/Hikvision bridge URL templates.
-- Save per-camera PTZ preset slots and mark one as the print-start position so cameras automatically jump to a known first-layer framing.
-
-### Fleet Filament
-
-- Spools roll up by material across the fleet with configurable low-stock thresholds.
-- Assign a loaded spool per printer so routing rules and operator views know what each machine can print.
-- Completed prints deduct estimated filament from the loaded spool when slicer/firmware metadata includes filament length.
-
-### 🤖 AI Assistant
-
-- 🔗 **Local MCP server** on `:5174` — pair Claude Code with `claude mcp add cindr3d …`
-- 🛡️ **Localhost-only**, token-paired, per-tool rate-limited (12 calls / 10 s / tool), 80-entry audit log in the AI status badge
-- 💬 **BYOK chat panel** — streaming Anthropic + OpenAI / OpenRouter with full tool-use; 29 tools cover primitives, sketches, features, booleans, transforms, exports, viewport snapshots, and document inspection
-- 🔒 Confirmation gate for destructive operations (configurable, off by default)
-- ↻ Token rotation from the badge; old tokens invalidate immediately on rotation
-
-### 📡 Self-hosting & deployment
-
-- Static SPA — any static host works; Nginx fallback to `index.html`
-- Optional Orange Pi updater service exposing `GET /api/update/status` + `POST /api/update/apply` against the latest GitHub release asset
-- WASM artifacts bundled and budget-checked in CI
-
-</details>
-
-## Cross-Firmware Support
-
-| Tab / Feature | Klipper | Duet (RRF) | Marlin (USB) | Other |
-|---|:---:|:---:|:---:|:---:|
-| Dashboard (live) | ✅ | ✅ | ✅ | ✅ |
-| Camera | ✅ | ✅ | ✅ | ✅ |
-| Files | ✅ | ✅ | — | varies |
-| Macros | ✅ | ✅ | — | varies |
-| **Exclude Object** | ✅ `EXCLUDE_OBJECT` | ✅ `M486` (3.5+) | ✅ `M486` (2.0.9+) | Workaround page |
-| Bed Map | ✅ Moonraker mesh | ✅ heightmap.csv | ✅ G29 | — |
-| Input Shaper | ✅ `SET_INPUT_SHAPER` | ✅ `M593` (3.3+) | ✅ `M593` | Notes only |
-| Pressure Advance | ✅ `SET_PRESSURE_ADVANCE` | ✅ `M572` | ✅ `M900` | Notes only |
-| Power | ✅ Moonraker | ✅ HTTP plugs | ✅ HTTP plugs | ✅ HTTP plugs |
-| Spools | ✅ Spoolman bridge | ✅ local | ✅ local | ✅ local |
-| Timelapse | ✅ `moonraker-timelapse` | ✅ in-browser | ✅ in-browser | ✅ in-browser |
-| Updates | ✅ component + GitHub | ✅ GitHub | ✅ GitHub | ✅ GitHub |
-| Integrations | yes MQTT / HA / webhooks | yes MQTT / HA / webhooks | yes MQTT / HA / webhooks | yes MQTT / HA / webhooks |
-| Chamber / door / air quality | yes sensors + MQTT | yes heaters/GPIO + MQTT | yes MQTT/manual | yes MQTT/manual |
-| Stepper tuning | yes `SET_TMC_CURRENT` | yes `M906` / `M350` / `M569` | yes `M906` / `M350` / `M569` | Notes only |
-| Object Model browser | — | ✅ | — | — |
-| DSF Plugins | — | ✅ SBC | — | — |
-
-> [!TIP]
-> Mid-print cancellation requires labelled G-code. Cindr3D-sliced jobs are labelled automatically. For files from PrusaSlicer / SuperSlicer / OrcaSlicer, enable **Print Settings → Output → Label objects**. For Cura, run the **Label Objects** post-processing script.
-
-## Tech Stack
-
-| Area | Tools |
-|------|-------|
-| UI | React 19, TypeScript, Lucide React |
-| 3D | Three.js, `@react-three/fiber`, `@react-three/drei` |
-| State | Zustand |
-| Build | Vite 8 |
-| Tests | Vitest, Testing Library |
-| Quality | ESLint, TypeScript composite builds |
-| Geometry/runtime | OpenCascade WASM for B-rep CAD operations, plus WASM slicer kernels |
+> Project maturity: Cindr3D is moving quickly. Printer workflows and hosted docs are usable today; CAD/OCC tooling is under active development and should be treated as experimental for production-critical designs.
 
 ## Quick Start
 
@@ -295,21 +67,9 @@ Requirements:
 - npm
 - A modern browser with WebGL support
 
-Use the expected Node major version if you have `nvm`:
-
 ```bash
 nvm use
-```
-
-Install dependencies:
-
-```bash
 npm ci
-```
-
-Start the dev server:
-
-```bash
 npm run dev
 ```
 
@@ -319,104 +79,172 @@ Open:
 http://localhost:5173
 ```
 
-## Use Your Own Claude With Cindr3D
+After the app opens, try one of these first:
 
-Cindr3D ships with two complementary AI integration paths. Both reuse the same 29-tool MCP surface, so behaviour is identical across them.
+| Goal | Path |
+|---|---|
+| Build a model | `Design` workspace -> create a sketch -> extrude a profile. |
+| Inspect slicing | `Prepare` workspace -> import a model -> open the G-code preview/simulation. |
+| Add a printer | `Printer` workspace -> add connection -> open dashboard/settings. |
+| Pair AI tools | Open the AI MCP badge -> copy the local pairing command. |
 
-### 🔗 Path 1: Pair Claude Code via MCP (recommended)
-
-Run Claude Code locally and add Cindr3D as an MCP server. Your subscription quota covers the conversation; geometry shows up live in the running browser session.
+Common checks before contributing:
 
 ```bash
-# Start the dev server
-npm run dev
-
-# Open http://localhost:5173, then click the AI MCP status badge
-# in the status bar to copy the pairing command:
-claude mcp add cindr3d http://localhost:5174/mcp?token=...
+npm run typecheck
+npm run lint
+npm run test:run
+npm run build
 ```
 
-The browser tab must stay open — tool calls are relayed into the running Cindr3D session.
+## Release 0.5.1
 
-### 💬 Path 2: BYOK in-app chat panel
+**v0.5.1** is the follow-up release after the large v0.5.0 Design/OCC milestone. It carries the merged sketch, viewport, primitive, timeline, printer-calibration, public-site, and release-readiness improvements now deployed to Azure Static Web Apps.
 
-For users who prefer not to run Claude Code, the **AI Chat tab** inside Cindr3D provides a streaming chat interface that connects to your own Anthropic, OpenAI, or OpenRouter API key. Set the provider, model, and key in **Global Settings -> AI**; API keys are session-only by design and are sent only to your chosen provider.
-
-### 🛡️ Safety & Hardening
-
-- Localhost-only — refuses non-localhost origins
-- Token-paired auth, rotateable from the AI status badge
-- Per-tool rate limiting (12 calls / 10 s / tool)
-- 80-entry audit log of every tool call in the badge popover
-- Optional confirmation gate before destructive operations
-
-See [docs/ai-mcp-tools.md](docs/ai-mcp-tools.md) for the tool reference and [docs/ai-examples.md](docs/ai-examples.md) for sample assistant transcripts ("design a phone stand", "add 3 mm fillet to all top edges").
-
-## Roadmap
-
-Shipped and upcoming phases are tracked in [`TaskLists.txt`](TaskLists.txt). What's next:
-
-| Theme | What lands |
+| Area | Highlights |
 |---|---|
-| **Public-repo security hardening** | Remove tracked local-only files, tighten credential persistence, pin GitHub Actions, add dependency audit/dependency-review checks, and review hosted CSP profiles. |
-| **Pure OCC selectable-edge service** | Finish the clean edge-topology service so fillet/chamfer hover, selection, rendering, tangent propagation, and edge IDs come directly from OCC topology. |
-| **Camera-assisted calibration** | Attach photos to calibration runs, crop banded regions, align ruler overlays, and add BYOK vision recommendations for first-layer, ringing, and stringing tests. |
-| **Plugin / extension system** | Registry-based extension points for CAD tools, slicer pipeline steps, printer panels, and MCP tool sets. |
+| **Sketch UX** | Polygon side-count glyphs, refined sketch coloring, delete/context-menu flows, better dropdown tool promotion, and Fusion-style profile selection behavior. |
+| **Viewport performance** | Reduced sketch-overlay work while panning, batched constraint glyphs, exact endpoint snapping, and camera-idle redraws. |
+| **OCC modeling** | Continued work on silhouette split, split/replace face, transform, merge-face tests, and topology-aware modeling paths. |
+| **Design UI** | Compact modern timeline, polished ribbon/dropdowns, draggable centered configuration modal, richer browser/context-menu styling. |
+| **Printer workflows** | Calibration page stability work and more QA coverage around printer dashboard/help flows. |
+| **Release ops** | Updated package version, production build verified, GitHub release published, and Azure deployment completed. |
 
-Recent shipped work is condensed in [`TaskLists.txt`](TaskLists.txt), with detailed OCC implementation notes in the project memory files.
+<details>
+<summary><strong>v0.5.0 foundation carried into 0.5.1</strong></summary>
 
-> [!TIP]
-> Shipped phases are condensed in [`TaskLists.txt`](TaskLists.txt) with summaries, while active/upcoming phases keep their detailed task lists, effort estimates, file hints, and dependency notes.
+- OpenCascade modeling core for extrude, revolve, sweep, loft, primitives, booleans, split, shell, draft, offset faces, fillet, and chamfer.
+- Topology-aware fillet/chamfer edge metadata, stable edge anchors, circular-edge support, tangent-chain support, and validity probes.
+- Profile-aware extrude selection for nested sketch regions: plates with holes, inner islands, or targeted cuts.
+- DZND project persistence for OCC metadata, profile selections, edge-mod inputs, feature parameters, and reconstruction data.
+- Search metadata, sitemap, robots, Bing/Google verification work, Static Web Apps rewrites, Azure headers, help screenshots, and expanded tests.
 
-## Development Scripts
+</details>
 
-| Script | Purpose |
-|--------|---------|
-| `npm run dev` | Start the Vite development server. |
-| `npm run dev:fresh` | Clear Vite optimized dependency cache, then start dev server. Useful after dependency, WASM, or persisted-state changes. |
-| `npm run build` | Typecheck and build production static files into `dist/`. |
-| `npm run preview` | Serve the production build locally with Vite preview. |
-| `npm run clean` | Remove `dist/`. |
-| `npm run typecheck` | Run the composite TypeScript build check. |
-| `npm run lint` | Run ESLint. |
-| `npm run test` | Run Vitest in watch mode. |
-| `npm run test:run` | Run the Vitest suite once. |
-| `npm run test:ui` | Start the Vitest UI. |
-| `npm run verify` | Run `tsc -b` and `vitest run`. |
-| `npm run check:wasm-budget` | Check WASM asset budget. |
-| `npm run verify:wasm-build` | Verify the WASM build artifacts. |
+## Capabilities
+
+| Workspace | What it gives you |
+|---|---|
+| **CAD and modeling** | 3D viewport, sketches, constraints, OCC solids, profile extrude, edge picking, booleans, timeline, components, drawings, imports, exports. |
+| **Slicer and preview** | Plate layout, WASM geometry kernels, G-code preview, simulation playback, bridge/wall visualization, profiles, calibration generators. |
+| **Printer control** | Cross-firmware dashboards, camera streams, console, files, macros, jobs, history, analytics, bed maps, input shaping, pressure advance, spools, power, updates. |
+| **AI assistant** | Local MCP bridge, BYOK chat, 29 tool calls, token pairing, audit log, rate limiting, and optional confirmation for destructive tools. |
+
+<details>
+<summary><strong>Detailed feature list</strong></summary>
+
+### CAD and Modeling
+
+- Orbit/pan/zoom viewport with view-cube navigation.
+- Sketching on standard planes and construction planes.
+- Constraint-driven sketch tools for lines, rectangles, circles, arcs, splines, polygons, slots, text, projections, and intersections.
+- OCC-backed features: extrude, revolve, sweep, loft, shell, rib, split, draft, offset faces, hole, thread, chamfer, fillet, move, align, merge faces, and primitives.
+- Profile-aware extrude selection for nested sketch regions and holes.
+- Topology-aware fillet/chamfer selection with stable edge anchors and circular-edge handling.
+- Component tree, compact timeline, configuration variants, selection filters, and visibility controls.
+- Imports: `.f3d`, `.step`, `.stp`, `.stl`, `.obj`; project/settings bundle save and load.
+
+### Slicer and Preview
+
+- Multi-object plate layout with per-object profile overrides.
+- WASM-backed geometry paths for boolean and slicing support.
+- G-code preview with layer slider, simulation playback, tube/wireframe modes, and multiple color schemes.
+- Bridge skin classification, object labels, calibration generators, print profiles, printer profiles, and material profiles.
+- Automatic `M486` object labels for supported firmware object cancellation.
+
+### Printer Workflows
+
+- Fleet dashboard, printer dashboard, camera, status, console, job, history, analytics, files, macros, bed map, updates, power, input shaper, pressure advance, spools, timelapse, and settings tabs.
+- Smart queue routing by machine, material, nozzle, volume, profile compatibility, and availability.
+- Multiple camera streams per printer, WebRTC fallback, PTZ presets, and layer evidence capture.
+- Webhooks, Discord, Slack, Telegram, MQTT, Home Assistant, power-loss recovery, chamber controls, door sensors, and air-quality monitors.
+
+</details>
+
+## Printer Support
+
+| Feature | Klipper | Duet / RRF | Marlin USB | Other |
+|---|:---:|:---:|:---:|:---:|
+| Dashboard | yes | yes | yes | yes |
+| Camera | yes | yes | yes | yes |
+| Files | yes | yes | limited | varies |
+| Macros | yes | yes | limited | varies |
+| Exclude object | `EXCLUDE_OBJECT` | `M486` | `M486` | workaround |
+| Bed map | Moonraker mesh | `heightmap.csv` | `G29` | varies |
+| Input shaper | `SET_INPUT_SHAPER` | `M593` | `M593` | notes |
+| Pressure advance | `SET_PRESSURE_ADVANCE` | `M572` | `M900` | notes |
+| Power / updates / spools | yes | yes | yes | yes |
+| Object model / DSF plugins | no | yes | no | no |
+
+> Mid-print cancellation requires labelled G-code. Cindr3D-sliced jobs are labelled automatically. For external slicers, enable object labels or equivalent post-processing.
+
+## AI and Automation
+
+Cindr3D has two AI integration paths backed by the same local tool surface.
+
+| Path | Best for | Notes |
+|---|---|---|
+| **Claude Code via MCP** | Local CAD/printer automation while the browser session is open | Pair through the AI MCP badge; tool calls relay into the running app. |
+| **BYOK in-app chat** | Users who want an in-browser assistant | Supports Anthropic, OpenAI, and OpenRouter keys; keys are session-only. |
+
+Safety defaults:
+
+- Localhost-only MCP bridge.
+- Token-paired auth with rotation from the status badge.
+- Per-tool rate limiting.
+- 80-entry audit log.
+- Optional confirmation before destructive operations.
+
+See [docs/ai-mcp-tools.md](docs/ai-mcp-tools.md) for tool details and [docs/ai-examples.md](docs/ai-examples.md) for example workflows.
+
+## Tech Stack
+
+| Layer | Tools |
+|---|---|
+| UI | React 19, TypeScript, Lucide React |
+| 3D | Three.js, `@react-three/fiber`, `@react-three/drei` |
+| State | Zustand |
+| Build | Vite 8 |
+| Tests | Vitest, Testing Library |
+| Geometry | OpenCascade WASM plus slicer/preview WASM kernels |
+| Quality | ESLint, TypeScript composite builds, GitNexus code intelligence |
 
 ## Project Layout
 
 ```text
 src/
-  app/                 Application shell helpers
-  components/          UI components and workspace panels
-  engine/              Geometry, import, slicer, and CAD logic
-  services/            External/device service integrations
-  store/               Zustand stores and slices
-  test/                Vitest integration and behavior tests
-  types/               Shared TypeScript types
-  utils/               Project IO and shared helpers
+  components/      UI components, dialogs, panels, viewport
+  engine/          CAD, geometry, OCC, slicer, import/export logic
+  services/        Device and integration services
+  store/           Zustand stores and CAD/printer slices
+  test/            Vitest behavior and regression tests
+  types/           Shared TypeScript models
+  utils/           Shared helpers and project IO
 
-public/
-  fonts/               Runtime font assets
-
-wasm/
-  dist/                Tracked WASM runtime artifacts
-
-scripts/
-  cindr3d-updater.mjs
-  install-orangepi-updater.sh
-  check-wasm-budget.mjs
-  verify-wasm-build.mjs
+public/            Static assets, icons, help screenshots
+wasm/              Tracked WASM runtime artifacts
+scripts/           Build, updater, SEO, and verification scripts
+docs/              Help, AI/MCP, deployment, and technical docs
 ```
 
-Ignored local/private folders include `gcodes/`, `.claude/`, `.codex/`, `memory/`, `.gitnexus/`, `obj/`, `node_modules/`, and `dist/`.
+## Development Scripts
 
-## Production Builds
+| Script | Purpose |
+|---|---|
+| `npm run dev` | Start Vite development server. |
+| `npm run dev:fresh` | Clear Vite optimized dependency cache, then start dev server. |
+| `npm run build` | Typecheck, build static files, and generate SEO pages. |
+| `npm run preview` | Preview the production build locally. |
+| `npm run typecheck` | Run the composite TypeScript build check. |
+| `npm run lint` | Run ESLint. |
+| `npm run test:run` | Run Vitest once. |
+| `npm run verify` | Run `tsc -b` and `vitest run`. |
+| `npm run check:wasm-budget` | Check WASM asset budget. |
+| `npm run verify:wasm-build` | Verify WASM build artifacts. |
 
-Build static files:
+## Self Hosting
+
+Cindr3D is a static single-page app. Any static host works if unknown routes fall back to `index.html`.
 
 ```bash
 npm run build
@@ -428,36 +256,12 @@ Output:
 dist/
 ```
 
-The production build is a static single-page app. Any static host can serve it as long as unknown routes fall back to `index.html`.
-
-## Orange Pi Hosting
-
-Cindr3D can be served from an Orange Pi 3 LTS or similar small Linux board. For small SD cards, build on your development machine and copy only `dist/` to the board.
-
-Recommended base packages:
-
-```bash
-sudo apt update
-sudo apt full-upgrade -y
-sudo apt install -y nginx git curl ufw fail2ban rsync ca-certificates
-sudo systemctl enable --now nginx
-```
-
-Firewall:
-
-```bash
-sudo ufw allow OpenSSH
-sudo ufw allow 'Nginx Full'
-sudo ufw enable
-```
-
-Example Nginx site:
+Minimal Nginx pattern:
 
 ```nginx
 server {
     listen 80;
     server_name _;
-
     root /var/www/cindr3d;
     index index.html;
 
@@ -477,51 +281,45 @@ server {
 Deploy:
 
 ```bash
-npm run build
 rsync -av --delete dist/ user@device:/var/www/cindr3d/
 ```
 
-## Self-Updater Service
+<details>
+<summary><strong>Optional Orange Pi updater service</strong></summary>
 
-The repository includes an optional updater service for a self-hosted Orange Pi deployment:
+The repository includes an updater for self-hosted devices:
 
 ```text
 scripts/cindr3d-updater.mjs
 scripts/install-orangepi-updater.sh
 ```
 
-The service exposes local endpoints through Nginx:
+Endpoints:
 
 | Endpoint | Purpose |
-|----------|---------|
-| `GET /api/update/status` | Check the installed version against the latest GitHub release. |
+|---|---|
+| `GET /api/update/status` | Compare installed version with the latest GitHub release. |
 | `POST /api/update/apply` | Install the latest release asset. |
 
-The web app includes an **Updates** panel that can talk to this local service.
+The updater installs release assets such as `cindr3d-dist.zip`; it does not update directly from `master`.
 
-Install from a checked-out repo on the Pi:
+</details>
 
-```bash
-sudo ./scripts/install-orangepi-updater.sh
-```
+## Roadmap
 
-The installer creates:
+Active work is tracked in [TaskLists.txt](TaskLists.txt). Current themes:
 
-```text
-/opt/cindr3d/updater/cindr3d-updater.mjs
-/etc/cindr3d-updater/updater.env
-/etc/cindr3d-updater/token
-/var/lib/cindr3d-updater/state.json
-cindr3d-updater.service
-```
-
-Updater environment variables are documented in `.env.example`. The browser update panel uses the local updater key from `/etc/cindr3d-updater/token`.
+| Theme | Focus |
+|---|---|
+| **Dependency maintenance** | Safe npm update batch, audit fixes, and viewport-sensitive package review on `Dev1`. |
+| **Sketch parity** | Offset/break tools, additional constraints, DOF coloring, constraint glyphs, and inference guides. |
+| **OCC edge topology** | Make fillet/chamfer selection fully OCC-topology-backed from render through commit. |
+| **Primitive parity** | Modern primitive dialogs, operation selection, diameter-based fields, edit mode, live preview, and pipe/coil parity. |
+| **Calibration and printer QA** | Camera-assisted calibration, printer page smoke tests, and calibration dashboard stability. |
 
 ## Release Assets
 
-The updater installs only the latest GitHub release asset. It does not update from `master`.
-
-For faster and more reliable device updates, publish a release asset named like:
+For faster self-hosted updates, publish a release asset named like:
 
 ```text
 cindr3d-dist.zip
@@ -541,33 +339,9 @@ dist/index.html
 dist/assets/
 ```
 
-Release updates download and install already-built static files, avoiding a full `npm ci && npm run build` on the device.
-
-## Quality And Testing
-
-Recommended checks before submitting code:
-
-```bash
-npm run typecheck
-npm run lint
-npm run test:run
-npm run build
-```
-
-Faster pre-check during development:
-
-```bash
-npm run typecheck
-npm run lint
-```
-
-The slicer and geometry tests are intentionally detailed because small numerical changes can affect generated toolpaths, preview alignment, or dimensional accuracy.
-
 ## GitNexus Code Intelligence
 
-This repository includes `AGENTS.md` instructions for GitNexus-assisted code navigation and impact analysis.
-
-Useful commands:
+This repository includes GitNexus-assisted navigation and impact-analysis instructions in [AGENTS.md](AGENTS.md).
 
 ```bash
 npm run graph:analyze
@@ -575,42 +349,22 @@ npm run graph:list
 npm run graph:serve
 ```
 
-When changing functions, classes, or methods, follow the GitNexus impact-analysis guidance in `AGENTS.md`.
+When changing functions, classes, or methods, follow the GitNexus impact-analysis guidance in [AGENTS.md](AGENTS.md).
 
 ## Contributing
 
-Start with:
+Start with [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), and [SECURITY.md](SECURITY.md).
 
-- `CONTRIBUTING.md`
-- `CODE_OF_CONDUCT.md`
-- `SECURITY.md`
-
-Good contributions include:
-
-- focused bug fixes
-- tests for slicer/geometry edge cases
-- importer/exporter improvements
-- viewport interaction fixes
-- printer workflow improvements
-- documentation that helps new users run or self-host the app
+Good contributions include focused bug fixes, tests for geometry/slicer edge cases, importer/exporter improvements, viewport interaction fixes, printer workflow improvements, and documentation that helps users run or self-host the app.
 
 ## Security
 
-Please do not report security issues in public issues. See `SECURITY.md`.
+Please do not report security issues in public issues. See [SECURITY.md](SECURITY.md).
 
-Never commit:
-
-- printer credentials
-- Wi-Fi credentials
-- updater keys
-- GitHub tokens
-- local G-code test files
-- generated caches
-- private project files
+Never commit printer credentials, Wi-Fi credentials, updater keys, GitHub tokens, local G-code test files, generated caches, or private project files.
 
 ## License
 
-Cindr3D is released under the MIT License. See `LICENSE`.
+Cindr3D is released under the MIT License. See [LICENSE](LICENSE).
 
-The bundled Roboto font is licensed separately by Google under Apache-2.0. See `THIRD_PARTY_NOTICES.md`.
-
+The bundled Roboto font is licensed separately by Google under Apache-2.0. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
