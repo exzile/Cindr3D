@@ -26,18 +26,40 @@ export function finalizeSplineFromContextMenu(
   }
 
   if (activeTool === 'spline-control' && drawingPoints.length >= 2) {
-    const curve = new THREE.CatmullRomCurve3(
-      drawingPoints.map((p) => new THREE.Vector3(p.x, p.y, p.z)),
-      false,
-      'catmullrom',
-      0,
-    );
-    const splinePts = curve.getPoints(Math.max(50, drawingPoints.length * 16)).map((p) => ({
-      id: crypto.randomUUID(),
-      x: p.x,
-      y: p.y,
-      z: p.z,
-    }));
+    // SKETCH-2.C6: real cubic B-spline (clamped uniform) over the control hull.
+    // The curve does NOT interpolate interior control points — it is only attracted
+    // to them. Only the first and last control points are passed through (clamped).
+    //
+    // Clamped cubic B-spline basis for span [P[i-1], P[i], P[i+1], P[i+2]] at t∈[0,1]:
+    //   B(t) = (1/6) * [(-t³+3t²-3t+1)*P[i-1] + (3t³-6t²+4)*P[i]
+    //                   + (-3t³+3t²+3t+1)*P[i+1] + t³*P[i+2]]
+    // Clamping: prepend P[0],P[0] and append P[n],P[n] so the curve passes through
+    // the first and last control point.
+    const pts = drawingPoints.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+    const n = pts.length - 1;
+    // Build extended hull for clamping (pad ends with 2 repeats each)
+    const hull: THREE.Vector3[] = [pts[0], pts[0], ...pts, pts[n], pts[n]];
+    // hull spans: hull[0..3], hull[1..4], ..., hull[n..n+3] → n+1 spans
+    const samplesPerSpan = Math.max(16, Math.round(200 / (n + 1)));
+    const splinePts: SketchPoint[] = [];
+    for (let i = 0; i <= n; i++) {
+      const [p0, p1, p2, p3] = [hull[i], hull[i + 1], hull[i + 2], hull[i + 3]];
+      const end = i === n ? samplesPerSpan : samplesPerSpan - 1;
+      for (let j = 0; j <= end; j++) {
+        const t = j / samplesPerSpan;
+        const t2 = t * t, t3 = t2 * t;
+        const b0 = (-t3 + 3 * t2 - 3 * t + 1) / 6;
+        const b1 = (3 * t3 - 6 * t2 + 4) / 6;
+        const b2 = (-3 * t3 + 3 * t2 + 3 * t + 1) / 6;
+        const b3 = t3 / 6;
+        splinePts.push({
+          id: crypto.randomUUID(),
+          x: b0 * p0.x + b1 * p1.x + b2 * p2.x + b3 * p3.x,
+          y: b0 * p0.y + b1 * p1.y + b2 * p2.y + b3 * p3.y,
+          z: b0 * p0.z + b1 * p1.z + b2 * p2.z + b3 * p3.z,
+        });
+      }
+    }
     addSketchEntity({ id: crypto.randomUUID(), type: 'spline', points: splinePts });
     setDrawingPoints([]);
     setStatusMessage(`Control Point Spline added (${drawingPoints.length} control points)`);

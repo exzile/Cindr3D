@@ -18,35 +18,98 @@ export const handleLineEditingCommit: SketchCommitHandler = (ctx) => {
     case 'break': {
       if (!activeSketch) return false;
       const clickPt = new THREE.Vector3(sketchPoint.x, sketchPoint.y, sketchPoint.z);
+      const { t1, t2 } = GeometryEngine.getSketchAxes(activeSketch);
       let bestEnt: typeof activeSketch.entities[0] | null = null;
       let bestT = 0;
-      let bestDist = Infinity;
+      let bestDist = 2; // pick radius in world-space mm
+      let bestIsArc = false;
+      let bestSplitAngle = 0;
 
       for (const ent of activeSketch.entities) {
-        if (ent.type !== 'line' || ent.points.length < 2) continue;
-        const a = new THREE.Vector3(ent.points[0].x, ent.points[0].y, ent.points[0].z);
-        const b = new THREE.Vector3(ent.points[1].x, ent.points[1].y, ent.points[1].z);
-        const ab = b.clone().sub(a);
-        const len2 = ab.lengthSq();
-        if (len2 < 1e-8) continue;
-        const t = Math.max(0, Math.min(1, clickPt.clone().sub(a).dot(ab) / len2));
-        const closest = a.clone().addScaledVector(ab, t);
-        const dist = clickPt.distanceTo(closest);
-        if (dist < bestDist) {
-          bestDist = dist;
-          bestEnt = ent;
-          bestT = t;
+        if (ent.points.length < 1) continue;
+
+        if ((ent.type === 'line' || ent.type === 'construction-line' || ent.type === 'centerline') && ent.points.length >= 2) {
+          const a = new THREE.Vector3(ent.points[0].x, ent.points[0].y, ent.points[0].z);
+          const b = new THREE.Vector3(ent.points[ent.points.length - 1].x, ent.points[ent.points.length - 1].y, ent.points[ent.points.length - 1].z);
+          const ab = b.clone().sub(a);
+          const len2 = ab.lengthSq();
+          if (len2 < 1e-8) continue;
+          const t = Math.max(0, Math.min(1, clickPt.clone().sub(a).dot(ab) / len2));
+          const closest = a.clone().addScaledVector(ab, t);
+          const dist = clickPt.distanceTo(closest);
+          if (dist < bestDist) {
+            bestDist = dist;
+            bestEnt = ent;
+            bestT = t;
+            bestIsArc = false;
+          }
+        }
+
+        if (ent.type === 'arc' && ent.radius != null && ent.points.length >= 1) {
+          const center = new THREE.Vector3(ent.points[0].x, ent.points[0].y, ent.points[0].z);
+          const r = ent.radius;
+          const dist = Math.abs(clickPt.distanceTo(center) - r);
+          if (dist < bestDist) {
+            // Find the angle of the click projected onto the arc's plane
+            const toClick = clickPt.clone().sub(center);
+            const angle = Math.atan2(toClick.dot(t2), toClick.dot(t1));
+            // Clamp angle inside the arc's sweep
+            const sa = ent.startAngle ?? 0;
+            let ea = ent.endAngle ?? Math.PI;
+            if (ea <= sa) ea += 2 * Math.PI;
+            let normAngle = angle - sa;
+            while (normAngle < 0) normAngle += 2 * Math.PI;
+            if (normAngle > ea - sa) continue; // outside arc sweep
+            const fracT = normAngle / (ea - sa);
+            if (fracT < 0.01 || fracT > 0.99) continue; // too close to endpoints
+            bestDist = dist;
+            bestEnt = ent;
+            bestIsArc = true;
+            bestSplitAngle = sa + normAngle;
+          }
         }
       }
 
-      if (!bestEnt || bestDist > 2 || bestT <= 0.001 || bestT >= 0.999) {
-        setStatusMessage('Break: click closer to a line to split it');
+      if (!bestEnt || bestDist > 2) {
+        setStatusMessage('Break: click closer to a sketch entity to split it');
         return true;
       }
 
+      if (bestIsArc && bestEnt.radius != null) {
+        // Split arc into two arcs sharing the split point
+        const sa = bestEnt.startAngle ?? 0;
+        let ea = bestEnt.endAngle ?? Math.PI;
+        if (ea <= sa) ea += 2 * Math.PI;
+        const cx = bestEnt.points[0];
+        const center = new THREE.Vector3(cx.x, cx.y, cx.z);
+        const r = bestEnt.radius;
+        const splitPt: SketchPoint = {
+          id: crypto.randomUUID(),
+          x: center.x + t1.x * r * Math.cos(bestSplitAngle) + t2.x * r * Math.sin(bestSplitAngle),
+          y: center.y + t1.y * r * Math.cos(bestSplitAngle) + t2.y * r * Math.sin(bestSplitAngle),
+          z: center.z + t1.z * r * Math.cos(bestSplitAngle) + t2.z * r * Math.sin(bestSplitAngle),
+        };
+        replaceSketchEntities(
+          activeSketch.entities.flatMap((e) => {
+            if (e.id !== bestEnt!.id) return [e];
+            return [
+              { ...e, id: crypto.randomUUID(), points: [cx, splitPt], startAngle: sa, endAngle: bestSplitAngle },
+              { ...e, id: crypto.randomUUID(), points: [cx, splitPt], startAngle: bestSplitAngle, endAngle: ea > 2 * Math.PI ? ea - 2 * Math.PI : ea },
+            ];
+          }),
+        );
+        setStatusMessage('Break: arc split at selected point');
+        return true;
+      }
+
+      // Line split
+      if (bestT <= 0.001 || bestT >= 0.999) {
+        setStatusMessage('Break: click farther from the endpoints to split the line');
+        return true;
+      }
       const a = bestEnt.points[0];
-      const b = bestEnt.points[1];
-      const midPt: typeof a = {
+      const b = bestEnt.points[bestEnt.points.length - 1];
+      const midPt: SketchPoint = {
         id: crypto.randomUUID(),
         x: a.x + (b.x - a.x) * bestT,
         y: a.y + (b.y - a.y) * bestT,
