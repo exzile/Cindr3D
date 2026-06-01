@@ -76,25 +76,19 @@ export const handleLineEditingCommit: SketchCommitHandler = (ctx) => {
       }
 
       if (bestIsArc && bestEnt.radius != null) {
-        // Split arc into two arcs sharing the split point
+        // Split arc into two arcs at the split angle. Arcs store ONLY the center in
+        // `points[0]` (the solver's buildParams iterates entity.points as DOFs), so
+        // the split is represented purely via start/end angles — never an extra point.
         const sa = bestEnt.startAngle ?? 0;
         let ea = bestEnt.endAngle ?? Math.PI;
         if (ea <= sa) ea += 2 * Math.PI;
         const cx = bestEnt.points[0];
-        const center = new THREE.Vector3(cx.x, cx.y, cx.z);
-        const r = bestEnt.radius;
-        const splitPt: SketchPoint = {
-          id: crypto.randomUUID(),
-          x: center.x + t1.x * r * Math.cos(bestSplitAngle) + t2.x * r * Math.sin(bestSplitAngle),
-          y: center.y + t1.y * r * Math.cos(bestSplitAngle) + t2.y * r * Math.sin(bestSplitAngle),
-          z: center.z + t1.z * r * Math.cos(bestSplitAngle) + t2.z * r * Math.sin(bestSplitAngle),
-        };
         replaceSketchEntities(
           activeSketch.entities.flatMap((e) => {
             if (e.id !== bestEnt!.id) return [e];
             return [
-              { ...e, id: crypto.randomUUID(), points: [cx, splitPt], startAngle: sa, endAngle: bestSplitAngle },
-              { ...e, id: crypto.randomUUID(), points: [cx, splitPt], startAngle: bestSplitAngle, endAngle: ea > 2 * Math.PI ? ea - 2 * Math.PI : ea },
+              { ...e, id: crypto.randomUUID(), points: [cx], startAngle: sa, endAngle: bestSplitAngle },
+              { ...e, id: crypto.randomUUID(), points: [cx], startAngle: bestSplitAngle, endAngle: ea > 2 * Math.PI ? ea - 2 * Math.PI : ea },
             ];
           }),
         );
@@ -308,7 +302,20 @@ export const handleLineEditingCommit: SketchCommitHandler = (ctx) => {
         } else if ((ent.type === 'circle' || ent.type === 'arc') && ent.radius !== undefined) {
           const center = new THREE.Vector3(ent.points[0].x, ent.points[0].y, ent.points[0].z);
           const d = Math.abs(clickPt.distanceTo(center) - ent.radius);
-          if (d < bestDist) { bestDist = d; bestEnt = ent; }
+          if (d >= bestDist) continue;
+          // For arcs, require the click angle to fall inside the drawn sweep — not
+          // the undrawn remainder of the full circle (same clamp the break tool uses).
+          if (ent.type === 'arc') {
+            const toClick = clickPt.clone().sub(center);
+            const angle = Math.atan2(toClick.dot(t2), toClick.dot(t1));
+            const sa = ent.startAngle ?? 0;
+            let ea = ent.endAngle ?? Math.PI;
+            if (ea <= sa) ea += 2 * Math.PI;
+            let normAngle = angle - sa;
+            while (normAngle < 0) normAngle += 2 * Math.PI;
+            if (normAngle > ea - sa) continue; // outside arc sweep
+          }
+          bestDist = d; bestEnt = ent;
         }
       }
 

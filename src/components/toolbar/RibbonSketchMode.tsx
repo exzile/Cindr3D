@@ -154,7 +154,7 @@ export function RibbonSketchMode({
             icon={<Unlink size={20} />}
             label="Break Link"
             colorClass="icon-blue"
-            onClick={() => { breakAllProjectionLinks(); setStatusMessage('Break Link: projection links cleared'); }}
+            onClick={() => breakAllProjectionLinks()}
           />
         )}
         <ToolButton icon={<Type size={20} />} label="Text" active={activeTool === 'sketch-text'} onClick={startSketchTextTool} colorClass="icon-blue" />

@@ -68,11 +68,15 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
     return { radius: torDiam / 2, tubeRadius: torSecDiam / 2, x, y, z };
   }, [kind, boxLength, boxWidth, boxHeight, cylDiam, cylDiamTop, cylHeight, sphDiam, torDiam, torSecDiam, x, y, z]);
 
+  // Update the ghost preview in place when any param changes. The unmount-only
+  // cleanup below clears it — keeping these separate avoids a null→value flicker
+  // (and a double geometry dispose/recreate) on every keystroke.
   useEffect(() => {
     setPrimitivePreview({ kind, params: buildPreviewParams() });
-    return () => { setPrimitivePreview(null); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kind, boxLength, boxWidth, boxHeight, cylDiam, cylDiamTop, cylHeight, sphDiam, torDiam, torSecDiam, x, y, z]);
+
+  useEffect(() => () => { setPrimitivePreview(null); }, [setPrimitivePreview]);
 
   const handleApply = () => {
     const params: Record<string, number | string> =

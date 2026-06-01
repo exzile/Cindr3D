@@ -58,6 +58,7 @@ export function createPrimitiveToolActions({ set, get }: CADSliceContext): Parti
             hollow,
             wallThickness,
             featureId,
+            sectionType,
           );
         } catch (err) {
           console.warn(`[commitPipe] OCC sweep failed (${errorMessage(err, 'unknown')}), falling back to mesh`);
@@ -257,6 +258,7 @@ export function createPrimitiveToolActions({ set, get }: CADSliceContext): Parti
             hollow,
             wallThickness,
             featureId,
+            sectionType,
           );
           if (occMesh) {
             // Capture old body id before replay so we can evict it from the registry after.

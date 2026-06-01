@@ -92,7 +92,10 @@ export function createSketchEntityActions({ set, get }: CADSliceContext): Partia
         return { ...e, linked: false };
       });
       const brokenCount = updated.filter((e, i) => !e.linked && activeSketch.entities[i].linked).length;
-      if (brokenCount === 0) { return; }
+      if (brokenCount === 0) {
+        set({ statusMessage: 'Break Link: no projection links to clear' });
+        return;
+      }
       const next = { ...activeSketch, entities: updated };
       set({
         activeSketch: next,

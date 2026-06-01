@@ -158,7 +158,18 @@ export function createSketchTransformActions({ set, get }: CADSliceContext): Par
         const lx = p.x * t1.x + p.y * t1.y + p.z * t1.z;
         const ly = p.x * t2.x + p.y * t2.y + p.z * t2.z;
         const { lx: mx, ly: my } = reflectLocal(lx, ly);
-        return { ...p, id: crypto.randomUUID(), x: t1.x * mx + t2.x * my, y: t1.y * mx + t2.y * my, z: t1.z * mx + t2.z * my };
+        // Apply the reflection as an IN-PLANE delta to the original world point so
+        // the plane-normal component (offset/custom planes) is preserved. Rebuilding
+        // from t1*mx + t2*my alone assumes the plane passes through the origin and
+        // collapses mirrored copies onto that plane (e.g. snaps to z=0).
+        const dmx = mx - lx, dmy = my - ly;
+        return {
+          ...p,
+          id: crypto.randomUUID(),
+          x: p.x + t1.x * dmx + t2.x * dmy,
+          y: p.y + t1.y * dmx + t2.y * dmy,
+          z: p.z + t1.z * dmx + t2.z * dmy,
+        };
       };
 
       const label = isPicked ? 'picked line' : sketchMirrorAxis;
@@ -166,18 +177,22 @@ export function createSketchTransformActions({ set, get }: CADSliceContext): Par
         ? activeSketch.entities.filter((e) => e.id !== sketchMirrorAxis)
         : activeSketch.entities;
 
-      const mirrored: SketchEntity[] = entitiesToMirror.map((e) => ({
-        ...e,
-        id: crypto.randomUUID(),
-        points: e.points.map(mirrorPt),
-        // Arc angle reflection for picked-line axis: use general formula (negate relative to axis normal)
-        startAngle: (e.startAngle !== undefined && e.endAngle !== undefined && !isPicked)
-          ? (sketchMirrorAxis === 'vertical' ? Math.PI - e.endAngle : -e.endAngle)
-          : e.startAngle,
-        endAngle: (e.startAngle !== undefined && e.endAngle !== undefined && !isPicked)
-          ? (sketchMirrorAxis === 'vertical' ? Math.PI - e.startAngle : -e.startAngle)
-          : e.endAngle,
-      }));
+      // Reflection reverses arc orientation; the renderer forces CCW, so swap
+      // start/end and map each angle θ → 2φ − θ, where φ is the axis-line angle in
+      // the local (t1,t2) frame. This general formula reproduces the horizontal
+      // (φ=0) and vertical (φ=π/2) special cases and also fixes the diagonal and
+      // picked-line cases that previously left angles unchanged.
+      const twoPhi = 2 * Math.atan2(axisDirLy, axisDirLx);
+      const mirrored: SketchEntity[] = entitiesToMirror.map((e) => {
+        const hasAngles = e.startAngle !== undefined && e.endAngle !== undefined;
+        return {
+          ...e,
+          id: crypto.randomUUID(),
+          points: e.points.map(mirrorPt),
+          startAngle: hasAngles ? twoPhi - (e.endAngle as number) : e.startAngle,
+          endAngle: hasAngles ? twoPhi - (e.startAngle as number) : e.endAngle,
+        };
+      });
       set({
         activeSketch: { ...activeSketch, entities: [...activeSketch.entities, ...mirrored] },
         statusMessage: `Mirror: ${mirrored.length} entities added (${label})`,
