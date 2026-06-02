@@ -16,11 +16,15 @@ function hasVisibleSolidMesh(features: Feature[]) {
 
 export function useOccPreload() {
   const features = useCADStore((s) => s.features);
-  const occPreloadedRef = useRef(false);
+  const bodyRestoreRef = useRef(false);
+  const warmedRef = useRef(false);
 
+  // Restore OCC BReps for any document that loads with bodies. Registered BEFORE
+  // the warm-up getOcc() below so it's tracked as a step in the loading modal.
+  // (registerOccPostLoadTask runs immediately if OCC is already loaded.)
   useEffect(() => {
-    if (occPreloadedRef.current || !hasVisibleSolidMesh(features)) return;
-    occPreloadedRef.current = true;
+    if (bodyRestoreRef.current || !hasVisibleSolidMesh(features)) return;
+    bodyRestoreRef.current = true;
 
     registerOccPostLoadTask(async () => {
       const { features: latestFeatures, sketches } = useCADStore.getState();
@@ -35,10 +39,18 @@ export function useOccPreload() {
         candidates.map((feature) => ensureOccBodyForFeature(feature, latestFeatures, sketches)),
       );
     }, 'Restoring bodies');
+  }, [features]);
 
+  // Warm the OCC kernel once at app start, regardless of whether the document
+  // has any bodies yet. This shows the loading modal at boot and guarantees the
+  // kernel is ready before any tool (Sweep, Extrude, Fillet, …) needs it — so a
+  // tool never silently fails on a cold kernel in a fresh/empty document.
+  useEffect(() => {
+    if (warmedRef.current) return;
+    warmedRef.current = true;
     void getOcc().then(() => {
       void import('../../app/ActiveDialog');
       void import('../dialogs/ExportDialog');
     });
-  }, [features]);
+  }, []);
 }
