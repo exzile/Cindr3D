@@ -3,7 +3,9 @@ import { X, Check, MousePointer2 } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import { useDraggablePanel } from '../../viewport/sketch/useDraggablePanel';
 import {
+  BOX_PRIMITIVE_DRAG_EVENT,
   CYLINDER_PRIMITIVE_DRAG_EVENT,
+  type BoxPrimitiveDragDetail,
   type CylinderPrimitiveDragDetail,
 } from '../../../utils/primitivePreviewEvents';
 import '../common/ToolPanel.css';
@@ -52,8 +54,8 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
   const p = editing?.params ?? {};
 
   const [boxLength, setBoxLength] = useState((p.width as number) || 20);
-  const [boxWidth, setBoxWidth] = useState((p.height as number) || 20);
-  const [boxHeight, setBoxHeight] = useState((p.depth as number) || 20);
+  const [boxWidth, setBoxWidth] = useState((p.depth as number) || 20);
+  const [boxHeight, setBoxHeight] = useState((p.height as number) || 20);
 
   // Fusion shows cylinder/sphere/torus fields as diameters; primitives store radii.
   const [cylDiam, setCylDiam] = useState(((p.radius as number) || 10) * 2);
@@ -79,7 +81,7 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
   const setActiveTool = useCADStore((s) => s.setActiveTool);
 
   const buildPreviewParams = useCallback((): Record<string, number> => {
-    if (kind === 'box') return { width: boxLength, height: boxWidth, depth: boxHeight, x, y, z };
+    if (kind === 'box') return { width: boxLength, height: boxHeight, depth: boxWidth, x, y, z };
     if (kind === 'cylinder') return { radius: cylDiam / 2, radiusTop: cylDiam / 2, height: cylHeight, x, y, z };
     if (kind === 'sphere') return { radius: sphDiam / 2, x, y, z };
     return { radius: torDiam / 2, tubeRadius: torSecDiam / 2, x, y, z };
@@ -92,9 +94,22 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
   useEffect(() => () => { setPrimitivePreview(null); }, [setPrimitivePreview]);
 
   useEffect(() => {
-    if (kind !== 'cylinder') return;
-    setStatusMessage('Cylinder: set placement, diameter, height, and operation');
+    if (kind === 'box') setStatusMessage('Box: set placement, length, width, height, and operation');
+    if (kind === 'cylinder') setStatusMessage('Cylinder: set placement, diameter, height, and operation');
   }, [kind, setStatusMessage]);
+
+  useEffect(() => {
+    if (kind !== 'box') return;
+    const handleDrag = (event: Event) => {
+      const detail = (event as CustomEvent<BoxPrimitiveDragDetail>).detail;
+      if (!detail) return;
+      if (typeof detail.width === 'number') setBoxLength(Math.max(0.1, detail.width));
+      if (typeof detail.depth === 'number') setBoxWidth(Math.max(0.1, detail.depth));
+      if (typeof detail.height === 'number') setBoxHeight(Math.max(0.1, detail.height));
+    };
+    window.addEventListener(BOX_PRIMITIVE_DRAG_EVENT, handleDrag);
+    return () => window.removeEventListener(BOX_PRIMITIVE_DRAG_EVENT, handleDrag);
+  }, [kind]);
 
   useEffect(() => {
     if (kind !== 'cylinder') return;
@@ -111,7 +126,7 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
   const handleApply = () => {
     const params: Record<string, number | string> =
       kind === 'box'
-        ? { width: boxLength, height: boxWidth, depth: boxHeight, operation }
+        ? { width: boxLength, height: boxHeight, depth: boxWidth, operation }
         : kind === 'cylinder'
           ? { radius: cylDiam / 2, radiusTop: cylDiam / 2, height: cylHeight, operation }
           : kind === 'sphere'
@@ -137,7 +152,7 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
     <div className="tool-panel-overlay">
       <div
         ref={panelRef}
-        className={`tool-panel${kind === 'cylinder' ? ' tool-panel--sidecar' : ''}${isDragging ? ' is-dragging' : ''}`}
+        className={`tool-panel${kind === 'box' || kind === 'cylinder' ? ' tool-panel--sidecar' : ''}${isDragging ? ' is-dragging' : ''}`}
         style={{ width: 272, ...panelStyle }}
         {...panelEventProps}
       >
@@ -150,6 +165,21 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
         <div className="tp-body">
           {kind === 'box' && (
             <div className="tp-section">
+              <div className="tp-row">
+                <span className="tp-label">Placement</span>
+                <button
+                  className="tp-pick-btn active"
+                  type="button"
+                  title="Box is placed normal to the XY plane. Use center coordinates to reposition it."
+                  onClick={() => {
+                    setActiveTool('select');
+                    setStatusMessage('Box placement uses the XY plane for now - adjust center coordinates below');
+                  }}
+                >
+                  <MousePointer2 size={13} />
+                  Plane
+                </button>
+              </div>
               <div className="tp-row">
                 <span className="tp-label">Length</span>
                 <div className="tp-input-group">
@@ -173,6 +203,10 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
                     onChange={(e) => setBoxHeight(positiveNumber(e.target.value, 20))} />
                   <span className="tp-unit">mm</span>
                 </div>
+              </div>
+              <div className="tp-row">
+                <span className="tp-label">Center</span>
+                <span className="tp-muted-value">{x.toFixed(1)}, {y.toFixed(1)}, {z.toFixed(1)}</span>
               </div>
             </div>
           )}

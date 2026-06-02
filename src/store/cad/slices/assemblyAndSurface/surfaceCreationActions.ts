@@ -4,7 +4,7 @@ import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
 import { getOccSync } from '../../../../engine/occ/loader';
-import { occFillSurfaceWithInstance } from '../../../../engine/occ/ops/fillSurface';
+import { occFillSurfaceWithInstance, type OccFillEdge, type FillContinuity } from '../../../../engine/occ/ops/fillSurface';
 import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
 import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
 
@@ -71,13 +71,28 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
       ];
       const boundaryLoop = loop.length >= 3 ? loop : fallbackLoop;
 
+      // Build per-edge OCC constraints (used by BRepOffsetAPI_MakeFilling for G1/G2).
+      const continuityPerEdge: FillContinuity[] = params.continuityPerEdge.length > 0
+        ? params.continuityPerEdge
+        : (['G0'] as FillContinuity[]);
+
       // Try OCC BRep face first (planar → MakeFace; non-planar → MakeFilling).
       const featureId = crypto.randomUUID();
       let mesh: THREE.Mesh | undefined;
       const occ = getOccSync();
       if (occ) {
         try {
-          const body = occFillSurfaceWithInstance(occ.oc, boundaryLoop, { sourceFeatureId: featureId });
+          // MakeFilling currently consumes continuity order only. True adjacent-face
+          // constraints need a future API that passes OCC edge/face pairs explicitly.
+          const edgeConstraints: OccFillEdge[] = fillBoundaryEdgeData.map((_, i) => {
+            const continuity = continuityPerEdge[i] ?? 'G0';
+            return { continuity };
+          });
+
+          const body = occFillSurfaceWithInstance(occ.oc, boundaryLoop, {
+            sourceFeatureId: featureId,
+            edgeConstraints: edgeConstraints.length > 0 ? edgeConstraints : undefined,
+          });
           if (body) mesh = createRegisteredOccMesh(occ.oc, body, BODY_MATERIAL, featureId);
         } catch (err) {
           console.warn('[commitFill] OCC fill failed, using THREE fallback:', err);
@@ -96,7 +111,7 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
         params: {
           featureKind: 'fill',
           boundaryEdgeCount: params.boundaryEdgeCount,
-          continuityPerEdge: params.continuityPerEdge.map((s: 'G0' | 'G1' | 'G2') => ({ G0: 0, G1: 1, G2: 2 }[s] ?? 0)),
+          continuityPerEdge: params.continuityPerEdge,
           operation: params.operation,
         },
         mesh,

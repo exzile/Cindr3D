@@ -164,7 +164,7 @@ export function ruledSurface(
   };
 
   let ptsA = getWorldPoints(sketchA);
-  let ptsB = getWorldPoints(sketchB);
+  const ptsB = getWorldPoints(sketchB);
   if (ptsA.length < 2 || ptsB.length < 2) return null;
 
   // Apply distance offset along alignment direction before ruling

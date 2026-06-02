@@ -32,8 +32,7 @@ export function buildHelixWire(
   pitch: number,
   turns: number,
   rightHand = true,
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-): any | null {
+): { delete: () => void } | null {
   if (radius <= 0 || pitch <= 0 || turns <= 0) return null;
 
   const totalFrames = Math.max(64, Math.round(turns * SEGMENTS_PER_TURN));

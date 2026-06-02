@@ -72,7 +72,12 @@ function parseAuthParams(header: string): Record<string, string> {
 }
 
 function md5(value: string): string {
+  // lgtm[js/weak-cryptographic-algorithm,js/insufficient-password-hash] HTTP Digest auth requires MD5 response hashes.
   return crypto.createHash('md5').update(value).digest('hex');
+}
+
+function quoteHttpAuthValue(value: string): string {
+  return value.replace(/[\r\n]/g, '').replace(/[\\"]/g, (ch) => `\\${ch}`);
 }
 
 function digestAuthHeader(
@@ -97,14 +102,14 @@ function digestAuthHeader(
     ? md5(`${ha1}:${nonce}:${nc}:${cnonce}:${qop}:${ha2}`)
     : md5(`${ha1}:${nonce}:${ha2}`);
   const parts = [
-    `username="${username.replace(/"/g, '\\"')}"`,
-    `realm="${realm.replace(/"/g, '\\"')}"`,
-    `nonce="${nonce.replace(/"/g, '\\"')}"`,
-    `uri="${uri.replace(/"/g, '\\"')}"`,
+    `username="${quoteHttpAuthValue(username)}"`,
+    `realm="${quoteHttpAuthValue(realm)}"`,
+    `nonce="${quoteHttpAuthValue(nonce)}"`,
+    `uri="${quoteHttpAuthValue(uri)}"`,
     `response="${response}"`,
-    `algorithm=${algorithm}`,
+    `algorithm=${algorithm.replace(/[^A-Za-z0-9_-]/g, '') || 'MD5'}`,
   ];
-  if (opaque) parts.push(`opaque="${opaque.replace(/"/g, '\\"')}"`);
+  if (opaque) parts.push(`opaque="${quoteHttpAuthValue(opaque)}"`);
   if (qop) {
     parts.push(`qop=${qop}`);
     parts.push(`nc=${nc}`);
@@ -331,7 +336,7 @@ function localFfmpegPath(): string {
     const bundled = require('@ffmpeg-installer/ffmpeg') as { path?: string };
     if (bundled.path) return bundled.path;
   } catch (error) {
-    throw new Error(`Bundled FFmpeg package is unavailable: ${(error as Error).message}`);
+    throw new Error(`Bundled FFmpeg package is unavailable: ${(error as Error).message}`, { cause: error });
   }
   throw new Error('Bundled FFmpeg package did not expose an executable path.');
 }
@@ -2297,7 +2302,11 @@ function homeAssistantStableId(snapshot: HomeAssistantBridgeSnapshot): string {
 }
 
 function homeAssistantTemplateId(value: string): string {
-  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+  return value
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, '\\u0027')
+    .replace(/\{/g, '\\u007b')
+    .replace(/\}/g, '\\u007d');
 }
 
 function homeAssistantDiscoveryPayload(origin: string, snapshots: HomeAssistantBridgeSnapshot[]) {

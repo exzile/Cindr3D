@@ -182,24 +182,37 @@ export function createPrimitiveFeatureActions({ set, get }: CADSliceContext): Pa
     }
 
     // new-component: create a fresh component and drop the primitive into it.
+    const componentStore = useComponentStore.getState();
     let componentId: string | undefined;
     if (operation === 'new-component') {
-      const componentStore = useComponentStore.getState();
       const parentId = componentStore.activeComponentId ?? componentStore.rootComponentId;
       componentId = componentStore.addComponent(parentId, `${label} Component`);
     }
 
     const count = get().features.filter((f) => f.type === 'primitive').length + 1;
+    const bodyComponentId = componentId ?? componentStore.activeComponentId ?? componentStore.rootComponentId;
+    const bodyName = operation === 'new-component' ? 'Body 1' : `${label} ${count}`;
+    const bodyId = operation === 'new-body' || operation === 'new-component'
+      ? componentStore.addBody(bodyComponentId, bodyName)
+      : undefined;
+    if (bodyId) {
+      componentStore.addFeatureToBody(bodyId, featureId);
+      if (mesh instanceof THREE.Mesh || mesh instanceof THREE.Group) {
+        componentStore.setBodyMesh(bodyId, mesh);
+      }
+    }
+
     const feature: Feature = {
       id: featureId,
       name: `${label} ${count}`,
       type: 'primitive',
       params: { kind, ...params },
+      ...(bodyId ? { bodyId } : {}),
       visible: true,
       suppressed: false,
       timestamp: Date.now(),
       ...(mesh ? { mesh } : {}),
-      ...(componentId ? { componentId } : {}),
+      ...(bodyComponentId ? { componentId: bodyComponentId } : {}),
     };
 
     // Join/Cut/Intersect: run the OCC boolean against the most-recent solid body.

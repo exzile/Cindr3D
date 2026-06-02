@@ -174,6 +174,7 @@ export default function ExtrudeTool() {
     return Math.abs(aD - bD) <= 1e-2;
   }, []);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const toggleSelection = useCallback((selectionId: string, _additive = false) => {
     if (selectedIds.includes(selectionId)) {
       const next = selectedIds.filter((id) => id !== selectionId);

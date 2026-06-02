@@ -178,7 +178,7 @@ export function createEdgeModActions({
           ...(topologyFilter && topologyFilter !== 'all' ? { topologyFilter, edgeMeta } : {}),
         };
 
-        let resultBody = null as ReturnType<typeof occRuleFilletAllEdgesWithInstance>;
+        let resultBody: ReturnType<typeof occRuleFilletAllEdgesWithInstance>;
         if (ruleType === "between-faces") {
           const groupA = pickSideGroup(filletParams, feature?.params, "side1", get().filletFullRoundSide1OccFaceId);
           const groupB = pickSideGroup(filletParams, feature?.params, "side2", get().filletFullRoundSide2OccFaceId);

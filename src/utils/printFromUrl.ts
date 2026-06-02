@@ -14,9 +14,9 @@ export interface PrintUrlImportResult {
 
 function detectSourceSite(url: URL): PrintUrlSourceSite {
   const host = url.hostname.toLowerCase();
-  if (host.includes('printables.com')) return 'printables';
-  if (host.includes('makerworld.com')) return 'makerworld';
-  if (host.includes('thingiverse.com')) return 'thingiverse';
+  if (host === 'printables.com' || host.endsWith('.printables.com')) return 'printables';
+  if (host === 'makerworld.com' || host.endsWith('.makerworld.com')) return 'makerworld';
+  if (host === 'thingiverse.com' || host.endsWith('.thingiverse.com')) return 'thingiverse';
   return SUPPORTED_EXTENSIONS.some((extension) => url.pathname.toLowerCase().endsWith(extension))
     ? 'direct'
     : 'unknown';

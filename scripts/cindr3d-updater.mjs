@@ -49,8 +49,9 @@ async function github(path, headers = {}) {
     },
   });
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`GitHub ${response.status}: ${detail}`);
+    const error = new Error('GitHub request failed.');
+    error.githubStatus = response.status;
+    throw error;
   }
   return response.json();
 }
@@ -72,7 +73,7 @@ async function latestRelease() {
       } : null,
     };
   } catch (err) {
-    if (String(err).includes('GitHub 404')) return null;
+    if (err?.githubStatus === 404) return null;
     throw err;
   }
 }
@@ -178,6 +179,7 @@ async function requireToken(req) {
   if (!expected || received !== expected) {
     const error = new Error('Updater key is missing or invalid.');
     error.statusCode = 401;
+    error.publicMessage = 'Updater key is missing or invalid.';
     throw error;
   }
 }
@@ -217,7 +219,13 @@ const server = createServer(async (req, res) => {
     }
     json(res, 404, { ok: false, error: 'Not found' });
   } catch (err) {
-    json(res, err.statusCode ?? 500, { ok: false, error: err.message ?? String(err) });
+    const status = Number.isInteger(err.statusCode) ? err.statusCode : 500;
+    if (status >= 500) {
+      console.error('[cindr3d-updater] request failed:', err);
+      json(res, status, { ok: false, error: 'Internal updater error.' });
+      return;
+    }
+    json(res, status, { ok: false, error: err.publicMessage ?? 'Request failed.' });
   }
 });
 

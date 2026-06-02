@@ -125,6 +125,7 @@ export function decodePublishPacket(bytes: Uint8Array): { topic: string; payload
   let multiplier = 1;
   let remaining = 0;
   let offset = 1;
+  // eslint-disable-next-line no-useless-assignment
   let digit = 0;
   do {
     digit = bytes[offset++];

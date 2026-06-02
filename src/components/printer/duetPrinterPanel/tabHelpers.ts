@@ -22,6 +22,7 @@ export function movePrinterTabFocus(
 ): void {
   const index = visibleTabs.findIndex(({ key }) => key === activeKey);
   if (index < 0) return;
+  // eslint-disable-next-line no-useless-assignment
   let nextIndex = index;
   if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % visibleTabs.length;
   else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + visibleTabs.length) % visibleTabs.length;

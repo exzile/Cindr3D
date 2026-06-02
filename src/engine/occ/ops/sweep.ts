@@ -206,6 +206,7 @@ export function occSweepFromPathWireWithInstance(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const profileShape: unknown = options.surface
       ? profileWires.outerWire
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       : wireToFace(oc, profileWires.outerWire as any, profileWires.holeWires as any[]);
 
     if (!options.surface) {

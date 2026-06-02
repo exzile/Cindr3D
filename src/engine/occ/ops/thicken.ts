@@ -116,6 +116,7 @@ function computeBodyNormal(occ: OccThickenApi, body: BRepBody): [number, number,
   // Average normals across all faces to get the dominant surface direction
   let sumX = 0, sumY = 0, sumZ = 0, count = 0;
   for (const handle of body.faceIds.values()) {
+    // eslint-disable-next-line no-useless-assignment
     let rawFace: { delete?: () => void } | null = null;
     let surf: InstanceType<OccThickenApi['BRepAdaptor_Surface_2']> | null = null;
     let p0: { X(): number; Y(): number; Z(): number; delete?: () => void } | null = null;

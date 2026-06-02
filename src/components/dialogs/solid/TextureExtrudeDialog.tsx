@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { DialogShell } from '../common/DialogShell';
+import { safeImageUrl } from '../../../utils/safeImageUrl';
 
 export interface TextureExtrudeParams {
   imageUrl: string;
@@ -19,18 +20,18 @@ export default function TextureExtrudeDialog({ open, onClose, onConfirm }: Props
   const [strength, setStrength] = useState(5);
   const [channel, setChannel] = useState<'r' | 'g' | 'b' | 'luminance'>('luminance');
   const [subdivisions, setSubdivisions] = useState(1);
+  // Must be before early return — hooks cannot come after conditional returns.
+  const previewUrl = useMemo(() => safeImageUrl(imageUrl), [imageUrl]);
 
   if (!open) return null;
 
-  const hasUrl = imageUrl.trim().length > 0;
-
   const handleApply = () => {
-    if (!hasUrl) return;
-    onConfirm({ imageUrl: imageUrl.trim(), strength, channel, subdivisions });
+    if (!previewUrl) return;
+    onConfirm({ imageUrl: previewUrl, strength, channel, subdivisions });
   };
 
   return (
-    <DialogShell title="Texture Extrude" onClose={onClose} size="sm" onConfirm={handleApply} confirmLabel="Apply" confirmDisabled={!hasUrl}>
+    <DialogShell title="Texture Extrude" onClose={onClose} size="sm" onConfirm={handleApply} confirmLabel="Apply" confirmDisabled={!previewUrl}>
       <div className="form-group">
             <label>Image URL</label>
             <input
@@ -44,14 +45,10 @@ export default function TextureExtrudeDialog({ open, onClose, onConfirm }: Props
             </p>
           </div>
 
-          {hasUrl && (
+          {previewUrl && (
             <div className="form-group">
-              <label>Preview</label>
-              <img
-                src={imageUrl}
-                alt="Height map preview"
-                style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 4, display: 'block' }}
-              />
+              <label>Image</label>
+              <span className="dialog-hint-text">Height map source validated</span>
             </div>
           )}
 

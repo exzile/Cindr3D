@@ -106,6 +106,7 @@ export function autoOrient(geo: THREE.BufferGeometry): { x: number; y: number; z
   // Sort bins by area, keep the top 32 — enough to hit obvious flat faces.
   const candidates = [...bin.values()].sort((a, b) => b.a - a.a).slice(0, 32);
 
+  // eslint-disable-next-line no-useless-assignment
   let bestScore = -Infinity;
   let bestQ = new THREE.Quaternion();
   // Identity is always a candidate so we don't make things worse.

@@ -19,7 +19,7 @@ import { parseOccEdgeSelection, storedEdgeIds } from '../../../utils/occEdgeUtil
 import type { BRepBody } from '../../../engine/occ/brepBody';
 import type { OcctRaw } from '../../../engine/occ/types';
 import type { Feature } from '../../../types/cad';
-import { emitCylinderPrimitiveDrag } from '../../../utils/primitivePreviewEvents';
+import { emitBoxPrimitiveDrag, emitCylinderPrimitiveDrag } from '../../../utils/primitivePreviewEvents';
 import {
   CYLINDER_HEIGHT_ARROW_LINE_MATERIAL,
   CYLINDER_HEIGHT_ARROW_MATERIAL,
@@ -40,6 +40,7 @@ import { setGizmoDragging } from './gizmoDragGuard';
 
 interface PrimitiveSpec {
   featureId: string;
+  bodyId?: string;
   componentId?: string;
   position: [number, number, number];
   rotation: [number, number, number];
@@ -66,6 +67,7 @@ function buildPrimitiveSpec(feature: Feature): PrimitiveSpec | null {
     const transform = new THREE.Matrix4().makeTranslation(-w / 2, -h / 2, -d / 2);
     return {
       featureId,
+      bodyId: feature.bodyId,
       componentId: feature.componentId,
       position: getPos(feature),
       rotation: getRot(feature),
@@ -88,6 +90,7 @@ function buildPrimitiveSpec(feature: Feature): PrimitiveSpec | null {
     const transform = translation.multiply(rotation);
     return {
       featureId,
+      bodyId: feature.bodyId,
       componentId: feature.componentId,
       position: getPos(feature),
       rotation: getRot(feature),
@@ -107,6 +110,7 @@ function buildPrimitiveSpec(feature: Feature): PrimitiveSpec | null {
     const radius = (feature.params.radius as number) || 10;
     return {
       featureId,
+      bodyId: feature.bodyId,
       componentId: feature.componentId,
       position: getPos(feature),
       rotation: getRot(feature),
@@ -124,6 +128,7 @@ function buildPrimitiveSpec(feature: Feature): PrimitiveSpec | null {
     // BRepPrimAPI_MakeTorus, so no rotation is needed.
     return {
       featureId,
+      bodyId: feature.bodyId,
       componentId: feature.componentId,
       position: getPos(feature),
       rotation: getRot(feature),
@@ -190,7 +195,7 @@ const _primitiveRay = new THREE.Ray();
 const _primitiveW0 = new THREE.Vector3();
 const _primitiveConeUp = new THREE.Vector3(0, 1, 0);
 
-type CylinderHandleKind = 'height' | 'radius';
+type PrimitiveHandleKind = 'cylinder-height' | 'cylinder-radius' | 'box-length' | 'box-width' | 'box-height';
 
 type OrbitControlsLike = { enabled: boolean } | null;
 
@@ -202,62 +207,64 @@ function setOrbitControlsEnabled(controls: OrbitControlsLike, enabled: boolean):
   if (controls) controls.enabled = enabled;
 }
 
-interface CylinderDimensionHandleProps {
-  kind: CylinderHandleKind;
+interface PrimitiveDimensionHandleProps {
+  kind: PrimitiveHandleKind;
   center: THREE.Vector3;
-  radius: number;
-  height: number;
-  onChange: (next: { radius?: number; height?: number }) => void;
+  value: number;
+  onChange: (next: number) => void;
 }
 
-function CylinderDimensionHandle({ kind, center, radius, height, onChange }: CylinderDimensionHandleProps) {
+function PrimitiveDimensionHandle({ kind, center, value, onChange }: PrimitiveDimensionHandleProps) {
   const camera = useThree((s) => s.camera);
   const gl = useThree((s) => s.gl);
   const controls = useThree((s) => s.controls as OrbitControlsLike);
   const themeColors = useThemeStore((s) => s.colors);
-  const colorCss = kind === 'height' ? '#00d4ff' : '#ff8a00';
+  const isCylinderRadius = kind === 'cylinder-radius';
+  const isVerticalLike = kind === 'cylinder-height' || kind === 'box-height';
+  const colorCss = isVerticalLike ? '#00d4ff' : isCylinderRadius ? '#ff8a00' : '#7dd3fc';
   const draggingRef = useRef(false);
   const dragOffsetRef = useRef(0);
-  const latestValueRef = useRef(kind === 'height' ? height : radius);
+  const latestValueRef = useRef(value);
   const skipNextBlurCommitRef = useRef(false);
   const [draftInputValue, setDraftInputValue] = useState<string | null>(null);
-  const propInputValue = (kind === 'height' ? height : radius * 2).toFixed(2);
+  const propInputValue = (isCylinderRadius ? value * 2 : value).toFixed(2);
   const inputValue = draftInputValue ?? propInputValue;
 
   useEffect(() => {
-    latestValueRef.current = kind === 'height' ? height : radius;
-  }, [height, kind, radius]);
+    latestValueRef.current = value;
+  }, [value]);
 
-  const axis = useMemo(
-    () => kind === 'height' ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0),
-    [kind],
-  );
+  const axis = useMemo(() => {
+    if (kind === 'box-height' || kind === 'cylinder-height') return new THREE.Vector3(0, 1, 0);
+    if (kind === 'box-width') return new THREE.Vector3(0, 0, 1);
+    return new THREE.Vector3(1, 0, 0);
+  }, [kind]);
 
   const lineMat = useMemo(
-    () => kind === 'height' ? CYLINDER_HEIGHT_ARROW_LINE_MATERIAL : CYLINDER_RADIUS_ARROW_LINE_MATERIAL,
-    [kind],
+    () => isVerticalLike ? CYLINDER_HEIGHT_ARROW_LINE_MATERIAL : CYLINDER_RADIUS_ARROW_LINE_MATERIAL,
+    [isVerticalLike],
   );
   const handleMat = useMemo(
-    () => kind === 'height' ? CYLINDER_HEIGHT_ARROW_MATERIAL : CYLINDER_RADIUS_ARROW_MATERIAL,
-    [kind],
+    () => isVerticalLike ? CYLINDER_HEIGHT_ARROW_MATERIAL : CYLINDER_RADIUS_ARROW_MATERIAL,
+    [isVerticalLike],
   );
   const handleScale = useMemo(
-    () => kind === 'height' ? new THREE.Vector3(1, 1, 1) : new THREE.Vector3(1.08, 1.08, 1.08),
-    [kind],
+    () => isVerticalLike ? new THREE.Vector3(1, 1, 1) : new THREE.Vector3(1.08, 1.08, 1.08),
+    [isVerticalLike],
   );
 
-  const scalar = kind === 'height' ? height / 2 : radius;
-  const handleGap = kind === 'height' ? 4 : 4.5;
+  const scalar = isCylinderRadius ? value : value / 2;
+  const handleGap = isVerticalLike ? 4 : 4.5;
   const tip = useMemo(() => center.clone().add(axis.clone().multiplyScalar(scalar + handleGap)), [axis, center, handleGap, scalar]);
   const lineGeometry = useMemo(() => {
-    const start = center.clone().add(axis.clone().multiplyScalar(kind === 'height' ? height / 2 : 0));
+    const start = center.clone().add(axis.clone().multiplyScalar(isCylinderRadius ? 0 : value / 2));
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute([
       start.x, start.y, start.z,
       tip.x, tip.y, tip.z,
     ], 3));
     return geometry;
-  }, [axis, center, height, kind, tip]);
+  }, [axis, center, isCylinderRadius, tip, value]);
   useEffect(() => () => { lineGeometry.dispose(); }, [lineGeometry]);
   const lineObj = useMemo(() => new THREE.Line(lineGeometry, lineMat), [lineGeometry, lineMat]);
   const handleQuaternion = useMemo(() => new THREE.Quaternion().setFromUnitVectors(_primitiveConeUp, axis), [axis]);
@@ -283,26 +290,26 @@ function CylinderDimensionHandle({ kind, center, radius, height, onChange }: Cyl
   }, [gl]);
 
   const commitValue = useCallback((axisScalar: number) => {
-    if (kind === 'height') {
-      const nextHeight = Math.max(0.1, Math.round(Math.abs(axisScalar) * 200) / 100);
-      latestValueRef.current = nextHeight;
-      onChange({ height: nextHeight });
+    if (isCylinderRadius) {
+      const nextRadius = Math.max(0.05, Math.round(Math.abs(axisScalar) * 100) / 100);
+      latestValueRef.current = nextRadius;
+      onChange(nextRadius);
       return;
     }
-    const nextRadius = Math.max(0.05, Math.round(Math.abs(axisScalar) * 100) / 100);
-    latestValueRef.current = nextRadius;
-    onChange({ radius: nextRadius });
-  }, [kind, onChange]);
+    const nextValue = Math.max(0.1, Math.round(Math.abs(axisScalar) * 200) / 100);
+    latestValueRef.current = nextValue;
+    onChange(nextValue);
+  }, [isCylinderRadius, onChange]);
 
   const handleInputCommit = useCallback((raw: string) => {
     const v = parseFloat(raw);
     if (Number.isNaN(v) || v <= 0) return;
-    if (kind === 'height') {
-      onChange({ height: Math.max(0.1, v) });
+    if (isCylinderRadius) {
+      onChange(Math.max(0.05, v / 2));
     } else {
-      onChange({ radius: Math.max(0.05, v / 2) });
+      onChange(Math.max(0.1, v));
     }
-  }, [kind, onChange]);
+  }, [isCylinderRadius, onChange]);
 
   const handlePointerDown = useCallback((event: ThreeEvent<PointerEvent>) => {
     event.stopPropagation();
@@ -315,8 +322,8 @@ function CylinderDimensionHandle({ kind, center, radius, height, onChange }: Cyl
     setGizmoDragging(true);
     dragOffsetRef.current = scalar - axisScalar;
     setOrbitControlsEnabled(controls, false);
-    setCanvasCursor(gl.domElement, kind === 'height' ? 'ns-resize' : 'ew-resize');
-  }, [controls, gl, kind, rayToAxis, scalar, updateNdc]);
+    setCanvasCursor(gl.domElement, isVerticalLike ? 'ns-resize' : 'ew-resize');
+  }, [controls, gl, isVerticalLike, rayToAxis, scalar, updateNdc]);
 
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
@@ -362,7 +369,7 @@ function CylinderDimensionHandle({ kind, center, radius, height, onChange }: Cyl
         quaternion={handleQuaternion}
         scale={handleScale}
         onPointerDown={handlePointerDown}
-        onPointerOver={() => { setCanvasCursor(gl.domElement, kind === 'height' ? 'ns-resize' : 'ew-resize'); }}
+        onPointerOver={() => { setCanvasCursor(gl.domElement, isVerticalLike ? 'ns-resize' : 'ew-resize'); }}
         onPointerOut={() => { if (!draggingRef.current) setCanvasCursor(gl.domElement, ''); }}
       >
         <coneGeometry args={[1.1, 3.4, 18]} />
@@ -391,7 +398,7 @@ function CylinderDimensionHandle({ kind, center, radius, height, onChange }: Cyl
               color: themeColors.textPrimary,
               userSelect: 'none',
             }}>
-              {kind === 'radius' && (
+              {isCylinderRadius && (
                 <span style={{ color: colorCss, fontSize: '11px', fontWeight: 700, marginRight: '1px' }}>Ø</span>
               )}
               <input
@@ -568,11 +575,40 @@ export function PrimitivePreview() {
   }, [preview]);
   useEffect(() => () => { geo?.dispose(); }, [geo]);
 
+  // Extract coords before the early return so primitiveCenter useMemo is not
+  // called conditionally (hooks must not appear after conditional returns).
+  const px = preview?.params.x ?? 0;
+  const py = preview?.params.y ?? 0;
+  const pz = preview?.params.z ?? 0;
+  const primitiveCenter = useMemo(
+    () => new THREE.Vector3(px, py, pz),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [px, py, pz],
+  );
+
   if (!preview || !geo) return null;
-  const position = [preview.params.x ?? 0, preview.params.y ?? 0, preview.params.z ?? 0] as [number, number, number];
-  const cylinderCenter = new THREE.Vector3(position[0], position[1], position[2]);
+  const position = [px, py, pz] as [number, number, number];
+  const boxLength = preview.params.width ?? 20;   // X
+  const boxWidth = preview.params.depth ?? 20;    // Z
+  const boxHeight = preview.params.height ?? 20;  // Y
   const cylinderRadius = preview.params.radius ?? 10;
   const cylinderHeight = preview.params.height ?? 20;
+  const updateBoxPreview = (next: { width?: number; height?: number; depth?: number }) => {
+    if (preview.kind !== 'box') return;
+    const nextWidth = next.width ?? boxLength;
+    const nextHeight = next.height ?? boxHeight;
+    const nextDepth = next.depth ?? boxWidth;
+    setPrimitivePreview({
+      kind: 'box',
+      params: {
+        ...preview.params,
+        width: nextWidth,
+        height: nextHeight,
+        depth: nextDepth,
+      },
+    });
+    emitBoxPrimitiveDrag({ width: nextWidth, height: nextHeight, depth: nextDepth });
+  };
   const updateCylinderPreview = (next: { radius?: number; height?: number }) => {
     if (preview.kind !== 'cylinder') return;
     const nextRadius = next.radius ?? cylinderRadius;
@@ -597,21 +633,41 @@ export function PrimitivePreview() {
         position={position}
         userData={{ shared: true }}
       />
+      {preview.kind === 'box' && (
+        <>
+          <PrimitiveDimensionHandle
+            kind="box-length"
+            center={primitiveCenter}
+            value={boxLength}
+            onChange={(next) => updateBoxPreview({ width: next })}
+          />
+          <PrimitiveDimensionHandle
+            kind="box-width"
+            center={primitiveCenter}
+            value={boxWidth}
+            onChange={(next) => updateBoxPreview({ depth: next })}
+          />
+          <PrimitiveDimensionHandle
+            kind="box-height"
+            center={primitiveCenter}
+            value={boxHeight}
+            onChange={(next) => updateBoxPreview({ height: next })}
+          />
+        </>
+      )}
       {preview.kind === 'cylinder' && (
         <>
-          <CylinderDimensionHandle
-            kind="height"
-            center={cylinderCenter}
-            radius={cylinderRadius}
-            height={cylinderHeight}
-            onChange={updateCylinderPreview}
+          <PrimitiveDimensionHandle
+            kind="cylinder-height"
+            center={primitiveCenter}
+            value={cylinderHeight}
+            onChange={(next) => updateCylinderPreview({ height: next })}
           />
-          <CylinderDimensionHandle
-            kind="radius"
-            center={cylinderCenter}
-            radius={cylinderRadius}
-            height={cylinderHeight}
-            onChange={updateCylinderPreview}
+          <PrimitiveDimensionHandle
+            kind="cylinder-radius"
+            center={primitiveCenter}
+            value={cylinderRadius}
+            onChange={(next) => updateCylinderPreview({ radius: next })}
           />
         </>
       )}
@@ -625,9 +681,75 @@ export default function PrimitiveBodies() {
   const activeComponentId = useComponentStore((s) => s.activeComponentId);
   const rootComponentId = useComponentStore((s) => s.rootComponentId);
   const components = useComponentStore((s) => s.components);
+  const bodiesById = useComponentStore((s) => s.bodies);
   const showComponentColors = useCADStore((s) => s.showComponentColors);
+  const materialCache = useRef(new Map<string, { key: string; mat: THREE.MeshStandardMaterial }>());
 
   const editingInPlace = !!activeComponentId && activeComponentId !== rootComponentId;
+
+  useEffect(() => {
+    const cache = materialCache.current;
+    return () => {
+      cache.forEach(({ mat }) => mat.dispose());
+      cache.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    const cache = materialCache.current;
+    for (const bodyId of Array.from(cache.keys())) {
+      if (!bodiesById[bodyId]) {
+        cache.get(bodyId)?.mat.dispose();
+        cache.delete(bodyId);
+      }
+    }
+  }, [bodiesById]);
+
+  const resolveBodyId = useCallback((feature: Feature): string | undefined => {
+    if (feature.bodyId && bodiesById[feature.bodyId]) return feature.bodyId;
+    return Object.values(bodiesById).find((body) => body.featureIds.includes(feature.id))?.id;
+  }, [bodiesById]);
+
+  const getMaterial = useCallback((featureComponentId: string | undefined, bodyId: string | undefined): THREE.Material => {
+    const effectiveComponentId = featureComponentId ?? (bodyId ? bodiesById[bodyId]?.componentId : undefined);
+    const componentColor = effectiveComponentId ? components[effectiveComponentId]?.color : undefined;
+    const componentMaterial = showComponentColors && componentColor
+      ? componentColorMaterial(componentColor)
+      : null;
+    if (componentMaterial) return componentMaterial;
+    if (!bodyId) return BODY_MATERIAL;
+
+    const body = bodiesById[bodyId];
+    const material = body?.material;
+    if (!material) return BODY_MATERIAL;
+
+    const displayOpacity = body.opacity ?? 1;
+    if (
+      material.id === 'aluminum' &&
+      material.color.toLowerCase() === '#b0b8c0' &&
+      material.opacity === 1 &&
+      displayOpacity === 1
+    ) {
+      return BODY_MATERIAL;
+    }
+
+    const finalOpacity = material.opacity * displayOpacity;
+    const key = `${material.color}|${material.metalness}|${material.roughness}|${material.opacity}|${displayOpacity}`;
+    const cached = materialCache.current.get(bodyId);
+    if (cached && cached.key === key) return cached.mat;
+    cached?.mat.dispose();
+
+    const mat = new THREE.MeshStandardMaterial({
+      color: material.color,
+      metalness: material.metalness,
+      roughness: material.roughness,
+      opacity: finalOpacity,
+      transparent: finalOpacity < 1,
+      side: THREE.DoubleSide,
+    });
+    materialCache.current.set(bodyId, { key, mat });
+    return mat;
+  }, [bodiesById, components, showComponentColors]);
 
   // Mirrors ExtrudedBodies.edgeModificationSourceFeatureId: a fillet/chamfer
   // feature points back to its source via parentFeatureId or via the source
@@ -666,9 +788,12 @@ export default function PrimitiveBodies() {
       // stored-mesh path; rendering it here too would double-up.
       if (f.mesh) continue;
       if (!isComponentVisible(components, f.componentId)) continue;
+      const bodyId = resolveBodyId(f);
+      if (bodyId && bodiesById[bodyId]?.visible === false) continue;
       if (rollbackIndex >= 0 && index > rollbackIndex) continue;
       const spec = buildPrimitiveSpec(f);
       if (!spec) continue;
+      spec.bodyId = bodyId;
       // When a downstream fillet/chamfer has a result mesh, hide the
       // original primitive so the rounded edges aren't visually masked.
       // The OCC body stays alive so fillet replay can still find it via
@@ -677,15 +802,13 @@ export default function PrimitiveBodies() {
       out.push({ spec, hidden });
     }
     return out;
-  }, [features, rollbackIndex, components, downstreamEdgeModSourceIds]);
+  }, [features, rollbackIndex, components, bodiesById, downstreamEdgeModSourceIds, resolveBodyId]);
 
   return (
     <>
       {specs.map(({ spec, hidden }) => {
         const dim = editingInPlace && spec.componentId !== activeComponentId;
-        const componentMaterial = showComponentColors && spec.componentId
-          ? componentColorMaterial(components[spec.componentId]?.color ?? '#5B9BD5')
-          : BODY_MATERIAL;
+        const componentMaterial = getMaterial(spec.componentId, spec.bodyId);
         return (
           <PrimitiveMesh
             key={spec.featureId}

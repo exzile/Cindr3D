@@ -93,10 +93,10 @@ export function mapAlongPath(table: ArcTable, x: number, y: number): UV {
   const { pts, cum, total } = table;
   if (pts.length < 2) return { u: x, v: y };
 
-  let s = x;
+  const s = x;
   let i = 0;
   if (s <= 0) {
-    i = 0;
+    // i stays 0
   } else if (s >= total) {
     i = pts.length - 2;
   } else {

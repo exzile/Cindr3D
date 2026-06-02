@@ -111,7 +111,6 @@ export function ChatTab() {
         if (pendingToolCalls.length === 0) continueLoop = false;
       } catch (err) {
         if (controller.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
-          continueLoop = false;
           break;
         }
         const msg = errorMessage(err, 'Unknown error');

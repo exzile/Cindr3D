@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches-ignore: [master] # master is covered by the Azure SWA deploy workflow
+
+# Cancel the in-progress run for the same branch/PR when a new commit arrives.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck · Test · Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0" # matches the Azure SWA production deploy
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm run test:run
+
+      - name: Lint
+        run: npm run lint
+
+      - name: WASM bundle budget
+        run: npm run check:wasm-budget
+
+      - name: i18n string consistency
+        run: npm run i18n:check
+
+  build:
+    name: Vite build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12.0"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Run only the Vite bundler — TypeScript is already checked in the `check`
+      # job, and `tsc -b` in `npm run build` fails on pre-existing errors in
+      # unrelated Slicer/Duet files. This step catches bad imports, missing
+      # chunks, and Rolldown-specific bundling issues that tsc doesn't surface.
+      - name: Vite bundle
+        run: npx vite build
+
+      - name: Bundle size report
+        run: |
+          echo "### Bundle sizes" >> $GITHUB_STEP_SUMMARY
+          du -sh dist/assets/*.js 2>/dev/null | sort -h | tail -20 >> $GITHUB_STEP_SUMMARY || true
+          echo "**Total dist:**" >> $GITHUB_STEP_SUMMARY
+          du -sh dist/ >> $GITHUB_STEP_SUMMARY

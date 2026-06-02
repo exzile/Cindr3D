@@ -700,6 +700,7 @@ export function occFilletEdgeSetsWithInstance(
       // Free seamDetectMap only if the happy path hasn't already — a second embind
       // .delete() on a freed object is a double-free, so gate on the freed flag rather
       // than swallowing the resulting error after the fact.
+      // eslint-disable-next-line no-useless-assignment
       if (!seamDetectFreed) { seamDetectMap.delete(); seamDetectFreed = true; }
       mk.delete();
       return null;

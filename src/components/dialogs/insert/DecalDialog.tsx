@@ -4,8 +4,9 @@
  * No mesh deformation — purely visual.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { DialogShell } from '../common/DialogShell';
+import { isSafeRasterImageFile, safeImageUrl } from '../../../utils/safeImageUrl';
 
 export interface DecalParams {
   imageUrl: string;
@@ -30,12 +31,18 @@ export function DecalDialog({ open, onOk, onClose, faceId }: Props) {
   const [scaleU, setScaleU] = useState(10);
   const [scaleV, setScaleV] = useState(10);
   const [rotation, setRotation] = useState(0);
+  // Must be before early return — hooks cannot come after conditional returns.
+  const safeUrl = useMemo(() => safeImageUrl(imageUrl), [imageUrl]);
 
   if (!open) return null;
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!isSafeRasterImageFile(file)) {
+      setImageUrl('');
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') setImageUrl(reader.result);
@@ -44,12 +51,12 @@ export function DecalDialog({ open, onOk, onClose, faceId }: Props) {
     reader.readAsDataURL(file); // data: URL — consumed by THREE.TextureLoader
   };
 
-  const isValidUrl = imageUrl.trim().length > 0;
+  const isValidUrl = imageUrl.trim().length > 0 && Boolean(safeUrl);
   const canOk = faceId !== null && isValidUrl;
 
   const handleOk = () => {
     if (!canOk) return;
-    onOk({ imageUrl: imageUrl.trim(), faceId, opacity, scaleU, scaleV, rotation });
+    onOk({ imageUrl: safeUrl, faceId, opacity, scaleU, scaleV, rotation });
   };
 
   return (
@@ -72,12 +79,7 @@ export function DecalDialog({ open, onOk, onClose, faceId }: Props) {
 
           {isValidUrl && (
             <div className="form-group">
-              <img
-                src={imageUrl}
-                alt="preview"
-                className="dialog-media-preview"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-              />
+              <span className="dialog-hint-text">Image source validated</span>
             </div>
           )}
 

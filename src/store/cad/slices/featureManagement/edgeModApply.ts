@@ -905,7 +905,7 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
             sourceFeatureId: `${featureId}_heal`,
           });
           if (!healed) continue;
-          let healedValid = false;
+          let healedValid: boolean;
           try {
             const rawHealed = occDeref(occ.oc, healed.shape, occ.oc.TopoDS_Shape);
             healedValid = isOccShapeValid(occ.oc, rawHealed);
@@ -1074,7 +1074,7 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       // invalid. A valid BRep with a mesh artifact is installed (the geometry is
       // sound; the artifact is cosmetic in tessellation), matching Fusion which
       // builds these fillets without complaint.
-      let brepValid = false;
+      let brepValid: boolean;
       try {
         const rawResult = occDeref(occ.oc, result.shape, occ.oc.TopoDS_Shape);
         brepValid = isOccShapeValid(occ.oc, rawResult);

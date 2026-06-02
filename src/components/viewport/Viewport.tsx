@@ -43,6 +43,7 @@ import Sketch3DPlaneIndicator from './sketch/Sketch3DPlaneIndicator';
 import FilletEdgeHighlight from './scene/FilletEdgeHighlight';
 import FilletGizmo from './scene/FilletGizmo';
 import ChamferEdgeHighlight from './scene/ChamferEdgeHighlight';
+import FillEdgePicker from './scene/FillEdgePicker';
 import ChamferGizmo from './scene/ChamferGizmo';
 import ConstructionGeometryInteraction from './scene/ConstructionGeometryInteraction';
 import ConstructionGeometryRenderer from './scene/ConstructionGeometryRenderer';
@@ -279,6 +280,7 @@ export default function Viewport() {
           <FilletGizmo />
           <ChamferEdgeHighlight />
           <ChamferGizmo />
+          <FillEdgePicker />
         </CrashBoundary>
         <ConstructionGeometryInteraction />
         <ConstructionGeometryRenderer />

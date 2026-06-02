@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { X, Check } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
 import { useComponentStore } from '../../../store/componentStore';
-import type { MaterialAppearance } from '../../../types/cad';
+import { DEFAULT_MATERIALS, type MaterialAppearance } from '../../../types/cad';
 import '../common/ToolPanel.css';
 import './AppearanceDialog.css';
 
@@ -20,6 +20,13 @@ export function AppearanceDialog({ onClose }: { onClose: () => void }) {
   const [opacity, setOpacity] = useState(initialBody?.material.opacity ?? 1);
   const [metalness, setMetalness] = useState(initialBody?.material.metalness ?? 0.5);
   const [roughness, setRoughness] = useState(initialBody?.material.roughness ?? 0.4);
+
+  const selectMaterial = (material: MaterialAppearance) => {
+    setColor(material.color);
+    setOpacity(material.opacity);
+    setMetalness(material.metalness);
+    setRoughness(material.roughness);
+  };
 
   const handleApply = () => {
     if (!bodyId) {
@@ -52,6 +59,12 @@ export function AppearanceDialog({ onClose }: { onClose: () => void }) {
           <button className="tp-close" onClick={onClose} title="Cancel"><X size={14} /></button>
         </div>
         <div className="tp-body">
+          {bodyList.length === 0 && (
+            <div className="appearance-empty">
+              Create or select a body, then use Appearance to assign its visual material.
+            </div>
+          )}
+
           <div className="tp-section">
             <div className="tp-section-title">Target</div>
             <div className="tp-row">
@@ -76,6 +89,26 @@ export function AppearanceDialog({ onClose }: { onClose: () => void }) {
                   : bodyList.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)
                 }
               </select>
+            </div>
+          </div>
+
+          <div className="tp-divider" />
+
+          <div className="tp-section">
+            <div className="tp-section-title">Presets</div>
+            <div className="appearance-preset-grid">
+              {DEFAULT_MATERIALS.map((material) => (
+                <button
+                  key={material.id}
+                  type="button"
+                  className="appearance-preset"
+                  onClick={() => selectMaterial(material)}
+                  title={`${material.name} (${material.category})`}
+                >
+                  <span className="appearance-preset__swatch" style={{ background: material.color }} />
+                  <span className="appearance-preset__name">{material.name}</span>
+                </button>
+              ))}
             </div>
           </div>
 

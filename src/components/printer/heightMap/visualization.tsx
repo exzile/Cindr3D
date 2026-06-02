@@ -10,6 +10,7 @@
 
 export { Scene3D } from './scene/Scene3D';
 export { Heatmap2D } from './scene/Heatmap2D';
-export { ColorScaleLegend, getBedQuality, StatsPanel } from './scene/legend';
+export { ColorScaleLegend, StatsPanel } from './scene/legend';
+export { getBedQuality } from './scene/quality';
 export { CAMERA_POSITIONS, type CameraPreset } from './scene/cameraPresets';
 export type { ConfiguredProbeGrid, BedBounds, HoverInfo } from './scene/types';

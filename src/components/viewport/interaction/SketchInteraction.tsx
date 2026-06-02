@@ -13,9 +13,23 @@ import { useSketchInteractionEvents } from './sketchInteraction/hooks/useSketchI
 import { SketchInteractionHud } from './sketchInteraction/SketchInteractionHud';
 import type { InferenceResult } from './sketchInteraction/sketchInference';
 
+// Module-level scratch vectors for the snap hot path.
+// findSnapCandidate runs on every mousemove; reusing these eliminates
+// ~600+ per-frame Vector3 allocations with 50 sketch entities.
 const _tmpP0 = new THREE.Vector3();
 const _tmpP1 = new THREE.Vector3();
 const _tmpSeg = new THREE.Vector3();
+const _tmpWp = new THREE.Vector3();
+const _tmpFoot = new THREE.Vector3();
+const _tmpCenter = new THREE.Vector3();
+const _tmpTp = new THREE.Vector3();
+const _tmpOc = new THREE.Vector3();
+// A4c line-line intersection scratch (separate from above to avoid clobbering in nested loops)
+const _llA0 = new THREE.Vector3();
+const _llAd = new THREE.Vector3();
+const _llB0 = new THREE.Vector3();
+const _llBd = new THREE.Vector3();
+const _llW0 = new THREE.Vector3();
 
 export default function SketchInteraction() {
   const { camera, gl, raycaster, scene, size: viewportSize } = useThree();
@@ -159,7 +173,6 @@ export default function SketchInteraction() {
 
   // Clear in-progress drawing when the user switches tools
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDrawingPoints([]);
     setMousePos(null);
     setSnapTarget(null);
@@ -282,100 +295,82 @@ export default function SketchInteraction() {
 
     for (const e of activeSketch.entities) {
       if ((e.type === 'line' || e.type === 'construction-line' || e.type === 'centerline') && e.points.length >= 2) {
-        // Endpoint snap
+        const ep0 = e.points[0], ep1 = e.points[e.points.length - 1];
+        // Endpoint snap — reuse _tmpP0
         if (snapToEndpoint) {
-          for (const idx of [0, e.points.length - 1]) {
-            const p = e.points[idx];
-            const wp = new THREE.Vector3(p.x, p.y, p.z);
-            considerCandidate(wp, 'endpoint');
-          }
+          considerCandidate(_tmpP0.set(ep0.x, ep0.y, ep0.z), 'endpoint');
+          considerCandidate(_tmpP0.set(ep1.x, ep1.y, ep1.z), 'endpoint');
         }
-        // Midpoint snap
+        // Midpoint snap — reuse _tmpP0
         if (snapToMidpoint) {
-          const p0 = e.points[0], p1 = e.points[e.points.length - 1];
-          const mid = new THREE.Vector3((p0.x + p1.x) / 2, (p0.y + p1.y) / 2, (p0.z + p1.z) / 2);
-          considerCandidate(mid, 'midpoint');
+          considerCandidate(_tmpP0.set((ep0.x + ep1.x) / 2, (ep0.y + ep1.y) / 2, (ep0.z + ep1.z) / 2), 'midpoint');
         }
-        // Perpendicular snap: foot of perpendicular from worldPt to segment
-        if (snapToPerpendicular) {
-          const P0 = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
-          const P1 = new THREE.Vector3(e.points[e.points.length - 1].x, e.points[e.points.length - 1].y, e.points[e.points.length - 1].z);
-          const seg = P1.clone().sub(P0);
-          const segLen2 = seg.lengthSq();
-          if (segLen2 > 1e-10) {
-            const t = worldPt.clone().sub(P0).dot(seg) / segLen2;
+        // Build P0/P1/seg once for perpendicular + nearest (avoids 4 allocs per line)
+        _tmpP0.set(ep0.x, ep0.y, ep0.z);
+        _tmpP1.set(ep1.x, ep1.y, ep1.z);
+        _tmpSeg.subVectors(_tmpP1, _tmpP0);
+        const segLen2 = _tmpSeg.lengthSq();
+        if (segLen2 > 1e-10) {
+          // Perpendicular snap
+          if (snapToPerpendicular) {
+            const t = _tmpWp.copy(worldPt).sub(_tmpP0).dot(_tmpSeg) / segLen2;
             if (t >= 0 && t <= 1) {
-              const foot = P0.clone().addScaledVector(seg, t);
-              considerCandidate(foot, 'perpendicular');
+              considerCandidate(_tmpFoot.copy(_tmpP0).addScaledVector(_tmpSeg, t), 'perpendicular');
             }
           }
-        }
-        // A5: nearest on-curve snap for line segments
-        {
-          const P0 = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
-          const P1 = new THREE.Vector3(e.points[e.points.length - 1].x, e.points[e.points.length - 1].y, e.points[e.points.length - 1].z);
-          const seg = P1.clone().sub(P0);
-          const segLen2 = seg.lengthSq();
-          if (segLen2 > 1e-10) {
-            const t = Math.max(0, Math.min(1, worldPt.clone().sub(P0).dot(seg) / segLen2));
-            considerCandidate(P0.clone().addScaledVector(seg, t), 'nearest');
+          // A5: nearest on-curve snap
+          {
+            const t = Math.max(0, Math.min(1, _tmpWp.copy(worldPt).sub(_tmpP0).dot(_tmpSeg) / segLen2));
+            considerCandidate(_tmpFoot.copy(_tmpP0).addScaledVector(_tmpSeg, t), 'nearest');
           }
         }
       } else if ((e.type === 'circle' || e.type === 'arc' || e.type === 'ellipse' || e.type === 'elliptical-arc') && e.points.length >= 1) {
+        const cp = e.points[0];
+        _tmpCenter.set(cp.x, cp.y, cp.z);
         // Center snap — A6: include ellipse / elliptical-arc (center = points[0])
         if (snapToCenter) {
-          const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
-          considerCandidate(center, 'center');
+          considerCandidate(_tmpCenter, 'center');
         }
         // A7: arc midpoint = point at (startAngle + endAngle) / 2 on the arc
         if (snapToMidpoint && e.type === 'arc' && typeof e.startAngle === 'number' && typeof e.endAngle === 'number') {
-          const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
           const r = e.radius ?? 0;
           let ea = e.endAngle;
           if (ea <= e.startAngle) ea += 2 * Math.PI;
           const midA = (e.startAngle + ea) / 2;
-          const midPt = center.clone()
-            .addScaledVector(snapT1, Math.cos(midA) * r)
-            .addScaledVector(snapT2, Math.sin(midA) * r);
-          considerCandidate(midPt, 'midpoint');
+          considerCandidate(
+            _tmpTp.copy(_tmpCenter).addScaledVector(snapT1, Math.cos(midA) * r).addScaledVector(snapT2, Math.sin(midA) * r),
+            'midpoint',
+          );
         }
         // A5: nearest on-curve snap for circles and arcs (radial projection)
         if ((e.type === 'circle' || e.type === 'arc') && (e.radius ?? 0) > 0) {
-          const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
-          const toWorld = worldPt.clone().sub(center);
-          const dist = toWorld.length();
+          _tmpWp.subVectors(worldPt, _tmpCenter); // toWorld
+          const dist = _tmpWp.length();
           if (dist > 1e-6) {
-            considerCandidate(center.clone().addScaledVector(toWorld, e.radius! / dist), 'nearest');
+            considerCandidate(_tmpFoot.copy(_tmpCenter).addScaledVector(_tmpWp, e.radius! / dist), 'nearest');
           }
         }
-        // Tangent snap: when drawing a line (drawStart set), find tangent point on circle
-        // where the line from drawStart to that point is tangent to the circle.
-        // PLANE-AWARE: must use sketch t1/t2 axes, not world x/y, so this works on
-        // XZ / YZ / arbitrary construction-plane sketches — not just XY.
-        // Circles store radius in entity.radius (single center point); arcs may use points[1].
+        // Tangent snap
         const hasExplicitRadius = typeof e.radius === 'number' && e.radius > 1e-6;
         const hasTwoPoints = e.points.length >= 2;
         if (snapToTangent && drawStart && (hasExplicitRadius || hasTwoPoints) && activeSketch) {
-          const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
           const r = hasExplicitRadius
             ? e.radius!
-            : center.distanceTo(new THREE.Vector3(e.points[1].x, e.points[1].y, e.points[1].z));
+            : _tmpCenter.distanceTo(_tmpP0.set(e.points[1].x, e.points[1].y, e.points[1].z));
           if (r > 1e-6) {
-            const dVec = center.clone().sub(drawStart);
-            const dist = dVec.length();
+            _tmpOc.subVectors(_tmpCenter, drawStart); // dVec = center - drawStart
+            const dist = _tmpOc.length();
             if (dist > r) {
-              // Project dVec onto sketch UV to compute the base angle in sketch-plane space
-              const du = dVec.dot(snapT1);
-              const dv = dVec.dot(snapT2);
+              const du = _tmpOc.dot(snapT1);
+              const dv = _tmpOc.dot(snapT2);
               const alpha = Math.asin(r / dist);
               const baseAngle = Math.atan2(dv, du);
               for (const sign of [-1, 1]) {
                 const angle = baseAngle + sign * (Math.PI / 2 - alpha);
-                // Build tangent point in world space via t1*cos + t2*sin
-                const tp = center.clone()
-                  .addScaledVector(snapT1, Math.cos(angle) * r)
-                  .addScaledVector(snapT2, Math.sin(angle) * r);
-                considerCandidate(tp, 'tangent');
+                considerCandidate(
+                  _tmpTp.copy(_tmpCenter).addScaledVector(snapT1, Math.cos(angle) * r).addScaledVector(snapT2, Math.sin(angle) * r),
+                  'tangent',
+                );
               }
             }
           }
@@ -392,33 +387,30 @@ export default function SketchInteraction() {
           continue;
         }
         if (e.type === 'arc' && e.points.length >= 1 && typeof e.startAngle === 'number' && typeof e.endAngle === 'number') {
-          // Arc endpoints: start point and end point on the arc
-          const center = new THREE.Vector3(e.points[0].x, e.points[0].y, e.points[0].z);
+          _tmpCenter.set(e.points[0].x, e.points[0].y, e.points[0].z);
           const r = e.radius ?? 0;
           for (const angle of [e.startAngle, e.endAngle]) {
-            const pt = center.clone()
-              .addScaledVector(snapT1, Math.cos(angle) * r)
-              .addScaledVector(snapT2, Math.sin(angle) * r);
-            considerCandidate(pt, 'endpoint');
+            considerCandidate(
+              _tmpTp.copy(_tmpCenter).addScaledVector(snapT1, Math.cos(angle) * r).addScaledVector(snapT2, Math.sin(angle) * r),
+              'endpoint',
+            );
           }
         }
         if (e.type === 'spline' && e.points.length >= 2) {
-          // Spline knots: all control/fit points are endpoints
           for (const pt of e.points) {
-            considerCandidate(new THREE.Vector3(pt.x, pt.y, pt.z), 'endpoint');
+            considerCandidate(_tmpP0.set(pt.x, pt.y, pt.z), 'endpoint');
           }
         }
         if (e.type === 'rectangle' && e.points.length >= 2) {
-          // Legacy rectangle: offer its 4 derived corners as endpoints
           const origin_r = activeSketch!.planeOrigin;
           const p0 = e.points[0], p1 = e.points[1];
-          const d0 = new THREE.Vector3(p0.x - origin_r.x, p0.y - origin_r.y, p0.z - origin_r.z);
-          const d1 = new THREE.Vector3(p1.x - origin_r.x, p1.y - origin_r.y, p1.z - origin_r.z);
-          const u0 = d0.dot(snapT1), v0 = d0.dot(snapT2);
-          const u1 = d1.dot(snapT1), v1 = d1.dot(snapT2);
+          _tmpP0.set(p0.x - origin_r.x, p0.y - origin_r.y, p0.z - origin_r.z);
+          _tmpP1.set(p1.x - origin_r.x, p1.y - origin_r.y, p1.z - origin_r.z);
+          const u0 = _tmpP0.dot(snapT1), v0 = _tmpP0.dot(snapT2);
+          const u1 = _tmpP1.dot(snapT1), v1 = _tmpP1.dot(snapT2);
           for (const [u, v] of [[u0,v0],[u1,v0],[u1,v1],[u0,v1]] as [number,number][]) {
             considerCandidate(
-              origin_r.clone().addScaledVector(snapT1, u).addScaledVector(snapT2, v),
+              _tmpFoot.copy(origin_r).addScaledVector(snapT1, u).addScaledVector(snapT2, v),
               'endpoint',
             );
           }
@@ -448,33 +440,31 @@ export default function SketchInteraction() {
             const p1 = e.points[e.points.length - 1];
             const mx = (p0.x + p1.x) * 0.5, my = (p0.y + p1.y) * 0.5, mz = (p0.z + p1.z) * 0.5;
             const halfLen = Math.sqrt((p1.x - p0.x) ** 2 + (p1.y - p0.y) ** 2 + (p1.z - p0.z) ** 2) * 0.5;
-            return worldPt.distanceTo(new THREE.Vector3(mx, my, mz)) <= intersectRadius + halfLen;
+            return worldPt.distanceTo(_tmpWp.set(mx, my, mz)) <= intersectRadius + halfLen;
           })
         : lineEntities;
 
       // A4a: line-circle intersections (analytic)
       for (const line of nearLines) {
-        const L0 = new THREE.Vector3(line.points[0].x, line.points[0].y, line.points[0].z);
-        const L1 = new THREE.Vector3(line.points[line.points.length - 1].x, line.points[line.points.length - 1].y, line.points[line.points.length - 1].z);
-        const Ld = L1.clone().sub(L0);
-        const lLen = Ld.length();
+        _tmpP0.set(line.points[0].x, line.points[0].y, line.points[0].z);              // L0
+        _tmpP1.set(line.points[line.points.length - 1].x, line.points[line.points.length - 1].y, line.points[line.points.length - 1].z); // L1
+        _tmpSeg.subVectors(_tmpP1, _tmpP0); // Ld
+        const lLen = _tmpSeg.length();
         if (lLen < 1e-6) continue;
         for (const circ of circleEntities) {
-          const C = new THREE.Vector3(circ.points[0].x, circ.points[0].y, circ.points[0].z);
+          _tmpCenter.set(circ.points[0].x, circ.points[0].y, circ.points[0].z); // C
           const r = circ.radius ?? 0;
-          // Parametric line: P = L0 + t * Ld; quadratic in t: |P-C|^2 = r^2
-          const oc = L0.clone().sub(C);
-          const a2 = Ld.dot(Ld);
-          const b2 = 2 * oc.dot(Ld);
-          const c2 = oc.dot(oc) - r * r;
+          _tmpOc.subVectors(_tmpP0, _tmpCenter); // oc = L0 - C
+          const a2 = _tmpSeg.dot(_tmpSeg);
+          const b2 = 2 * _tmpOc.dot(_tmpSeg);
+          const c2 = _tmpOc.dot(_tmpOc) - r * r;
           const disc = b2 * b2 - 4 * a2 * c2;
           if (disc < 0) continue;
           const sqrtDisc = Math.sqrt(disc);
           for (const sign of [-1, 1]) {
             const t = (-b2 + sign * sqrtDisc) / (2 * a2);
-            if (t < -0.05 || t > 1.05) continue; // outside segment (with tolerance)
-            const pt = L0.clone().addScaledVector(Ld, t);
-            considerCandidate(pt, 'intersection');
+            if (t < -0.05 || t > 1.05) continue;
+            considerCandidate(_tmpFoot.copy(_tmpP0).addScaledVector(_tmpSeg, t), 'intersection');
           }
         }
       }
@@ -482,19 +472,19 @@ export default function SketchInteraction() {
       // A4b: circle-circle intersections (analytic)
       for (let i = 0; i < circleEntities.length; i++) {
         const eA = circleEntities[i];
-        const cA = new THREE.Vector3(eA.points[0].x, eA.points[0].y, eA.points[0].z);
+        _tmpP0.set(eA.points[0].x, eA.points[0].y, eA.points[0].z); // cA
         const rA = eA.radius ?? 0;
         for (let j = i + 1; j < circleEntities.length; j++) {
           const eB = circleEntities[j];
-          const cB = new THREE.Vector3(eB.points[0].x, eB.points[0].y, eB.points[0].z);
+          _tmpP1.set(eB.points[0].x, eB.points[0].y, eB.points[0].z); // cB
           const rB = eB.radius ?? 0;
-          const d = cA.distanceTo(cB);
+          const d = _tmpP0.distanceTo(_tmpP1);
           if (d < 1e-6 || d > rA + rB + 1e-4 || d < Math.abs(rA - rB) - 1e-4) continue;
           // Project onto sketch plane to solve 2D intersection
-          const oA = cA.clone().sub(activeSketch!.planeOrigin);
-          const oB = cB.clone().sub(activeSketch!.planeOrigin);
-          const uA = oA.dot(snapT1), vA = oA.dot(snapT2);
-          const uB = oB.dot(snapT1), vB = oB.dot(snapT2);
+          _tmpOc.subVectors(_tmpP0, activeSketch!.planeOrigin);  // oA
+          _tmpWp.subVectors(_tmpP1, activeSketch!.planeOrigin);   // oB
+          const uA = _tmpOc.dot(snapT1), vA = _tmpOc.dot(snapT2);
+          const uB = _tmpWp.dot(snapT1), vB = _tmpWp.dot(snapT2); // oB = _tmpWp
           const du = uB - uA, dv = vB - vA;
           const a3 = (rA * rA - rB * rB + du * du + dv * dv) / (2 * d * d);
           const midU = uA + a3 * du, midV = vA + a3 * dv;
@@ -504,44 +494,45 @@ export default function SketchInteraction() {
           const px = h * dv, py = -h * du;
           for (const s of [-1, 1]) {
             const iu = midU + s * px, iv = midV + s * py;
-            const ip = activeSketch!.planeOrigin.clone()
-              .addScaledVector(snapT1, iu)
-              .addScaledVector(snapT2, iv);
-            considerCandidate(ip, 'intersection');
+            considerCandidate(
+              _tmpFoot.copy(activeSketch!.planeOrigin).addScaledVector(snapT1, iu).addScaledVector(snapT2, iv),
+              'intersection',
+            );
           }
         }
       }
 
+      // A4c: line-line intersections — uses module-level scratch vectors _llA0/Ad/B0/Bd/W0.
       for (let i = 0; i < nearLines.length; i++) {
         const a = nearLines[i];
-        const A0 = new THREE.Vector3(a.points[0].x, a.points[0].y, a.points[0].z);
-        const Ad = new THREE.Vector3(
+        _llA0.set(a.points[0].x, a.points[0].y, a.points[0].z);
+        _llAd.set(
           a.points[a.points.length - 1].x - a.points[0].x,
           a.points[a.points.length - 1].y - a.points[0].y,
           a.points[a.points.length - 1].z - a.points[0].z,
         );
-        const aLen = Ad.length();
+        const aLen = _llAd.length();
         if (aLen < 1e-6) continue;
-        Ad.divideScalar(aLen);
+        _llAd.divideScalar(aLen);
 
         for (let j = i + 1; j < nearLines.length; j++) {
           const b = nearLines[j];
-          const B0 = new THREE.Vector3(b.points[0].x, b.points[0].y, b.points[0].z);
-          const Bd = new THREE.Vector3(
+          _llB0.set(b.points[0].x, b.points[0].y, b.points[0].z);
+          _llBd.set(
             b.points[b.points.length - 1].x - b.points[0].x,
             b.points[b.points.length - 1].y - b.points[0].y,
             b.points[b.points.length - 1].z - b.points[0].z,
           );
-          const bLen = Bd.length();
+          const bLen = _llBd.length();
           if (bLen < 1e-6) continue;
-          Bd.divideScalar(bLen);
+          _llBd.divideScalar(bLen);
 
-          const w0 = new THREE.Vector3().subVectors(A0, B0);
-          const a11 = Ad.dot(Ad);
-          const a12 = -Ad.dot(Bd);
-          const a22 = Bd.dot(Bd);
-          const b1 = -Ad.dot(w0);
-          const b2 = Bd.dot(w0);
+          _llW0.subVectors(_llA0, _llB0);
+          const a11 = _llAd.dot(_llAd);
+          const a12 = -_llAd.dot(_llBd);
+          const a22 = _llBd.dot(_llBd);
+          const b1 = -_llAd.dot(_llW0);
+          const b2 = _llBd.dot(_llW0);
           const det = a11 * a22 - a12 * a12;
           if (Math.abs(det) < 1e-8) continue;
           const t = (a22 * b1 - a12 * b2) / det;
@@ -549,18 +540,18 @@ export default function SketchInteraction() {
           if (t < -0.1 * aLen || t > 1.1 * aLen) continue;
           if (s < -0.1 * bLen || s > 1.1 * bLen) continue;
 
-          const P1 = A0.clone().add(Ad.clone().multiplyScalar(t));
-          const P2 = B0.clone().add(Bd.clone().multiplyScalar(s));
+          const P1 = _tmpP0.copy(_llA0).addScaledVector(_llAd, t);
+          const P2 = _tmpP1.copy(_llB0).addScaledVector(_llBd, s);
           if (P1.distanceTo(P2) > 0.5) continue;
 
-          const mid = P1.clone().add(P2).multiplyScalar(0.5);
-          considerCandidate(mid, 'intersection');
+          // P1 and P2 are in _tmpP0/_tmpP1; use _tmpFoot for the midpoint
+          considerCandidate(_tmpFoot.addVectors(P1, P2).multiplyScalar(0.5), 'intersection');
         }
       }
     }
 
     return best;
-  }, [activeSketch, snapEnabled, objectSnapEnabled, snapToEndpoint, snapToMidpoint, snapToCenter, snapToIntersection, snapToPerpendicular, snapToTangent, getSketchPlane, scene, camera, viewportSize]);
+  }, [activeSketch, snapEnabled, objectSnapEnabled, snapToEndpoint, snapToMidpoint, snapToCenter, snapToIntersection, snapToPerpendicular, snapToTangent, camera, viewportSize]);
 
   // Returns midpoints of all line segments the cursor is hovering near (within HOVER_RADIUS of
   // the perpendicular foot on the segment). Used to show dim triangle markers before snapping.
