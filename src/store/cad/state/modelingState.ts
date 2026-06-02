@@ -164,14 +164,12 @@ export interface CADModelingState {
   setSweepType: (t: "single-path" | "guide-rail") => void;
   sweepChainSelection: boolean;
   setSweepChainSelection: (v: boolean) => void;
+  /** Selected profile, as a "sketchId::profileIndex" key (a specific region on a sketch). */
   sweepProfileSketchId: string | null;
   setSweepProfileSketchId: (id: string | null) => void;
-  /** Optional second profile (Fusion sweeps allow multiple profiles along one path). */
-  sweepProfileSketchId2: string | null;
-  setSweepProfileSketchId2: (id: string | null) => void;
   /** Which selection input the in-canvas picker fills (null = auto-advance). */
-  sweepActiveInput: 'profile1' | 'profile2' | 'path' | 'guide' | null;
-  setSweepActiveInput: (i: 'profile1' | 'profile2' | 'path' | 'guide' | null) => void;
+  sweepActiveInput: 'profile' | 'path' | 'guide' | null;
+  setSweepActiveInput: (i: 'profile' | 'path' | 'guide' | null) => void;
   sweepPathSketchId: string | null;
   setSweepPathSketchId: (id: string | null) => void;
   // D104 surface sweep

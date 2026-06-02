@@ -36,12 +36,10 @@ function nextPick(tool: string, s: ReturnType<typeof useCADStore.getState>): { t
     case 'sweep': {
       // An explicitly-activated input (clicked in the panel) takes priority.
       const a = s.sweepActiveInput;
-      if (a === 'profile1') return { target: 'sweep-profile', kind: 'profile' };
-      if (a === 'profile2') return { target: 'sweep-profile2', kind: 'profile' };
+      if (a === 'profile') return { target: 'sweep-profile', kind: 'profile' };
       if (a === 'path') return { target: 'sweep-path', kind: 'curve' };
       if (a === 'guide') return { target: 'sweep-guide', kind: 'curve' };
-      // Auto-advance: Profile 1 → Path → Guide. Profile 2 is optional and only
-      // picked when its row is explicitly activated.
+      // Auto-advance: Profile → Path → Guide.
       if (!s.sweepProfileSketchId) return { target: 'sweep-profile', kind: 'profile' };
       if (!s.sweepPathSketchId) return { target: 'sweep-path', kind: 'curve' };
       if (s.sweepType === 'guide-rail' && !s.sweepGuideRailId) return { target: 'sweep-guide', kind: 'curve' };
@@ -67,7 +65,6 @@ function dispatchPick(sketchId: string, target: string) {
   // Clear the explicit active input after a pick so auto-advance resumes.
   if (target.startsWith('sweep-')) s.setSweepActiveInput(null);
   if (target === 'sweep-profile') { s.setSweepProfileSketchId(sketchId); return; }
-  if (target === 'sweep-profile2') { s.setSweepProfileSketchId2(sketchId); return; }
   if (target === 'sweep-path') { s.setSweepPathSketchId(sketchId); return; }
   if (target === 'sweep-guide') { s.setSweepGuideRailId(sketchId); return; }
   if (target.startsWith('loft-profile-')) {
@@ -103,10 +100,13 @@ function sketchWorldPoints(sketch: Sketch): THREE.Vector3[] {
 }
 
 // ── Profile fill (clickable solid region) ──────────────────────────────────────
-function ProfileFill({ sketch, onPick }: { sketch: Sketch; onPick: () => void }) {
+function ProfileFill({ sketch, profileIndex, onPick }: { sketch: Sketch; profileIndex: number; onPick: () => void }) {
   const [hovered, setHovered] = useState(false);
   const { invalidate } = useThree();
-  const mesh = useMemo(() => GeometryEngine.createSketchProfileMesh(sketch, _fillIdle), [sketch]);
+  const mesh = useMemo(
+    () => GeometryEngine.createSketchProfileMesh(sketch, _fillIdle, profileIndex),
+    [sketch, profileIndex],
+  );
 
   useEffect(() => () => { mesh?.geometry.dispose(); }, [mesh]);
   useFrame(() => {
@@ -175,7 +175,6 @@ export function SurfaceSketchPicker() {
   const sketches = useCADStore((s) => s.sketches);
   // Subscribe to all selection fields so the active pick target recomputes on change.
   const sweepP1 = useCADStore((s) => s.sweepProfileSketchId);
-  const sweepP2 = useCADStore((s) => s.sweepProfileSketchId2);
   const sweepPath = useCADStore((s) => s.sweepPathSketchId);
   const sweepGuide = useCADStore((s) => s.sweepGuideRailId);
   useCADStore((s) => s.sweepActiveInput);
@@ -192,36 +191,44 @@ export function SurfaceSketchPicker() {
   const pick = nextPick(activeTool, state);
   if (!pick) return null;
 
-  // Sketches already assigned to OTHER inputs of the active tool — exclude them so
-  // the same profile/curve can't be picked twice in-canvas.
+  // Base sketch ids already assigned to OTHER inputs of the active tool — exclude
+  // them so the same sketch can't be used twice in-canvas. (Profile values are
+  // "sketchId::profileIndex"; compare by base sketch id.)
+  const base = (id: string | null) => (id ? id.split('::')[0] : null);
   const usedElsewhere = new Set<string>();
   if (activeTool === 'sweep') {
-    const own = pick.target === 'sweep-profile' ? sweepP1
-      : pick.target === 'sweep-profile2' ? sweepP2
+    const own = pick.target === 'sweep-profile' ? base(sweepP1)
       : pick.target === 'sweep-path' ? sweepPath
       : sweepGuide;
-    for (const id of [sweepP1, sweepP2, sweepPath, sweepGuide]) {
+    for (const id of [base(sweepP1), sweepPath, sweepGuide]) {
       if (id && id !== own) usedElsewhere.add(id);
     }
   } else if (activeTool === 'loft') {
-    for (const id of loftIds) if (id) usedElsewhere.add(id);
+    for (const id of loftIds) if (id) usedElsewhere.add(base(id)!);
   } else if (activeTool === 'ruled-surface') {
     const own = pick.target === 'ruled-a' ? ruledA : ruledB;
     for (const id of [ruledA, ruledB]) if (id && id !== own) usedElsewhere.add(id);
   } else if (activeTool === 'patch' && patchId) {
-    usedElsewhere.add(patchId);
+    usedElsewhere.add(base(patchId)!);
   }
 
   const available = sketches.filter((s) => s.entities.length > 0 && !usedElsewhere.has(s.id));
   if (available.length === 0) return null;
 
+  // Profile picking: render a clickable fill per closed region, keyed sketchId::index.
+  // Curve picking: render one clickable tube per sketch.
   return (
     <>
-      {available.map((sketch) =>
-        pick.kind === 'profile'
-          ? <ProfileFill key={sketch.id} sketch={sketch} onPick={() => dispatchPick(sketch.id, pick.target)} />
-          : <CurveTube key={sketch.id} sketch={sketch} onPick={() => dispatchPick(sketch.id, pick.target)} />,
-      )}
+      {available.flatMap((sketch) => {
+        if (pick.kind === 'profile') {
+          const count = Math.max(1, GeometryEngine.sketchToProfileShapesFlat(sketch).length);
+          return Array.from({ length: count }, (_, i) => (
+            <ProfileFill key={`${sketch.id}::${i}`} sketch={sketch} profileIndex={i}
+              onPick={() => dispatchPick(`${sketch.id}::${i}`, pick.target)} />
+          ));
+        }
+        return [<CurveTube key={sketch.id} sketch={sketch} onPick={() => dispatchPick(sketch.id, pick.target)} />];
+      })}
     </>
   );
 }

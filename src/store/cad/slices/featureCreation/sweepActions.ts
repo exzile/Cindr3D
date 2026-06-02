@@ -28,9 +28,7 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
     setSweepChainSelection: (v) => set({ sweepChainSelection: v }),
     sweepProfileSketchId: null,
     setSweepProfileSketchId: (id) => set({ sweepProfileSketchId: id }),
-    sweepProfileSketchId2: null,
-    setSweepProfileSketchId2: (id) => set({ sweepProfileSketchId2: id }),
-    sweepActiveInput: null as 'profile1' | 'profile2' | 'path' | 'guide' | null,
+    sweepActiveInput: null as 'profile' | 'path' | 'guide' | null,
     setSweepActiveInput: (i) => set({ sweepActiveInput: i }),
     sweepPathSketchId: null,
     setSweepPathSketchId: (id) => set({ sweepPathSketchId: id }),
@@ -65,11 +63,11 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
       }
       set({ activeTool: 'sweep', sweepProfileSketchId: null, sweepPathSketchId: null, statusMessage: 'Sweep - pick a profile sketch, then a path sketch in the panel' });
     },
-    cancelSweepTool: () => set({ activeTool: 'select', sweepType: 'single-path', sweepChainSelection: true, sweepProfileSketchId: null, sweepProfileSketchId2: null, sweepActiveInput: null, sweepPathSketchId: null, sweepOrientation: 'perpendicular', sweepTwistAngle: 0, sweepTaperAngle: 0, sweepGuideRailId: null, sweepIsDirectionFlipped: false, sweepDistance: 'entire', sweepDistanceOne: 0, sweepDistanceTwo: 1, statusMessage: 'Sweep cancelled' }),
+    cancelSweepTool: () => set({ activeTool: 'select', sweepType: 'single-path', sweepChainSelection: true, sweepProfileSketchId: null, sweepActiveInput: null, sweepPathSketchId: null, sweepOrientation: 'perpendicular', sweepTwistAngle: 0, sweepTaperAngle: 0, sweepGuideRailId: null, sweepIsDirectionFlipped: false, sweepDistance: 'entire', sweepDistanceOne: 0, sweepDistanceTwo: 1, statusMessage: 'Sweep cancelled' }),
     commitSweep: async () => {
-      const { sweepProfileSketchId, sweepProfileSketchId2, sweepPathSketchId, sweepBodyKind, sweepDistanceTwo, sweepOrientation, sweepTwistAngle, sweepTaperAngle, sweepGuideRailId, sweepIsDirectionFlipped, sweepChainSelection, sweepOperation, sketches, units } = get();
+      const { sweepProfileSketchId, sweepPathSketchId, sweepBodyKind, sweepDistanceTwo, sweepOrientation, sweepTwistAngle, sweepTaperAngle, sweepGuideRailId, sweepIsDirectionFlipped, sweepChainSelection, sweepOperation, sketches, features, units } = get();
       if (!sweepProfileSketchId || !sweepPathSketchId) {
-        set({ statusMessage: 'Select a profile sketch and a path sketch' });
+        set({ statusMessage: 'Select a profile and a path' });
         return;
       }
       const pathSketch = sketches.find((s) => s.id === sweepPathSketchId);
@@ -77,14 +75,11 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
         set({ statusMessage: 'Selected path sketch not found' });
         return;
       }
-      // Collect the selected profiles (Profile 1 required, Profile 2 optional).
-      const profileIds = [sweepProfileSketchId, sweepProfileSketchId2].filter(
-        (id): id is string => !!id,
-      );
-      const profileSketches = profileIds
-        .map((id) => sketches.find((s) => s.id === id))
-        .filter((s): s is NonNullable<typeof s> => !!s);
-      if (profileSketches.length === 0) {
+      // Profile is a "sketchId::profileIndex" key (a specific region on a sketch).
+      const [profileSketchId, profileIndexStr] = sweepProfileSketchId.split('::');
+      const profileIndex = Number.isFinite(Number(profileIndexStr)) ? Number(profileIndexStr) : 0;
+      const profileSketch = sketches.find((s) => s.id === profileSketchId);
+      if (!profileSketch) {
         set({ statusMessage: 'Selected profile sketch not found' });
         return;
       }
@@ -108,15 +103,18 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
         return;
       }
 
-      // Build a swept mesh for one profile sketch (OCC, with THREE surface fallback).
-      const buildMesh = (profileSketch: typeof profileSketches[number], fid: string): THREE.Mesh | null => {
-        if (!occ) return isSurface ? GeometryEngine.sweepSketchInternal(profileSketch, pathSketch, true) : null;
+      const fid = crypto.randomUUID();
+      let mesh: THREE.Mesh | null;
+      if (!occ) {
+        mesh = isSurface ? GeometryEngine.sweepSketchInternal(profileSketch, pathSketch, true) : null;
+      } else {
         try {
-          const firstShape = GeometryEngine.sketchToProfileShapesFlat(profileSketch)[0];
-          if (!firstShape) throw new Error('no profile shape');
+          const shape = GeometryEngine.sketchToProfileShapesFlat(profileSketch)[profileIndex]
+            ?? GeometryEngine.sketchToProfileShapesFlat(profileSketch)[0];
+          if (!shape) throw new Error('no profile shape');
           const sketchProfile: SketchProfile = {
-            outer: firstShape.getPoints(OCC_PROFILE_POINT_COUNT),
-            holes: firstShape.holes.map((h) => h.getPoints(OCC_PROFILE_POINT_COUNT)).filter((pts) => pts.length >= 3),
+            outer: shape.getPoints(OCC_PROFILE_POINT_COUNT),
+            holes: shape.holes.map((h) => h.getPoints(OCC_PROFILE_POINT_COUNT)).filter((pts) => pts.length >= 3),
           };
           const profileFrame = createOccPlaneFrameFromSketch(profileSketch);
           const pathFrame = createOccPlaneFrameFromSketch(pathSketch);
@@ -145,70 +143,61 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
           });
           builtPathWire.delete();
           if (guideWire) (guideWire as { delete(): void }).delete();
-          return createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, fid);
+          mesh = createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, fid);
         } catch (err) {
           console.warn(`[commitSweep] OCC path failed (${errorMessage(err, 'unknown')})`);
-          return isSurface ? GeometryEngine.sweepSketchInternal(profileSketch, pathSketch, true) : null;
+          mesh = isSurface ? GeometryEngine.sweepSketchInternal(profileSketch, pathSketch, true) : null;
         }
-      };
+      }
+      if (!mesh) {
+        addToast('warning', 'Sweep failed', 'Could not build the swept body — check the profile and path');
+        set({ statusMessage: 'Sweep failed in OCC: no sweep body was created' });
+        return;
+      }
 
-      // Sweep each profile sequentially, threading the feature list through placement.
-      let curState = get();
-      const builtMeshes: (THREE.Mesh | null)[] = [];
-      for (const profileSketch of profileSketches) {
-        const fid = crypto.randomUUID();
-        const mesh = buildMesh(profileSketch, fid);
-        builtMeshes.push(mesh);
-        if (!mesh) {
-          set({ statusMessage: 'Sweep failed in OCC: no sweep body was created' });
-          return;
-        }
-        const seq = curState.features.filter((f) => f.type === 'sweep').length + 1;
-        const feature: Feature = {
-          id: fid,
-          name: `${isSurface ? 'Surface ' : ''}Sweep ${seq}`,
-          type: 'sweep',
-          sketchId: profileSketch.id,
-          params: {
-            pathSketchId: sweepPathSketchId,
-            orientation: sweepOrientation,
-            taperAngle: sweepTaperAngle,
-            twistAngle: sweepTwistAngle,
-            distance: distanceFraction,
-            chainSelection: sweepChainSelection,
-            guideRailId: sweepGuideRailId,
-            isDirectionFlipped: sweepIsDirectionFlipped,
-            operation: sweepOperation,
-          },
-          visible: true,
-          suppressed: false,
-          timestamp: Date.now(),
-          mesh,
-          bodyKind: isSurface ? 'surface' : 'solid',
-        };
-        const r = await placeToolFeatureAsync({ ...curState }, feature, toolBooleanOp(sweepOperation, isSurface, !!mesh));
-        if (!r.ok) {
-          for (const m of builtMeshes) disposeUnplacedToolMesh(m ?? undefined);
-          set({ statusMessage: toolPlacementFailedMessage('Sweep', r.note) });
-          return;
-        }
-        curState = { ...curState, features: r.features, designConfigurations: r.designConfigurations };
+      const feature: Feature = {
+        id: fid,
+        name: `${isSurface ? 'Surface ' : ''}Sweep ${features.filter((f) => f.type === 'sweep').length + 1}`,
+        type: 'sweep',
+        sketchId: sweepProfileSketchId,
+        params: {
+          pathSketchId: sweepPathSketchId,
+          profileIndex,
+          orientation: sweepOrientation,
+          taperAngle: sweepTaperAngle,
+          twistAngle: sweepTwistAngle,
+          distance: distanceFraction,
+          chainSelection: sweepChainSelection,
+          guideRailId: sweepGuideRailId,
+          isDirectionFlipped: sweepIsDirectionFlipped,
+          operation: sweepOperation,
+        },
+        visible: true,
+        suppressed: false,
+        timestamp: Date.now(),
+        mesh,
+        bodyKind: isSurface ? 'surface' : 'solid',
+      };
+      const r = await placeToolFeatureAsync(get(), feature, toolBooleanOp(sweepOperation, isSurface, !!mesh));
+      if (!r.ok) {
+        disposeUnplacedToolMesh(mesh);
+        set({ statusMessage: toolPlacementFailedMessage('Sweep', r.note) });
+        return;
       }
 
       get().pushUndo();
       set({
-        features: curState.features,
-        designConfigurations: curState.designConfigurations,
+        features: r.features,
+        designConfigurations: r.designConfigurations,
         activeTool: 'select',
         sweepType: 'single-path',
         sweepChainSelection: true,
         sweepProfileSketchId: null,
-        sweepProfileSketchId2: null,
         sweepActiveInput: null,
         sweepPathSketchId: null,
         sweepIsDirectionFlipped: false,
         sweepBodyKind: 'solid',
-        statusMessage: `${isSurface ? 'Surface ' : ''}Sweep created (${profileSketches.length} profile${profileSketches.length > 1 ? 's' : ''}) (${units})`,
+        statusMessage: `${isSurface ? 'Surface ' : ''}Sweep created (${units})`,
       });
     },
   };

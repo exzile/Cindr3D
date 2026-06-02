@@ -1,6 +1,7 @@
 import './SweepPanel.css';
 import { X, Check, Spline, MousePointer2 } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { GeometryEngine } from '../../../engine/GeometryEngine';
 
 export default function SweepPanel() {
   const activeTool = useCADStore((s) => s.activeTool);
@@ -13,8 +14,6 @@ export default function SweepPanel() {
 
   const profileId = useCADStore((s) => s.sweepProfileSketchId);
   const setProfileId = useCADStore((s) => s.setSweepProfileSketchId);
-  const profileId2 = useCADStore((s) => s.sweepProfileSketchId2);
-  const setProfileId2 = useCADStore((s) => s.setSweepProfileSketchId2);
   const activeInput = useCADStore((s) => s.sweepActiveInput);
   const setActiveInput = useCADStore((s) => s.setSweepActiveInput);
   const pathId = useCADStore((s) => s.sweepPathSketchId);
@@ -44,10 +43,21 @@ export default function SweepPanel() {
   if (activeTool !== 'sweep') return null;
 
   const available = sketches.filter((s) => s.entities.length > 0);
-  const canCommit = !!profileId && !!pathId && profileId !== pathId
-    && profileId2 !== profileId && profileId2 !== pathId;
+  const baseOf = (id: string | null) => (id ? id.split('::')[0] : null);
+  const profileBase = baseOf(profileId);
+  const canCommit = !!profileId && !!pathId && profileBase !== pathId && profileBase !== guideRailId;
 
-  const nameOf = (id: string | null) => available.find((s) => s.id === id)?.name ?? null;
+  // Profile options = each closed region on each sketch, labelled "Sketch — Profile N"
+  // so the user sees which sketch the profile lives on. Value = "sketchId::profileIndex".
+  const profileOptions = available.flatMap((sketch) => {
+    const count = Math.max(1, GeometryEngine.sketchToProfileShapesFlat(sketch).length);
+    return Array.from({ length: count }, (_, i) => ({
+      id: `${sketch.id}::${i}`,
+      label: count > 1 ? `${sketch.name} — Profile ${i + 1}` : sketch.name,
+    }));
+  });
+  const sketchOptions = (excludeIds: (string | null)[]) =>
+    available.filter((s) => !excludeIds.includes(s.id)).map((s) => ({ id: s.id, label: s.name }));
 
   // Fusion-style selection row: cursor icon + dropdown + "1 selected" chip + clear.
   // Clicking the field marks this input active so the in-canvas picker fills it.
@@ -57,11 +67,10 @@ export default function SweepPanel() {
     label: string,
     value: string | null,
     onChange: (id: string | null) => void,
-    exclude: (string | null)[],
-    activeKey?: 'profile1' | 'profile2' | 'path' | 'guide',
+    opts: { id: string; label: string }[],
+    activeKey?: 'profile' | 'path' | 'guide',
   ) => {
-    const opts = available.filter((s) => !exclude.includes(s.id));
-    const selName = nameOf(value);
+    const selOpt = opts.find((o) => o.id === value);
     const isActive = activeKey !== undefined && activeInput === activeKey;
     return (
       <div className={`tp-row${isActive ? ' sweep-row-active' : ''}`} key={key}
@@ -71,8 +80,8 @@ export default function SweepPanel() {
           <MousePointer2 size={12} className="sweep-select-cursor" />
           <select className="tp-select sweep-select-input" value={value ?? ''}
             onChange={(e) => onChange(e.target.value || null)}>
-            <option value="">{selName ?? 'Select'}</option>
-            {opts.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            <option value="">{selOpt?.label ?? 'Select'}</option>
+            {opts.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
           </select>
           {value && <span className="sweep-select-count">1 selected</span>}
           {value && (
@@ -102,10 +111,10 @@ export default function SweepPanel() {
             </select>
           </div>
 
-          {selectionRow('profile1', 'Profile 1', profileId, setProfileId, [profileId2, pathId, guideRailId], 'profile1')}
-          {selectionRow('profile2', 'Profile 2', profileId2, setProfileId2, [profileId, pathId, guideRailId], 'profile2')}
-          {selectionRow('path', 'Path', pathId, setPathId, [profileId, profileId2, guideRailId], 'path')}
-          {sweepType === 'guide-rail' && selectionRow('guide', 'Guide Rail', guideRailId, setGuideRailId, [profileId, profileId2, pathId], 'guide')}
+          {selectionRow('profile', 'Profile', profileId, setProfileId,
+            profileOptions.filter((o) => baseOf(o.id) !== pathId && baseOf(o.id) !== guideRailId), 'profile')}
+          {selectionRow('path', 'Path', pathId, setPathId, sketchOptions([profileBase, guideRailId]), 'path')}
+          {sweepType === 'guide-rail' && selectionRow('guide', 'Guide Rail', guideRailId, setGuideRailId, sketchOptions([profileBase, pathId]), 'guide')}
 
           <div className="tp-row">
             <label className="tp-checkbox-label">
