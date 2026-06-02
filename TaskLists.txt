@@ -17,17 +17,25 @@ after all their items shipped; see git history if their detail is needed.
     - Selected regions must be the exact profiles used by extrude join/cut/new-body.
     - Reloaded designs must preserve selected profile/island metadata in .dznd.
 
-[ ] Fillet/chamfer edge selection and reliability remains a priority.
-    - Orange selectable lines should appear on all eligible solid edges.
-    - Round/circular edges should highlight as one selectable edge, not fan lines.
-    - Hover should change pointer; selected edges should visibly change color.
-    - Fillet should work on round rim edges that previously succeeded.
+[~] Fillet/chamfer edge selection and reliability remains a priority.
+    - [x] Orange selectable lines appear on all eligible solid edges (was already working).
+    - [x] Round/circular edges now highlight as one merged arc in BOTH fillet AND chamfer
+          (ChamferEdgeHighlight now passes allowCurvedEdges — it was missing this prop).
+    - [x] Hover cursor + selected color: fully implemented, verified.
+    - [x] Edge anchor staleness: remapSelectionEdgeIdsToBody now falls back to positional
+          match when computeEdgeAnchor returns null, preventing round rim fillet failures.
     - Watch for stale OCC body ids, partial purple selections, unchanged output, or missing faces.
 
-[ ] Continue viewport performance sweep for large sketches and many bodies.
-    Watch for per-pointermove full-scene scans, render-loop state updates,
-    unbounded requestAnimationFrame retries, inactive overlays doing work, and
-    profile/edge recomputation when not needed.
+[~] Continue viewport performance sweep for large sketches and many bodies.
+    - [x] SketchConstraintOverlay: now uses group visible={cameraIdle} instead of
+          conditional mount, so constraint glyphs stay in scene during camera pan
+          (previously unmounted/remounted 2x per pan, causing GC churn on 50+ constraints).
+    - [x] SketchPointHandles: handles JSX array now wrapped in useMemo so JSX objects
+          are not recreated when component re-renders for unrelated reasons.
+    - Watch for per-pointermove snap computation bottleneck on large sketches (50+
+          entities → O(n) distance checks in findSnapCandidate each mousemove).
+    - Watch for SketchDimensionAnnotations rebuild on every entity position change
+          during constraint solve (dep on full activeSketch object).
 
 # DEP-1: npm dependency maintenance for Dev1 (2026-06-01)
 # npm outdated/audit was reviewed after creating Dev1 from latest master.

@@ -21,7 +21,7 @@
  * Excluded: isoparametric + fixed-spline (frozen) and linked/projected entities.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useCADStore } from '../../../store/cadStore';
@@ -87,69 +87,71 @@ export default function SketchPointHandles() {
   // so they show in any tool but obey the Constraints visibility toggle.
   const showDragHandles = activeTool === 'select';
   const showArcDots = showConstraints;
-  if (!showDragHandles && !showArcDots) return null;
 
-  const handles: React.ReactElement[] = [];
+  const toggleArc = useCallback((eid: string) => {
+    setEditingArcId(useCADStore.getState().sketchEditingArcId === eid ? null : eid);
+  }, [setEditingArcId]);
 
-  for (const entity of editableEntities) {
-    const isArc = entity.type === 'arc';
-    for (let pi = 0; pi < entity.points.length; pi++) {
-      const pt   = entity.points[pi];
-      const eid  = entity.id;
+  const handles = useMemo(() => {
+    if (!showDragHandles && !showArcDots) return null;
+    const arr: React.ReactElement[] = [];
+    for (const entity of editableEntities) {
+      const isArc = entity.type === 'arc';
+      for (let pi = 0; pi < entity.points.length; pi++) {
+        const pt  = entity.points[pi];
+        const eid = entity.id;
 
-      // Arc centre → fillet radius dot + faint circle (constraint, interactive).
-      if (isArc && pi === 0 && typeof entity.radius === 'number') {
-        if (!showArcDots) continue;
-        const r = entity.radius;
-        const isEditingThis = editingArcId === eid;
-        handles.push(
-          <group
-            key={`arc-ring-${eid}`}
-            position={[pt.x, pt.y, pt.z]}
-            quaternion={sketchPlaneQuat ?? undefined}
-          >
-            <mesh renderOrder={98} raycast={() => []}>
-              <ringGeometry args={[Math.max(0.001, r * 0.94), r, 64]} />
-              <meshBasicMaterial
-                color={isEditingThis ? 0x66ccff : 0x8888aa}
-                transparent opacity={isEditingThis ? 0.55 : 0.35}
-                depthTest={false}
+        if (isArc && pi === 0 && typeof entity.radius === 'number') {
+          if (!showArcDots) continue;
+          const r = entity.radius;
+          const isEditingThis = editingArcId === eid;
+          arr.push(
+            <group
+              key={`arc-ring-${eid}`}
+              position={[pt.x, pt.y, pt.z]}
+              quaternion={sketchPlaneQuat ?? undefined}
+            >
+              <mesh renderOrder={98} raycast={() => []}>
+                <ringGeometry args={[Math.max(0.001, r * 0.94), r, 64]} />
+                <meshBasicMaterial
+                  color={isEditingThis ? 0x66ccff : 0x8888aa}
+                  transparent opacity={isEditingThis ? 0.55 : 0.35}
+                  depthTest={false}
+                />
+              </mesh>
+            </group>,
+          );
+          arr.push(
+            <Html key={`arc-dot-${eid}`} position={[pt.x, pt.y, pt.z]} center zIndexRange={[99, 0]} style={{ pointerEvents: 'none' }}>
+              <div
+                title="Edit radius"
+                style={{
+                  width: 10, height: 10, borderRadius: '50%',
+                  background: isEditingThis ? '#66ccff' : '#ffffff',
+                  border: `1.5px solid ${isEditingThis ? '#0066aa' : '#1a1a1a'}`,
+                  boxShadow: '0 0 3px rgba(0,0,0,0.5)',
+                  cursor: 'pointer',
+                  pointerEvents: 'auto',
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); toggleArc(eid); }}
               />
-            </mesh>
-          </group>,
-        );
-        handles.push(
-          <Html key={`arc-dot-${eid}`} position={[pt.x, pt.y, pt.z]} center zIndexRange={[99, 0]} style={{ pointerEvents: 'none' }}>
-            <div
-              title="Edit radius"
-              style={{
-                width: 10, height: 10, borderRadius: '50%',
-                background: isEditingThis ? '#66ccff' : '#ffffff',
-                border: `1.5px solid ${isEditingThis ? '#0066aa' : '#1a1a1a'}`,
-                boxShadow: '0 0 3px rgba(0,0,0,0.5)',
-                cursor: 'pointer',
-                pointerEvents: 'auto',
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                setEditingArcId(editingArcId === eid ? null : eid);
-              }}
-            />
+            </Html>,
+          );
+          continue;
+        }
+
+        if (!showDragHandles) continue;
+        arr.push(
+          <Html key={`${eid}-${pi}`} position={[pt.x, pt.y, pt.z]} center zIndexRange={[95, 0]} style={{ pointerEvents: 'none' }}>
+            <div style={POINT_DOT_STYLE} />
           </Html>,
         );
-        continue;
       }
-
-      // Every other defining point → screen-constant white/black drag dot.
-      if (!showDragHandles) continue;
-      handles.push(
-        <Html key={`${eid}-${pi}`} position={[pt.x, pt.y, pt.z]} center zIndexRange={[95, 0]} style={{ pointerEvents: 'none' }}>
-          <div style={POINT_DOT_STYLE} />
-        </Html>,
-      );
     }
-  }
+    return arr;
+  }, [editableEntities, showDragHandles, showArcDots, sketchPlaneQuat, editingArcId, toggleArc]);
 
+  if (!handles) return null;
   return <>{handles}</>;
 }

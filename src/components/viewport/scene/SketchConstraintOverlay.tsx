@@ -562,8 +562,8 @@ export default function SketchConstraintOverlay() {
           <div style={mirrorBadge}>[ ]</div>
         </Html>
       ))}
-      {cameraIdle && objects && (
-        <group renderOrder={999}>
+      {objects && (
+        <group renderOrder={999} visible={cameraIdle}>
           {objects.map((obj, i) => (
             <primitive key={i} object={obj} />
           ))}
