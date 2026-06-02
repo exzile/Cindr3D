@@ -49,13 +49,13 @@ function findAdjacentFacePtr(bodyId: string, edgePtr: number): number | undefine
           oc.TopAbs_ShapeEnum.TopAbs_EDGE,
           oc.TopAbs_ShapeEnum.TopAbs_SHAPE,
         );
-        while (exp.More()) {
-          const cur = exp.Current();
+        while (exp!.More()) {
+          const cur = exp!.Current();
           if (cur?.ptr && (cur.ptr === edgeShapePtr || cur.ptr === edgePtr)) {
             found = true;
             break;
           }
-          exp.Next();
+          exp!.Next();
         }
       } finally {
         exp?.delete();

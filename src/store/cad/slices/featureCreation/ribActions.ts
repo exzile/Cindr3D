@@ -98,7 +98,7 @@ export function createRibActions({ set, get }: CADSliceContext): Partial<CADStat
       const bodyId = cs.addBody(componentId, `Body ${bodyCount}`);
       if (bodyId) {
         cs.addFeatureToBody(bodyId, feature.id);
-        if (ribMesh) cs.setBodyMesh(bodyId, ribMesh);
+        if (ribMesh) cs.setBodyMesh(bodyId, ribMesh as import('three').Mesh);
       }
     },
   };

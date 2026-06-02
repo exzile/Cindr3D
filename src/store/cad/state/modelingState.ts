@@ -212,8 +212,8 @@ export interface CADModelingState {
   // D72 loft upgrades
   loftClosed: boolean;
   loftTangentEdgesMerged: boolean;
-  loftStartCondition: "free" | "tangent";
-  loftEndCondition: "free" | "tangent";
+  loftStartCondition: "free" | "tangent" | "curvature";
+  loftEndCondition: "free" | "tangent" | "curvature";
   loftRailSketchIds: string[];
   setLoftRailSketchIds: (ids: string[]) => void;
   /** @deprecated kept for serialization compat — use loftRailSketchIds */

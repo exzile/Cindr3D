@@ -27,8 +27,8 @@ export function createLoftActions({ set, get }: CADSliceContext): Partial<CADSta
     setLoftBodyKind: (k) => set({ loftBodyKind: k }),
     loftClosed: false,
     loftTangentEdgesMerged: false,
-    loftStartCondition: 'free' as 'free' | 'tangent',
-    loftEndCondition: 'free' as 'free' | 'tangent',
+    loftStartCondition: 'free' as 'free' | 'tangent' | 'curvature',
+    loftEndCondition: 'free' as 'free' | 'tangent' | 'curvature',
     loftRailSketchId: null,
     loftRailSketchIds: [] as string[],
     setLoftRailSketchIds: (ids: string[]) => set({ loftRailSketchIds: ids, loftRailSketchId: ids[0] ?? null }),
@@ -182,7 +182,7 @@ export function createLoftActions({ set, get }: CADSliceContext): Partial<CADSta
         const bodyId = cs.addBody(componentId, `${loftBodyKind === 'surface' ? 'Surface' : 'Body'} ${bodyCount}`);
         if (bodyId) {
           cs.addFeatureToBody(bodyId, featureId);
-          if (mesh) cs.setBodyMesh(bodyId, mesh);
+          if (mesh) cs.setBodyMesh(bodyId, mesh as import('three').Mesh);
         }
       }
     },

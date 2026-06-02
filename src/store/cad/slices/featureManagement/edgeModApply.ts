@@ -36,31 +36,6 @@ import { getSelectableEdges } from "../../../../engine/occ/ops/selectableEdges";
 type SourceFeature = CADState['features'][number];
 
 /**
- * Returns true when the OCC body contains at least one TopAbs_SOLID shape.
- * Surface bodies (open shells, sweep surfaces) return false and cannot be
- * filleted or chamfered. Returns true on any error — we never gate on
- * uncertainty (fail-open so the OCC path can produce its own diagnostic).
- */
-function isOccBodySolid(occInst: NonNullable<ReturnType<typeof getOccSync>>, body: BRepBody): boolean {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const oc = occInst.oc as any;
-    const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
-    const solidEnum = oc.TopAbs_ShapeEnum?.TopAbs_SOLID;
-    if (solidEnum === undefined) return true; // enum not bound in this WASM build
-    const map = new oc.TopTools_IndexedMapOfShape_1();
-    try {
-      oc.TopExp.MapShapes_1(rawShape, solidEnum, map);
-      return map.Extent() > 0;
-    } finally {
-      map.delete();
-    }
-  } catch {
-    return true; // any error — don't block the operation
-  }
-}
-
-/**
  * Primitives apply their position / rotation at the React mesh level (params
  * x/y/z + rx/ry/rz in degrees) — the OCC tessellation is in local body space,
  * centered at origin. When a fillet / chamfer creates a new BRep body, the
