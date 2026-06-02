@@ -74,14 +74,35 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
     // Compute to-object angle if extent type is 'to-object' (sketch mode only)
     let effectiveRevolveAngle = revolveAngle;
     if (revolveExtentType === 'to-object' && revolveToEntityFaceCentroid && revolveProfileMode !== 'face') {
-      const axisKey = revolveAxis === 'centerline' ? 'Y' : revolveAxis;
       const [cx, cy, cz] = revolveToEntityFaceCentroid;
-      // Project centroid onto the plane perpendicular to the revolve axis
-      // and compute the angle from the profile's reference direction
       let angleRad: number;
-      if (axisKey === 'Y') {
+      if (revolveAxis === 'centerline') {
+        // For centerline axis, derive the actual axis direction from the sketch entity
+        // instead of hardcoding global Y — this handles non-Y centerlines correctly.
+        const sketch = sketches.find((s) => s.id === revolveSelectedSketchId);
+        const clEntity = sketch?.entities.find((e) => e.type === 'centerline' && e.points.length >= 2);
+        if (clEntity) {
+          const p0 = clEntity.points[0];
+          const p1 = clEntity.points[clEntity.points.length - 1];
+          const axisDir = new THREE.Vector3(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z).normalize();
+          const axisOrigin = new THREE.Vector3(p0.x, p0.y, p0.z);
+          // Project centroid onto the plane perpendicular to the centerline axis
+          const centroid = new THREE.Vector3(cx, cy, cz);
+          const proj = centroid.clone().sub(axisOrigin);
+          const along = proj.dot(axisDir);
+          const inPlane = proj.sub(axisDir.clone().multiplyScalar(along));
+          // Find a reference perpendicular direction (any vector not parallel to axisDir)
+          const refBase = Math.abs(axisDir.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+          const refX = refBase.clone().sub(axisDir.clone().multiplyScalar(refBase.dot(axisDir))).normalize();
+          const refY = new THREE.Vector3().crossVectors(axisDir, refX).normalize();
+          angleRad = Math.atan2(inPlane.dot(refY), inPlane.dot(refX));
+        } else {
+          // No centerline entity — fall back to global Y
+          angleRad = Math.atan2(cz, cx);
+        }
+      } else if (revolveAxis === 'Y') {
         angleRad = Math.atan2(cz, cx);
-      } else if (axisKey === 'X') {
+      } else if (revolveAxis === 'X') {
         angleRad = Math.atan2(cy, cz);
       } else {
         angleRad = Math.atan2(cy, cx);
@@ -279,7 +300,10 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       type: 'revolve',
       sketchId: revolveSelectedSketchId,
       params: {
-        angle: revolveAngle,
+        // Store the effective angle so regen/save-load reproduces the same geometry.
+        // For to-object extent the UI shows revolveAngle (user's intent) but the
+        // committed solid uses effectiveRevolveAngle (computed to face centroid).
+        angle: effectiveRevolveAngle,
         axis: resolvedAxisKey,
         ...(centerlineAxisDirection ? { useCenterline: true, axisDirection: centerlineAxisDirection, axisOrigin: centerlineAxisOrigin } : {}),
         direction: revolveDirection,
@@ -293,10 +317,10 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       bodyKind: revolveBodyKind === 'surface' ? 'surface' : 'solid',
     };
     const angleDesc = revolveDirection === 'symmetric'
-      ? `±${revolveAngle / 2}°`
+      ? `±${effectiveRevolveAngle / 2}°`
       : revolveDirection === 'two-sides'
-        ? `${revolveAngle}°/${revolveAngle2}°`
-        : `${revolveAngle}°`;
+        ? `${effectiveRevolveAngle}°/${revolveAngle2}°`
+        : `${effectiveRevolveAngle}°`;
 
     // -- Boolean operation (join / cut / intersect) --
     // For non-new-body ops, run an OCC boolean against the chosen target body
