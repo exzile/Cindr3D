@@ -82,12 +82,12 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
       const occ = getOccSync();
       if (occ) {
         try {
-          // Resolve OCC edges from stored edge IDs so MakeFilling can apply G1/G2.
-          // Real OCC TopoDS_Edge resolution is deferred — MakeFilling receives the
-          // continuity order only; the linear boundary edges are built internally.
-          const edgeConstraints: OccFillEdge[] = fillBoundaryEdgeData.map((_e, i) => ({
-            continuity: continuityPerEdge[i] ?? 'G0',
-          }));
+          // MakeFilling currently consumes continuity order only. True adjacent-face
+          // constraints need a future API that passes OCC edge/face pairs explicitly.
+          const edgeConstraints: OccFillEdge[] = fillBoundaryEdgeData.map((_, i) => {
+            const continuity = continuityPerEdge[i] ?? 'G0';
+            return { continuity };
+          });
 
           const body = occFillSurfaceWithInstance(occ.oc, boundaryLoop, {
             sourceFeatureId: featureId,

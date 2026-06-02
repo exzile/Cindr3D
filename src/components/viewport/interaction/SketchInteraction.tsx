@@ -173,7 +173,6 @@ export default function SketchInteraction() {
 
   // Clear in-progress drawing when the user switches tools
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDrawingPoints([]);
     setMousePos(null);
     setSnapTarget(null);
@@ -552,7 +551,7 @@ export default function SketchInteraction() {
     }
 
     return best;
-  }, [activeSketch, snapEnabled, objectSnapEnabled, snapToEndpoint, snapToMidpoint, snapToCenter, snapToIntersection, snapToPerpendicular, snapToTangent, getSketchPlane, scene, camera, viewportSize]);
+  }, [activeSketch, snapEnabled, objectSnapEnabled, snapToEndpoint, snapToMidpoint, snapToCenter, snapToIntersection, snapToPerpendicular, snapToTangent, camera, viewportSize]);
 
   // Returns midpoints of all line segments the cursor is hovering near (within HOVER_RADIUS of
   // the perpendicular foot on the segment). Used to show dim triangle markers before snapping.

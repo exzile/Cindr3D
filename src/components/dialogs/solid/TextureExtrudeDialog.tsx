@@ -25,8 +25,6 @@ export default function TextureExtrudeDialog({ open, onClose, onConfirm }: Props
 
   if (!open) return null;
 
-  const hasUrl = imageUrl.trim().length > 0;
-
   const handleApply = () => {
     if (!previewUrl) return;
     onConfirm({ imageUrl: previewUrl, strength, channel, subdivisions });
@@ -47,14 +45,10 @@ export default function TextureExtrudeDialog({ open, onClose, onConfirm }: Props
             </p>
           </div>
 
-          {hasUrl && previewUrl && (
+          {previewUrl && (
             <div className="form-group">
-              <label>Preview</label>
-              <img
-                src={previewUrl}
-                alt="Height map preview"
-                style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 4, display: 'block' }}
-              />
+              <label>Image</label>
+              <span className="dialog-hint-text">Height map source validated</span>
             </div>
           )}
 

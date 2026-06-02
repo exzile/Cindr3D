@@ -54,8 +54,8 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
   const p = editing?.params ?? {};
 
   const [boxLength, setBoxLength] = useState((p.width as number) || 20);
-  const [boxWidth, setBoxWidth] = useState((p.height as number) || 20);
-  const [boxHeight, setBoxHeight] = useState((p.depth as number) || 20);
+  const [boxWidth, setBoxWidth] = useState((p.depth as number) || 20);
+  const [boxHeight, setBoxHeight] = useState((p.height as number) || 20);
 
   // Fusion shows cylinder/sphere/torus fields as diameters; primitives store radii.
   const [cylDiam, setCylDiam] = useState(((p.radius as number) || 10) * 2);
@@ -81,7 +81,7 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
   const setActiveTool = useCADStore((s) => s.setActiveTool);
 
   const buildPreviewParams = useCallback((): Record<string, number> => {
-    if (kind === 'box') return { width: boxLength, height: boxWidth, depth: boxHeight, x, y, z };
+    if (kind === 'box') return { width: boxLength, height: boxHeight, depth: boxWidth, x, y, z };
     if (kind === 'cylinder') return { radius: cylDiam / 2, radiusTop: cylDiam / 2, height: cylHeight, x, y, z };
     if (kind === 'sphere') return { radius: sphDiam / 2, x, y, z };
     return { radius: torDiam / 2, tubeRadius: torSecDiam / 2, x, y, z };
@@ -104,8 +104,8 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
       const detail = (event as CustomEvent<BoxPrimitiveDragDetail>).detail;
       if (!detail) return;
       if (typeof detail.width === 'number') setBoxLength(Math.max(0.1, detail.width));
-      if (typeof detail.height === 'number') setBoxWidth(Math.max(0.1, detail.height));
-      if (typeof detail.depth === 'number') setBoxHeight(Math.max(0.1, detail.depth));
+      if (typeof detail.depth === 'number') setBoxWidth(Math.max(0.1, detail.depth));
+      if (typeof detail.height === 'number') setBoxHeight(Math.max(0.1, detail.height));
     };
     window.addEventListener(BOX_PRIMITIVE_DRAG_EVENT, handleDrag);
     return () => window.removeEventListener(BOX_PRIMITIVE_DRAG_EVENT, handleDrag);
@@ -126,7 +126,7 @@ export function PrimitivesDialog({ kind, onClose }: { kind: PrimitiveKind; onClo
   const handleApply = () => {
     const params: Record<string, number | string> =
       kind === 'box'
-        ? { width: boxLength, height: boxWidth, depth: boxHeight, operation }
+        ? { width: boxLength, height: boxHeight, depth: boxWidth, operation }
         : kind === 'cylinder'
           ? { radius: cylDiam / 2, radiusTop: cylDiam / 2, height: cylHeight, operation }
           : kind === 'sphere'

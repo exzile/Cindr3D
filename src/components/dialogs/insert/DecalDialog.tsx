@@ -31,6 +31,7 @@ export function DecalDialog({ open, onOk, onClose, faceId }: Props) {
   const [scaleU, setScaleU] = useState(10);
   const [scaleV, setScaleV] = useState(10);
   const [rotation, setRotation] = useState(0);
+  const safeUrl = useMemo(() => safeImageUrl(imageUrl), [imageUrl]);
 
   if (!open) return null;
 
@@ -49,7 +50,6 @@ export function DecalDialog({ open, onOk, onClose, faceId }: Props) {
     reader.readAsDataURL(file); // data: URL — consumed by THREE.TextureLoader
   };
 
-  const safeUrl = useMemo(() => safeImageUrl(imageUrl), [imageUrl]);
   const isValidUrl = imageUrl.trim().length > 0 && Boolean(safeUrl);
   const canOk = faceId !== null && isValidUrl;
 
@@ -78,12 +78,7 @@ export function DecalDialog({ open, onOk, onClose, faceId }: Props) {
 
           {isValidUrl && (
             <div className="form-group">
-              <img
-                src={safeUrl}
-                alt="preview"
-                className="dialog-media-preview"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-              />
+              <span className="dialog-hint-text">Image source validated</span>
             </div>
           )}
 

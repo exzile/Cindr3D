@@ -242,28 +242,30 @@ export function occTrimSurfaceWithInstance(
 
     if (pieces.length === 0) return null;
 
-    // Classify each face: inside = closer to trimmer centre; outside = farther.
-    // Use the true median of sorted distances so that for both 2-piece and 3+
-    // piece results exactly the closer half is kept per side.
-    const dists = pieces.map((p) => p.centroid.distanceTo(trimmerCentre));
-    const sorted = dists.slice().sort((a, b) => a - b);
-    const threshold = sorted[Math.floor((sorted.length - 1) / 2)];
-    const keptFaces = pieces.filter((_, i) =>
-      keepSide === 'inside' ? dists[i] <= threshold : dists[i] > threshold,
-    );
+    // Classify each face: sort by distance to trimmer centre ascending.
+    // For 'inside' keep the closer half; for 'outside' keep the farther half.
+    // Using index-based halving (not value-based median) so the common 2-piece
+    // case always yields exactly 1 face per side.
+    const sorted = pieces
+      .map((p) => ({ piece: p, dist: p.centroid.distanceTo(trimmerCentre) }))
+      .sort((a, b) => a.dist - b.dist);
+    const splitIdx = Math.max(1, Math.floor(sorted.length / 2));
+    const keptFaces = keepSide === 'inside'
+      ? sorted.slice(0, splitIdx).map((x) => x.piece)
+      : sorted.slice(splitIdx).map((x) => x.piece);
     if (keptFaces.length === 0) return null;
 
-    // ── Step 7: Sew kept faces into a shell → BRepBody ───────────────────────
+    // ── Step 7: Sew kept faces into a compound → BRepBody ────────────────────
+    // compound is NOT added to ownedResources: makeBRepBodyFromOccShape
+    // takes ownership of its shape and will manage its lifetime. Adding it
+    // to ownedResources would cause a double-delete when the finally block runs.
     const compound = new occ.TopoDS_Compound();
-    // Do NOT push compound into ownedResources — makeBRepBodyFromOccShape transfers
-    // ownership of the shape, so the finally-block delete would cause a double-free.
     const cBuilder = new occ.BRep_Builder();
-    ownedResources.push(cBuilder);
-    // Use MakeCompound if available (more portable than MakeShell for open surfaces)
+    ownedResources.push(cBuilder); // cBuilder is safe to delete after MakeCompound/Add
     try {
       (cBuilder as unknown as { MakeCompound(c: unknown): void }).MakeCompound(compound);
     } catch {
-      try { compound.delete(); } catch { /* ok */ }
+      try { (compound as unknown as { delete(): void }).delete?.(); } catch { /* ok */ }
       return null;
     }
     for (const p of keptFaces) {
