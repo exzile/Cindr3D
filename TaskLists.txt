@@ -79,15 +79,17 @@ Completed sections are removed after shipping; see git history if detail is need
 #     angle via atan2. Approximate — works for planar targets.
 #
 # ── Open ───────────────────────────────────────────────────────────────────────
-# [ ] SURF-CREATE-2  Selection model: sketch-name dropdowns instead of in-canvas
-#     selection-input chips (Fusion style). Structural — biggest remaining UX gap.
-#     Add a reusable in-viewport selection chip (mirror FillEdgePicker pattern) so
-#     profiles/paths/rails are picked by click with hover highlight.
+# [x] SURF-CREATE-2  In-canvas sketch selection model added (2026-06-02):
+#     SurfaceSketchPicker.tsx — renders each available sketch as a hover-highlightable
+#     LineSegments group when Sweep/Loft/Patch/Ruled is active. Clicking a sketch
+#     fills the next empty input field (profile → path → rails in order). isSelected
+#     highlight in blue; hover in cyan. Dropdowns remain as fallback. Registered in
+#     Viewport.tsx alongside SurfaceCreatePreviews.
 #
-# [ ] SURF-CREATE-4  Loft single-rail only. Fusion's centerLineOrRails is a collection
-#     (multiple rails + centerline mode). Also missing per-end takeoff weight.
-#     Add multi-rail list + optional centerline toggle; requires MakePipeShell path
-#     (ThruSections has no rail support — needs a different OCC approach).
+# [x] SURF-CREATE-4  Loft multi-rail wired (2026-06-02):
+#     LoftPanel has a collapsible Rails section (add/remove per slot). loftRailSketchIds[]
+#     state replaces single loftRailSketchId. loft.ts uses MakePipeShell when rails present;
+#     falls back to ThruSections when no rails. All wire resources disposed.
 #
 # [skip] SURF-CREATE-10  Boundary Fill (BRepCells cell-from-tools) — absent. Add only
 #     if Boundary Fill parity is explicitly pursued.
