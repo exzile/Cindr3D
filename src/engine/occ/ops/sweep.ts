@@ -46,48 +46,165 @@ export interface OccSweepOptions {
   distanceFraction?: number;
 }
 
+type Vec3 = [number, number, number];
+const _sub = (a: Vec3, b: Vec3): Vec3 => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const _len = (a: Vec3): number => Math.hypot(a[0], a[1], a[2]);
+const _norm = (a: Vec3): Vec3 => { const l = _len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+const _dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const _cross = (a: Vec3, b: Vec3): Vec3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const scale = (a: Vec3, s: number): Vec3 => [a[0] * s, a[1] * s, a[2] * s];
+
 /**
- * Trim a path wire to a fraction of its length by sampling points along the
- * BRepAdaptor_CompCurve parameter range and rebuilding a B-spline wire.
- * Returns a NEW owned wire (caller deletes) or null on failure.
+ * Sample N+1 points along a path wire over a parameter sub-range using
+ * BRepAdaptor_CompCurve.Value (proven binding; finite-difference tangents avoid
+ * the gp_Vec out-param overloads). Returns 3D point tuples or null on failure.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function trimPathWireByFraction(oc: OcctRaw, pathWire: any, fraction: number): any | null {
+function samplePathPoints(oc: OcctRaw, pathWire: any, fraction: number, N: number): Vec3[] | null {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const occ = oc as any;
   if (typeof occ.BRepAdaptor_CompCurve_2 !== 'function' && typeof occ.BRepAdaptor_CompCurve_1 !== 'function') return null;
-  let adaptor: { FirstParameter(): number; LastParameter(): number; Value(u: number): { X(): number; Y(): number; Z(): number; delete(): void }; delete(): void } | null = null;
+  let adaptor: { FirstParameter(): number; LastParameter(): number; Value(u: number): { X(): number; Y(): number; Z(): number; delete?(): void }; delete?(): void } | null = null;
   try {
     adaptor = typeof occ.BRepAdaptor_CompCurve_2 === 'function'
       ? new occ.BRepAdaptor_CompCurve_2(pathWire, false)
       : new occ.BRepAdaptor_CompCurve_1(pathWire);
     const u0 = adaptor!.FirstParameter();
     const u1 = adaptor!.LastParameter();
-    const uEnd = u0 + fraction * (u1 - u0);
-    const N = 48;
-    const pnts = new occ.TColgp_Array1OfPnt_2(1, N + 1);
+    const uEnd = u0 + Math.max(0.001, Math.min(1, fraction)) * (u1 - u0);
+    const out: Vec3[] = [];
     for (let i = 0; i <= N; i++) {
       const u = u0 + (i / N) * (uEnd - u0);
       const p = adaptor!.Value(u);
-      const gp = new occ.gp_Pnt_3(p.X(), p.Y(), p.Z());
-      pnts.SetValue(i + 1, gp);
-      gp.delete?.();
+      out.push([p.X(), p.Y(), p.Z()]);
       p.delete?.();
     }
-    // Approximate sampled points with a B-spline curve, then make an edge → wire.
-    const approx = new occ.GeomAPI_PointsToBSpline_2(pnts, 3, 8, occ.GeomAbs_Shape.GeomAbs_C2, 1e-4);
-    const curveHandle = approx.Curve();
-    const edgeMaker = new occ.BRepBuilderAPI_MakeEdge_24(curveHandle);
-    const edge = edgeMaker.Edge();
-    const wireMaker = new occ.BRepBuilderAPI_MakeWire_2(edge);
-    const wire = wireMaker.Wire();
-    edgeMaker.delete?.(); wireMaker.delete?.(); approx.delete?.(); pnts.delete?.();
-    return wire;
+    return out;
   } catch (e) {
-    console.warn('[occSweep] path trim failed, using full path:', e);
+    console.warn('[occSweep] path sampling failed:', e);
     return null;
   } finally {
     adaptor?.delete?.();
+  }
+}
+
+/** Build a polyline wire from 3D points using proven MakeEdge_7 + MakeWire_1. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function polylineWire(oc: OcctRaw, pts: Vec3[]): any | null {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const occ = oc as any;
+  try {
+    const wireMaker = new occ.BRepBuilderAPI_MakeWire_1();
+    const occPts = pts.map((p) => new occ.gp_Pnt_3(p[0], p[1], p[2]));
+    for (let i = 0; i < occPts.length - 1; i++) {
+      const em = new occ.BRepBuilderAPI_MakeEdge_7(occPts[i], occPts[i + 1]);
+      if (em.IsDone()) wireMaker.Add_2(em.Edge());
+      em.delete?.();
+    }
+    const wire = wireMaker.IsDone() ? wireMaker.Wire() : null;
+    wireMaker.delete?.();
+    for (const gp of occPts) gp.delete?.();
+    return wire;
+  } catch (e) {
+    console.warn('[occSweep] polyline wire build failed:', e);
+    return null;
+  }
+}
+
+/**
+ * Trim a path wire to a fraction of its length. Samples the path and rebuilds a
+ * polyline wire (proven bindings only — MakeEdge_24/Geom-curve overloads THROW in
+ * this opencascade.js build, see sketchToWire.ts). Returns owned wire or null.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function trimPathWireByFraction(oc: OcctRaw, pathWire: any, fraction: number): any | null {
+  const pts = samplePathPoints(oc, pathWire, fraction, 64);
+  if (!pts || pts.length < 2) return null;
+  return polylineWire(oc, pts);
+}
+
+/**
+ * Twisted sweep: loft the profile through N stations along the path, rotating the
+ * cross-section progressively by `twistDeg` (0 at start → full at end). Uses a
+ * rotation-minimizing frame computed in JS, then BRepOffsetAPI_ThruSections
+ * (proven in loft.ts). Avoids OCC auxiliary-spine SetMode (unreliable overload
+ * numbering in this build). Returns the result TopoDS_Shape or null.
+ */
+function buildTwistedSweepShape(
+  oc: OcctRaw,
+  profile: SketchProfile,
+  profileFrame: OccPlaneFrame,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  pathWire: any,
+  twistDeg: number,
+  fraction: number,
+  isSolid: boolean,
+): unknown | null {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const occ = oc as any;
+  const STATIONS = 24;
+  const pts = samplePathPoints(oc, pathWire, fraction, STATIONS);
+  if (!pts || pts.length < 2) return null;
+
+  // Finite-difference tangents
+  const tangents: Vec3[] = pts.map((_, i) => {
+    if (i === 0) return _norm(_sub(pts[1], pts[0]));
+    if (i === pts.length - 1) return _norm(_sub(pts[i], pts[i - 1]));
+    return _norm(_sub(pts[i + 1], pts[i - 1]));
+  });
+
+  // Rotation-minimizing frame seeded from the profile frame so twist=0 matches a
+  // normal sweep's cross-section orientation.
+  const fU: Vec3 = [profileFrame.uDir.x, profileFrame.uDir.y, profileFrame.uDir.z];
+  let N: Vec3 = _norm(_sub(fU, scale(tangents[0], _dot(fU, tangents[0]))));
+  if (_len(N) < 1e-6) {
+    // uDir parallel to tangent — pick any perpendicular
+    const alt: Vec3 = Math.abs(tangents[0][0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+    N = _norm(_sub(alt, scale(tangents[0], _dot(alt, tangents[0]))));
+  }
+  let B: Vec3 = _norm(_cross(tangents[0], N));
+
+  const twistRad = (twistDeg * Math.PI) / 180;
+  const outer = profile.outer;
+  const stationWires: unknown[] = [];
+
+  try {
+    for (let i = 0; i < pts.length; i++) {
+      if (i > 0) {
+        // Propagate frame: project previous N onto plane perpendicular to new tangent
+        const t = tangents[i];
+        N = _norm(_sub(N, scale(t, _dot(N, t))));
+        B = _norm(_cross(t, N));
+      }
+      const theta = twistRad * (i / (pts.length - 1));
+      const ct = Math.cos(theta), st = Math.sin(theta);
+      const P = pts[i];
+      const stationPts: Vec3[] = outer.map((p2) => {
+        const u = p2.x * ct - p2.y * st;
+        const v = p2.x * st + p2.y * ct;
+        return [P[0] + N[0] * u + B[0] * v, P[1] + N[1] * u + B[1] * v, P[2] + N[2] * u + B[2] * v];
+      });
+      // Close the loop
+      if (stationPts.length >= 3) stationPts.push(stationPts[0]);
+      const w = polylineWire(oc, stationPts);
+      if (w) stationWires.push(w);
+    }
+    if (stationWires.length < 2) return null;
+
+    const loftMaker = new occ.BRepOffsetAPI_ThruSections_1(isSolid, false, 1e-6);
+    loftMaker.SetSmoothing(true);
+    loftMaker.CheckCompatibility(false);
+    for (const w of stationWires) loftMaker.AddWire(w);
+    runEdgeOpBuild(oc, loftMaker);
+    if (!loftMaker.IsDone()) { loftMaker.delete?.(); return null; }
+    const shape = loftMaker.Shape();
+    loftMaker.delete?.();
+    return shape;
+  } catch (e) {
+    console.warn('[occSweep] twisted sweep failed:', e);
+    return null;
+  } finally {
+    for (const w of stationWires) (w as { delete?: () => void }).delete?.();
   }
 }
 
@@ -246,6 +363,22 @@ export function occSweepFromPathWireWithInstance(
   if (options.distanceFraction !== undefined && options.distanceFraction < 0.999) {
     trimmedWire = trimPathWireByFraction(oc, pathWire, options.distanceFraction);
     if (trimmedWire) pathWire = trimmedWire;
+  }
+
+  // ── Twist path: loft the profile through rotated stations along the path ──
+  // Uses only proven bindings (ThruSections + polyline wires). When this fails,
+  // fall through to the normal (untwisted) sweep so the feature is still created.
+  if (options.twistAngle !== undefined && Math.abs(options.twistAngle) > 0.001) {
+    const twisted = buildTwistedSweepShape(
+      oc, profile, profileFrame, pathWire, options.twistAngle,
+      options.distanceFraction ?? 1, !options.surface,
+    );
+    if (twisted) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (trimmedWire) (trimmedWire as any).delete?.();
+      return makeBRepBodyFromOccShape(oc, twisted, { id: options.id, sourceFeatureId: options.sourceFeatureId });
+    }
+    console.warn('[occSweep] twisted sweep returned null — falling back to untwisted');
   }
 
   const profileWires = sketchProfileToWires(oc, profile, profileFrame);

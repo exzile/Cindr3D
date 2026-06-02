@@ -78,11 +78,6 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
 
       let mesh: THREE.Mesh | null = null;
       const distanceFraction = Math.max(0.01, Math.min(1, sweepDistanceTwo));
-      // Twist via OCC auxiliary-spine is not yet implemented — inform the user
-      // instead of silently ignoring the value (avoids a dead control).
-      if (Math.abs(sweepTwistAngle) > 0.001) {
-        addToast('info', 'Twist not yet applied', 'Sweep twist is coming soon — swept without twist');
-      }
       if (sweepBodyKind === 'solid' || sweepBodyKind === 'surface') {
         const occ = getOccSync();
         const isSurface = sweepBodyKind === 'surface';
@@ -126,6 +121,7 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
                   orientation: sweepOrientation as 'perpendicular' | 'frenet' | 'horizontal' | 'vertical',
                   guideWire,
                   taperAngle: Math.abs(sweepTaperAngle) > 0.001 ? sweepTaperAngle : undefined,
+                  twistAngle: Math.abs(sweepTwistAngle) > 0.001 ? sweepTwistAngle : undefined,
                   distanceFraction: distanceFraction < 0.999 ? distanceFraction : undefined,
                   surface: isSurface,
                 });
