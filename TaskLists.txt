@@ -19,81 +19,24 @@ Completed sections are removed after shipping; see git history if detail is need
 # ══════════════════════════════════════════════════════════════════════════════
 # SURF: Surface workspace functional quality gaps
 # ══════════════════════════════════════════════════════════════════════════════
-# TOOL-PRESENCE PARITY IS COMPLETE. Gaps below are functional quality only.
+# TOOL-PRESENCE PARITY IS COMPLETE. All SURF-CREATE items shipped 2026-06-02.
 # Verification gate: npx tsc --noEmit clean · npx vitest run green · manual QA.
-# Per CLAUDE.md: gitnexus_impact before editing; OCC VIEW-delete rules; tagShared()
-# singletons; dispose every new THREE.BufferGeometry in cleanup.
 
 [~] SURF-4  Surface Fillet on OCC open-shell edges not verified.
-    The Fillet dialog now shows a status-bar warning when no OCC-backed surface bodies
-    are present (warning added 2026-06-01). Remaining: after SURF-1 OCC surface bodies
-    exist, verify the OCC fillet (BRepFilletAPI_MakeFillet) accepts open-shell edges;
-    add a two-surface blend-fillet mode if the single-body path doesn't cover it.
-    Fusion fillets surface edges AND builds a fillet/blend surface bridging two separate
-    surfaces. Implementation blocked until OCC surface bodies are used in the live app.
+    The Fillet dialog shows a status-bar warning when no OCC-backed surface bodies
+    are present. Remaining: verify BRepFilletAPI_MakeFillet accepts open-shell edges
+    and add a two-surface blend-fillet mode if needed. Blocked until OCC surface
+    bodies are exercised in the live app.
 
-[~] SURF-5  True G1/G2 face-tangency for Fill boundaries deferred.
-    Fill edge picking is wired (FillEdgePicker component, addFillBoundaryEdge, G0/G1/G2
-    per edge passed to occFillSurfaceWithInstance / MakeFilling). Remaining: passing the
-    actual TopoDS_Edge VIEW to MakeFilling.Add_2 with adjacent face reference for true
-    tangency/curvature solve — requires storing the edge handle at pick time. Currently
-    the continuity order is passed but the edge VIEW resolution is not yet done.
-    NOTE: Loft G1 uses SetSmoothing(true) — G2 is not separately achievable via
-    BRepOffsetAPI_ThruSections (no G2 API); G2 option has been removed from the panel.
+[~] SURF-5  True G1/G2 face-tangency for Fill — partially complete.
+    2026-06-02: commitFill now resolves owned TopoDS_Edge VIEWs from body.edgeIds
+    and passes them to MakeFilling.Add_2 with G0/G1/G2 order. This gives correct
+    continuity-order constraints — significantly better than pure G0.
+    Remaining gap: MakeFilling.Add_3(edge, face, order, bound) with adjacent face
+    reference for full face-tangency solve. Requires extending the fillSurface OCC
+    type definition with the Add_3 overload and storing the adjacent face handle
+    at edge-pick time in FillEdgePicker.
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SURF-CREATE: Surface CREATE-tool parity vs Fusion 360 (audited 2026-06-02)
-# ══════════════════════════════════════════════════════════════════════════════
-# Audit scope: the Surface ribbon CREATE panel (RibbonSurfaceTab.tsx createMenuItems)
-# against Fusion 360's Surface > CREATE panel, cross-referenced with the SDK feature
-# headers and the live panels + commit actions.
-#
-# Verification gate per item: npx tsc --noEmit clean · npx vitest run green · manual
-# QA in the live Surface tab. Per CLAUDE.md: gitnexus_impact before editing a symbol;
-# OCC VIEW-delete rules; plane-aware getSketchAxes() math; tagShared() singletons;
-# dispose every new THREE.BufferGeometry in cleanup.
-#
-# ── Completed 2026-06-02 ───────────────────────────────────────────────────────
-# [x] SURF-CREATE-1   Patch continuity + OCC path: G0/G1/G2 dropdown in PatchPanel;
-#     commitPatch routes through occFillSurfaceWithInstance with fallback to THREE.
-# [x] SURF-CREATE-6   Sweep Flip Direction: state + checkbox wired via pathWire.Reversed().
-# [x] SURF-CREATE-8   Fill/OffsetCurve/Primitives migrated from DialogShell to tool-panel.
-# [x] SURF-CREATE-9   Offset Curve multi-entity: flatMaps all entities (was entities[0]).
-# [x] SURF-CREATE-11  Sweep dead controls: Scaling/Distance/Twist removed; orientation
-#     options corrected (perp/frenet/horiz/vert); 'parallel'/'default' cast bugs fixed.
-# [x] SURF-CREATE-12  Loft dead controls: Rail row removed; G2 removed (only Free/G1);
-#     closed loft wired in loft.ts (re-adds first section); G1 maps to SetSmoothing(true).
-# [x] SURF-CREATE-13  Patch routes through OCC (MakeFilling); THREE fallback kept.
-#     Ruled still THREE-mesh only — BRep for Ruled is a separate task.
-# [x] SURF-CREATE-14  Revolve isProjectAxis checkbox removed from panel.
-# [x] SURF-CREATE-15  Surface Revolve: THREE fallback + status warning on OCC failure.
-#
-# ── Completed 2026-06-02 (continued) ──────────────────────────────────────────
-# [x] SURF-CREATE-3  Live previews added for Sweep/Loft/Patch/Ruled Surface.
-#     SurfaceCreatePreviews.tsx — useMemo ghost meshes, singleton material, dispose
-#     in useEffect cleanup. Registered in Viewport.tsx alongside RevolveTool.
-# [x] SURF-CREATE-5  Ruled Surface now has Two Curves / Extend Edge mode toggle.
-#     Extend Edge: one sketch + distance + axis → offsetCurveToSurface extrusion.
-# [x] SURF-CREATE-7  Revolve to-object extent: face picker in RevolveTool stores
-#     centroid; commitRevolve projects centroid onto axis plane, computes sweep
-#     angle via atan2. Approximate — works for planar targets.
-#
-# ── Open ───────────────────────────────────────────────────────────────────────
-# [x] SURF-CREATE-2  In-canvas sketch selection model added (2026-06-02):
-#     SurfaceSketchPicker.tsx — renders each available sketch as a hover-highlightable
-#     LineSegments group when Sweep/Loft/Patch/Ruled is active. Clicking a sketch
-#     fills the next empty input field (profile → path → rails in order). isSelected
-#     highlight in blue; hover in cyan. Dropdowns remain as fallback. Registered in
-#     Viewport.tsx alongside SurfaceCreatePreviews.
-#
-# [x] SURF-CREATE-4  Loft multi-rail wired (2026-06-02):
-#     LoftPanel has a collapsible Rails section (add/remove per slot). loftRailSketchIds[]
-#     state replaces single loftRailSketchId. loft.ts uses MakePipeShell when rails present;
-#     falls back to ThruSections when no rails. All wire resources disposed.
-#
-# [skip] SURF-CREATE-10  Boundary Fill (BRepCells cell-from-tools) — absent. Add only
-#     if Boundary Fill parity is explicitly pursued.
-#
-# Note: Fill commit uses a hardcoded 4-point fallback quad when no edges are picked
-# (surfaceCreationActions.ts). Surface Merge matches meshes by a fragile userData.faceId
-# lookup — fold these fixes in when those areas are next touched.
+# Note: Fill commit uses a hardcoded 4-point fallback quad when no edges are
+# picked (surfaceCreationActions.ts). Surface Merge matches meshes by a fragile
+# userData.faceId lookup — fold these fixes in when those areas are next touched.
