@@ -9,7 +9,7 @@ import {
   toolPlacementFailedMessage,
 } from '../featureManagement/bodyBoolean';
 import { createOccPlaneFrameFromSketch } from '../../../../engine/occ/plane';
-import { getOccSync } from '../../../../engine/occ/loader';
+import { getOccSync, getOcc } from '../../../../engine/occ/loader';
 import { occSweepFromPathWireWithInstance } from '../../../../engine/occ/ops/sweep';
 import type { SketchProfile } from '../../../../engine/occ/ops/sketchToWire';
 import { sketchEntitiesToWire } from '../../../../engine/occ/sketchEntityToWire';
@@ -91,9 +91,20 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
 
       const isSurface = sweepBodyKind === 'surface';
       const distanceFraction = Math.max(0.01, Math.min(1, sweepDistanceTwo));
-      const occ = getOccSync();
+      // commitSweep is async — await the kernel rather than bailing when it isn't
+      // warmed yet (getOccSync returns null until the WASM module finishes loading).
+      let occ = getOccSync();
+      if (!occ) {
+        try {
+          occ = await getOcc();
+        } catch (err) {
+          console.warn(`[commitSweep] OCC load failed (${errorMessage(err, 'unknown')})`);
+          occ = null;
+        }
+      }
       if (!occ && !isSurface) {
-        set({ statusMessage: 'Solid sweep requires OCC to be loaded' });
+        addToast('warning', 'Sweep needs the CAD kernel', 'The geometry kernel is still loading — try again in a moment');
+        set({ statusMessage: 'Solid sweep requires OCC (still loading) — try again' });
         return;
       }
 
