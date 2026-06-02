@@ -268,7 +268,7 @@ after all their items shipped; see git history if their detail is needed.
 #     This unblocks SURF-3/4/9. HIGH effort, HIGH value.
 #
 # ── P1: placeholder create-ops that produce wrong geometry ─────────────────────
-# [~] SURF-2  Patch fills only PLANAR boundaries. commitPatch → GeometryEngine
+# [x] SURF-2  Patch fills only PLANAR boundaries. commitPatch → GeometryEngine
 #     .patchSketch → THREE.ShapeGeometry (profileSweeps.ts:105-114), a flat 2D
 #     triangulation. A non-planar closed boundary collapses to a flat/garbage face.
 #     Fusion Patch fills ANY closed boundary loop with a smooth surface and exposes
@@ -276,7 +276,7 @@ after all their items shipped; see git history if their detail is needed.
 #     filling (BRepOffsetAPI_MakeFilling) over the boundary edges + optional guide
 #     curves and continuity constraints.
 #
-# [ ] SURF-3  Fill (Boundary Surface) is a centroid-fan PLACEHOLDER.
+# [x] SURF-3  Fill (Boundary Surface) is a centroid-fan PLACEHOLDER.
 #     GeometryEngine.fillSurface (surfaceBasics.ts:3-39) builds a triangle fan from
 #     a centroid and fakes G1/G2 as a lerp-toward-centroid blend factor — there is
 #     no real tangency or curvature solve, and it falls back to a hardcoded 4-point
@@ -295,7 +295,7 @@ after all their items shipped; see git history if their detail is needed.
 #     instead of silently doing nothing.
 #
 # ── P2: parity of options on tools that already work ───────────────────────────
-# [ ] SURF-5  Continuity options (tangent G1 / curvature G2) across Loft, Patch,
+# [~] SURF-5  Continuity options (tangent G1 / curvature G2) across Loft, Patch,
 #     Fill, Extend. Fusion exposes per-end/per-boundary G0/G1/G2 with a weight; our
 #     loft has mode strings (closed/ruled/smooth) and extend has perpendicular/
 #     natural/tangent, but none solve true tangency or curvature against the
@@ -303,14 +303,14 @@ after all their items shipped; see git history if their detail is needed.
 #     in the OCC ops (loft: BRepOffsetAPI_ThruSections with continuity; fill/patch:
 #     MakeFilling constraints). Pairs with SURF-2/SURF-3.
 #
-# [~] SURF-6  Ruled Surface alignment modes. GeometryEngine.ruledSurface
+# [x] SURF-6  Ruled Surface alignment modes. GeometryEngine.ruledSurface
 #     (profileSweeps.ts:116-151) is a single 64-sample lerp between two curves.
 #     Fusion's Ruled offers alignment by Direction / Tangent / Normal plus a
 #     distance/draft option. Add the alignment mode + distance to RuledSurfacePanel
 #     and build via OCC (BRepFill ruled / BRepOffsetAPI) so the rulings follow the
 #     chosen reference instead of a naive straight lerp.
 #
-# [ ] SURF-7  Trim / Surface Split accept only a PLANE cutting tool. trimSurface
+# [~] SURF-7  Trim / Surface Split accept only a PLANE cutting tool. trimSurface
 #     and splitSurface (surfaceTrimSplit.ts:83-180) do a single-plane centroid-side
 #     test. Fusion trims/splits a surface with ANY tool: another surface, a
 #     projected sketch curve, or a body edge — and lets you keep either side.
@@ -324,7 +324,7 @@ after all their items shipped; see git history if their detail is needed.
 #     the regenerated surface mesh/body so Untrim actually restores the underlying
 #     surface in the viewport and timeline. Add a regression test.
 #
-# [~] SURF-9  Offset Surface is a naive per-vertex normal offset
+# [x] SURF-9  Offset Surface is a naive per-vertex normal offset
 #     (surfaceEditing.ts:4-26) — no self-intersection handling, no variable offset,
 #     and it cannot generate the offset as a true BRep. After SURF-1, route through
 #     OCC BRepOffset_MakeOffset (or BRepOffsetAPI_MakeOffsetShape) so concave/convex
