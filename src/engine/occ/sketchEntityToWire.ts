@@ -83,6 +83,51 @@ function arcToEdge(
   }
 }
 
+// ── Arc edge (centre + radius + start/end angle) ───────────────────────────────
+// This is how arcs are actually stored in this app (see createArc renderer):
+// points[0] = centre, entity.radius, startAngle/endAngle swept CCW about the
+// plane normal. Built via gp_Circ + MakeEdge_10(circ, A, B) — the proven overload
+// (MakeEdge_24 / Geom-curve handle THROWS in this opencascade.js build).
+function arcFromCenterRadius(
+  oc: OcctRaw,
+  frame: OccPlaneFrame,
+  entity: SketchEntity,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+): any | null {
+  const centerPt = entity.points[0];
+  const radius = entity.radius ?? 0;
+  if (!centerPt || !(radius > 0)) return null;
+  const startAngle = entity.startAngle ?? 0;
+  let endAngle = entity.endAngle ?? Math.PI;
+  if (endAngle <= startAngle) endAngle += Math.PI * 2;
+
+  const center = sketchPtToWorld(frame, centerPt);
+  const ptAt = (ang: number) => center.clone()
+    .addScaledVector(frame.uDir, Math.cos(ang) * radius)
+    .addScaledVector(frame.vDir, Math.sin(ang) * radius);
+  const a = ptAt(startAngle);
+  const b = ptAt(endAngle);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const occ = oc as any;
+  const gc = gpPnt(oc, center);
+  const gn = gpDir(oc, frame.normal); // +normal → CCW from a to b (matches renderer)
+  const ax2 = new occ.gp_Ax2_3(gc, gn);
+  gc.delete(); gn.delete();
+  const gA = gpPnt(oc, a);
+  const gB = gpPnt(oc, b);
+  try {
+    const circ = new occ.gp_Circ_2(ax2, radius);
+    ax2.delete();
+    const edgeMk = new occ.BRepBuilderAPI_MakeEdge_10(circ, gA, gB);
+    circ.delete();
+    if (!edgeMk.IsDone()) { edgeMk.delete(); return null; }
+    const edge = edgeMk.Edge();
+    edgeMk.delete();
+    return edge;
+  } catch { return null; } finally { gA.delete(); gB.delete(); }
+}
+
 // ── Circle edge (full) ───────────────────────────────────────────────────────
 
 function circleToEdge(
@@ -134,7 +179,12 @@ function entityToEdges(oc: OcctRaw, entity: SketchEntity, frame: OccPlaneFrame):
     }
 
     case 'arc': {
-      // arc entity: points[0]=start, points[1]=mid, points[2]=end (3-point arc)
+      // Primary form (this app): points[0]=centre, entity.radius + start/end angle.
+      if (entity.radius != null && entity.points.length >= 1) {
+        const e = arcFromCenterRadius(oc, frame, entity);
+        if (e) return [e];
+      }
+      // Legacy 3-point arc (start, mid, end).
       if (pts.length >= 3) {
         const e = arcToEdge(oc, pts[0], pts[1], pts[2]);
         return e ? [e] : [];
