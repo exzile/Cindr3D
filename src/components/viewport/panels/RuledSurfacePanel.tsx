@@ -8,6 +8,10 @@ export default function RuledSurfacePanel() {
   const setSketchAId = useCADStore((s) => s.setRuledSketchAId);
   const sketchBId = useCADStore((s) => s.ruledSketchBId);
   const setSketchBId = useCADStore((s) => s.setRuledSketchBId);
+  const alignmentMode = useCADStore((s) => s.ruledAlignmentMode);
+  const setAlignmentMode = useCADStore((s) => s.setRuledAlignmentMode);
+  const alignmentDistance = useCADStore((s) => s.ruledAlignmentDistance);
+  const setAlignmentDistance = useCADStore((s) => s.setRuledAlignmentDistance);
   const commitRuledSurface = useCADStore((s) => s.commitRuledSurface);
   const cancelRuledSurfaceTool = useCADStore((s) => s.cancelRuledSurfaceTool);
 
@@ -56,6 +60,33 @@ export default function RuledSurfacePanel() {
               ))}
           </select>
         </div>
+
+        <div className="sketch-palette-row">
+          <span className="sketch-palette-label">Alignment</span>
+          <select
+            className="measure-select"
+            value={alignmentMode}
+            onChange={(e) => setAlignmentMode(e.target.value as 'direction' | 'tangent' | 'normal')}
+          >
+            <option value="direction">Direction</option>
+            <option value="tangent">Tangent</option>
+            <option value="normal">Normal</option>
+          </select>
+        </div>
+
+        {alignmentMode !== 'direction' && (
+          <div className="sketch-palette-row">
+            <span className="sketch-palette-label">Offset (mm)</span>
+            <input
+              type="number"
+              className="measure-select"
+              style={{ width: '80px' }}
+              value={alignmentDistance}
+              step={0.5}
+              onChange={(e) => setAlignmentDistance(parseFloat(e.target.value) || 0)}
+            />
+          </div>
+        )}
 
         <div className="extrude-panel-actions">
           <button className="btn btn-secondary" onClick={cancelRuledSurfaceTool}>

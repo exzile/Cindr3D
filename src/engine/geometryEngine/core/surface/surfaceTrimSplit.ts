@@ -51,11 +51,35 @@ function derivePlaneFromMesh(mesh: THREE.Mesh): THREE.Plane | null {
   const triangles = extractWorldTrianglesUtil(mesh);
   if (triangles.length === 0) return null;
 
-  const [p0, p1, p2] = triangles[0];
-  const edge1 = p1.clone().sub(p0);
-  const edge2 = p2.clone().sub(p0);
-  const normal = new THREE.Vector3().crossVectors(edge1, edge2).normalize();
-  return new THREE.Plane().setFromNormalAndCoplanarPoint(normal, p0);
+  // Accumulate weighted centroid and normal from ALL triangles (area-weighted).
+  // This gives a best-fit plane for non-axis-aligned surface trimmers, not just
+  // the first triangle's plane.
+  const centroid = new THREE.Vector3();
+  const weightedNormal = new THREE.Vector3();
+  let totalArea = 0;
+  const _ab = new THREE.Vector3();
+  const _ac = new THREE.Vector3();
+  for (const [p0, p1, p2] of triangles) {
+    _ab.subVectors(p1, p0);
+    _ac.subVectors(p2, p0);
+    const cross = new THREE.Vector3().crossVectors(_ab, _ac);
+    const area = cross.length() * 0.5;
+    centroid.addScaledVector(p0, area / 3);
+    centroid.addScaledVector(p1, area / 3);
+    centroid.addScaledVector(p2, area / 3);
+    weightedNormal.add(cross);
+    totalArea += area;
+  }
+  if (totalArea < 1e-12) {
+    const [p0, p1, p2] = triangles[0];
+    _ab.subVectors(p1, p0);
+    _ac.subVectors(p2, p0);
+    const fallbackNormal = new THREE.Vector3().crossVectors(_ab, _ac).normalize();
+    return new THREE.Plane().setFromNormalAndCoplanarPoint(fallbackNormal, p0);
+  }
+  centroid.divideScalar(totalArea * 3);
+  weightedNormal.normalize();
+  return new THREE.Plane().setFromNormalAndCoplanarPoint(weightedNormal, centroid);
 }
 
 function pushTriangle(

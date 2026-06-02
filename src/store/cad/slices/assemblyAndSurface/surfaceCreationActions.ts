@@ -3,6 +3,10 @@ import type { Feature } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
+import { getOccSync } from '../../../../engine/occ/loader';
+import { occFillSurfaceWithInstance } from '../../../../engine/occ/ops/fillSurface';
+import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
+import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
 
 const SURFACE_MATERIAL = new THREE.MeshPhysicalMaterial({
   color: 0x8899aa,
@@ -65,11 +69,28 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
         new THREE.Vector3(5, 0, 5),
         new THREE.Vector3(-5, 0, 5),
       ];
-      const boundaryPoints: THREE.Vector3[][] = [loop.length >= 3 ? loop : fallbackLoop];
-      const continuity = params.continuityPerEdge;
-      const geom = GeometryEngine.fillSurface(boundaryPoints, continuity.length > 0 ? continuity : ['G0']);
+      const boundaryLoop = loop.length >= 3 ? loop : fallbackLoop;
+
+      // Try OCC BRep face first (planar → MakeFace; non-planar → MakeFilling).
+      const featureId = crypto.randomUUID();
+      let mesh: THREE.Mesh | undefined;
+      const occ = getOccSync();
+      if (occ) {
+        try {
+          const body = occFillSurfaceWithInstance(occ.oc, boundaryLoop, { sourceFeatureId: featureId });
+          if (body) mesh = createRegisteredOccMesh(occ.oc, body, BODY_MATERIAL, featureId);
+        } catch (err) {
+          console.warn('[commitFill] OCC fill failed, using THREE fallback:', err);
+        }
+      }
+      if (!mesh) {
+        const continuity = params.continuityPerEdge;
+        const geom = GeometryEngine.fillSurface([boundaryLoop], continuity.length > 0 ? continuity : ['G0']);
+        mesh = configureSurfaceMesh(geom);
+      }
+
       const feature: Feature = {
-        id: crypto.randomUUID(),
+        id: featureId,
         name: `Fill ${n}`,
         type: 'thicken',
         params: {
@@ -78,7 +99,7 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
           continuityPerEdge: params.continuityPerEdge.map((s: 'G0' | 'G1' | 'G2') => ({ G0: 0, G1: 1, G2: 2 }[s] ?? 0)),
           operation: params.operation,
         },
-        mesh: configureSurfaceMesh(geom),
+        mesh,
         visible: true,
         suppressed: false,
         timestamp: Date.now(),

@@ -5,6 +5,11 @@ import type { CADSliceContext } from '../../../sliceContext';
 import type { CADState } from '../../../state';
 import { disposeMeshDeferred } from '../../../../../engine/occ/picking';
 import { configureSurfaceMesh } from './surfaceEditShared';
+import { getOccSync } from '../../../../../engine/occ/loader';
+import { globalBRepBodyRegistry } from '../../../../../engine/occ/globalRegistry';
+import { occOffsetSurfaceWithInstance } from '../../../../../engine/occ/ops/offsetSurface';
+import { createRegisteredOccMesh } from '../../../../../engine/occ/registeredMesh';
+import { BODY_MATERIAL } from '../../../../../components/viewport/scene/bodyMaterial';
 
 export function createSurfaceShapeActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -124,9 +129,30 @@ export function createSurfaceShapeActions({ set, get }: CADSliceContext): Partia
       }
       const signedDistance =
         params.direction === 'inward' ? -params.offsetDistance : params.offsetDistance;
-      let mesh = sourceMesh
-        ? configureSurfaceMesh(GeometryEngine.offsetSurface(sourceMesh, signedDistance))
-        : undefined;
+
+      // Try OCC offset when source has a BRep body ID (proper handling of self-intersections).
+      const featureId = crypto.randomUUID();
+      let mesh: THREE.Mesh | undefined;
+      const sourceBrepId = sourceMesh?.userData?.['brepBodyId'] as string | undefined;
+      if (sourceBrepId) {
+        const occ = getOccSync();
+        const sourceBody = occ ? globalBRepBodyRegistry.get(sourceBrepId) : undefined;
+        if (occ && sourceBody) {
+          try {
+            const offsetBody = occOffsetSurfaceWithInstance(occ.oc, sourceBody, signedDistance, {
+              sourceFeatureId: featureId,
+            });
+            if (offsetBody) mesh = createRegisteredOccMesh(occ.oc, offsetBody, BODY_MATERIAL, featureId);
+          } catch (err) {
+            console.warn('[commitOffsetSurface] OCC offset failed, using THREE fallback:', err);
+          }
+        }
+      }
+      if (!mesh) {
+        mesh = sourceMesh
+          ? configureSurfaceMesh(GeometryEngine.offsetSurface(sourceMesh, signedDistance))
+          : undefined;
+      }
 
       let joinNote = '';
       let consumedSourceId: string | undefined;
@@ -152,7 +178,7 @@ export function createSurfaceShapeActions({ set, get }: CADSliceContext): Partia
       }
 
       const feature: Feature = {
-        id: crypto.randomUUID(),
+        id: featureId,
         name: `Offset Surface ${n}`,
         type: 'offset-face',
         params: { featureKind: 'offset-surface', ...params },
