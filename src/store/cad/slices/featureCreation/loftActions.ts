@@ -17,6 +17,7 @@ import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMateria
 import { errorMessage } from '../../../../utils/errorHandling';
 import { shapeToOccSketchProfile, toolBooleanOp } from './featureCreationShared';
 import { addToast } from '../../../toastStore';
+import { useComponentStore } from '../../../componentStore';
 
 export function createLoftActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -168,6 +169,22 @@ export function createLoftActions({ set, get }: CADSliceContext): Partial<CADSta
         loftProfileSketchIds: [],
         statusMessage: `${loftBodyKind === 'surface' ? 'Surface ' : ''}Loft created across ${profileSketches.length} profiles${r.note} (${units})`,
       });
+
+      // Register a browser body so the lofted solid/surface shows under "Bodies".
+      if (loftOperation === 'new-body' || loftOperation === 'new-component') {
+        const cs = useComponentStore.getState();
+        let componentId = profileSketches[0]?.componentId ?? cs.activeComponentId ?? cs.rootComponentId;
+        if (loftOperation === 'new-component') {
+          const parentId = cs.activeComponentId ?? cs.rootComponentId;
+          componentId = cs.addComponent(parentId, `Component ${Object.keys(cs.components ?? {}).length + 1}`);
+        }
+        const bodyCount = Object.keys(cs.bodies).length + 1;
+        const bodyId = cs.addBody(componentId, `${loftBodyKind === 'surface' ? 'Surface' : 'Body'} ${bodyCount}`);
+        if (bodyId) {
+          cs.addFeatureToBody(bodyId, featureId);
+          if (mesh) cs.setBodyMesh(bodyId, mesh);
+        }
+      }
     },
   };
 }

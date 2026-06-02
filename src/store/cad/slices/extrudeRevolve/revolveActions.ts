@@ -16,6 +16,7 @@ import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
 import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
 import { errorMessage } from '../../../../utils/errorHandling';
 import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
+import { useComponentStore } from '../../../componentStore';
 import {
   makeFaceBoundarySketchProfile,
   makeRevolveSketchProfileFromShape,
@@ -231,6 +232,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
         ...REVOLVE_DEFAULTS,
         statusMessage: `Revolved face by ${angleDesc} around ${revolveAxis} (${units})${faceFallbackNote}`,
       });
+      registerRevolveBody(feature, revolveOperation, revolveBodyKind, undefined);
       return;
     }
 
@@ -442,6 +444,31 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       ...REVOLVE_DEFAULTS,
       statusMessage: `Revolved ${sketch.name} by ${angleDesc} around ${revolveAxis === 'centerline' ? 'sketch centerline' : revolveAxis} (${units})${sketchFallbackNote}`,
     });
+    registerRevolveBody(feature, revolveOperation, revolveBodyKind, sketch.componentId);
   },
   };
+}
+
+/** Register a browser body for a new-body / new-component revolve so it appears
+ *  under "Bodies" (revolve sets features directly rather than via placeToolFeatureAsync). */
+function registerRevolveBody(
+  feature: Feature,
+  operation: string | undefined,
+  bodyKind: 'solid' | 'surface',
+  sketchComponentId: string | undefined,
+): void {
+  if (operation && operation !== 'new-body' && operation !== 'new-component') return;
+  if (!feature.mesh) return;
+  const cs = useComponentStore.getState();
+  let componentId = sketchComponentId ?? cs.activeComponentId ?? cs.rootComponentId;
+  if (operation === 'new-component') {
+    const parentId = cs.activeComponentId ?? cs.rootComponentId;
+    componentId = cs.addComponent(parentId, `Component ${Object.keys(cs.components ?? {}).length + 1}`);
+  }
+  const bodyCount = Object.keys(cs.bodies).length + 1;
+  const bodyId = cs.addBody(componentId, `${bodyKind === 'surface' ? 'Surface' : 'Body'} ${bodyCount}`);
+  if (bodyId) {
+    cs.addFeatureToBody(bodyId, feature.id);
+    cs.setBodyMesh(bodyId, feature.mesh as THREE.Mesh);
+  }
 }

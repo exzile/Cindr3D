@@ -1,7 +1,7 @@
 /**
  * OCC-3.4 — Sketch-based revolve.
  * Converts a SketchProfile + plane frame into a solid via
- * BRepPrimAPI_MakeRevol_2 around a world-space axis.
+ * BRepPrimAPI_MakeRevol_1 around a world-space axis.
  */
 import * as THREE from 'three';
 import type { OcctRaw } from '../types';
@@ -12,7 +12,9 @@ import { type SketchProfile, sketchProfileToWires, wireToFace } from './sketchTo
 import { runEdgeOpBuild } from './adjacency';
 
 type OccRevolveApi = OcctRaw & {
-  BRepPrimAPI_MakeRevol_2: new (shape: unknown, axis: unknown, angle: number, copy: boolean) => { Build(progress?: unknown): void; Shape(): unknown; delete(): void };
+  // MakeRevol_1(S, A, D, Copy) is the ANGLED overload (4 args). MakeRevol_2(S, A, Copy)
+  // is full-360 only (3 args) — passing an angle to _2 throws an arity error in this build.
+  BRepPrimAPI_MakeRevol_1: new (shape: unknown, axis: unknown, angle: number, copy: boolean) => { Build(progress?: unknown): void; Shape(): unknown; delete(): void };
   BRepAlgoAPI_Fuse_3: new (a: unknown, b: unknown) => { SetNonDestructive?(v: boolean): void; Build(p?: unknown): void; IsDone?(): boolean; HasErrors?(): boolean; Shape(): unknown; delete(): void };
   Message_ProgressRange_1: new () => { delete?: () => void };
 };
@@ -77,7 +79,7 @@ export function occRevolveWithInstance(
 
   const clampedAngle = THREE.MathUtils.clamp(angleRad, -Math.PI * 2, Math.PI * 2);
 
-  const revol = new occ.BRepPrimAPI_MakeRevol_2(face, occAxis, clampedAngle, true);
+  const revol = new occ.BRepPrimAPI_MakeRevol_1(face, occAxis, clampedAngle, true);
   let resultShape: unknown;
   try {
     runEdgeOpBuild(oc, revol);
@@ -89,7 +91,7 @@ export function occRevolveWithInstance(
   // Two-sided: also revolve in the negative direction and fuse
   if (options.side2AngleRad !== undefined && Math.abs(options.side2AngleRad) > 1e-6) {
     const clampedAngle2 = THREE.MathUtils.clamp(Math.abs(options.side2AngleRad), 0, Math.PI * 2);
-    const revol2 = new occ.BRepPrimAPI_MakeRevol_2(face, occAxis, -clampedAngle2, true);
+    const revol2 = new occ.BRepPrimAPI_MakeRevol_1(face, occAxis, -clampedAngle2, true);
     let side2Shape: unknown;
     try {
       runEdgeOpBuild(oc, revol2);
