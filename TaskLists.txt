@@ -242,11 +242,10 @@ after all their items shipped; see git history if their detail is needed.
 # every new THREE.BufferGeometry in cleanup.
 #
 # Implemented 2026-06-01 (MirrorOpt branch):
-#   SURF-1  OCC open-surface bodies: Loft (isSolid:false in ThruSections), Sweep
-#           (wire-profile not face), Revolve (wire-profile not face) all now try OCC
-#           first in surface mode and fall back to THREE mesh on failure. Extrude
-#           surface stays on GeometryEngine.extrudeSketchSurface (unchanged; complex
-#           extrude commit structure deferred).
+#   SURF-1  OCC open-surface bodies: all four create ops now have OCC paths.
+#           Loft (isSolid:false in ThruSections), Sweep (wire-profile not face),
+#           Revolve (wire-profile not face), Extrude (occExtrudeSurfaceWithInstance —
+#           wire prism, no cap). All fall back to THREE mesh on OCC failure.
 #   SURF-8  commitUntrim now finds the source mesh and calls GeometryEngine.untrimSurface
 #           instead of creating a params-only feature. Hides source on commit.
 #   SURF-10 Move/Copy and Align added to the Surface MODIFY ribbon.
@@ -257,7 +256,7 @@ after all their items shipped; see git history if their detail is needed.
 #           wired through commitRuledSurface.
 #
 # ── P0: foundational ───────────────────────────────────────────────────────────
-# [~] SURF-1  Real OCC open-surface bodies for Extrude/Revolve/Sweep/Loft.
+# [x] SURF-1  Real OCC open-surface bodies for Extrude/Revolve/Sweep/Loft.
 #     Today bodyKind='surface' falls back to GeometryEngine THREE meshes (see
 #     feature-occ-status memory; sweepActions.ts:127, loftActions.ts:97). A surface
 #     body therefore carries NO brepBodyId, so it cannot be filleted, stitched into
@@ -269,7 +268,7 @@ after all their items shipped; see git history if their detail is needed.
 #     This unblocks SURF-3/4/9. HIGH effort, HIGH value.
 #
 # ── P1: placeholder create-ops that produce wrong geometry ─────────────────────
-# [ ] SURF-2  Patch fills only PLANAR boundaries. commitPatch → GeometryEngine
+# [~] SURF-2  Patch fills only PLANAR boundaries. commitPatch → GeometryEngine
 #     .patchSketch → THREE.ShapeGeometry (profileSweeps.ts:105-114), a flat 2D
 #     triangulation. A non-planar closed boundary collapses to a flat/garbage face.
 #     Fusion Patch fills ANY closed boundary loop with a smooth surface and exposes
@@ -325,7 +324,7 @@ after all their items shipped; see git history if their detail is needed.
 #     the regenerated surface mesh/body so Untrim actually restores the underlying
 #     surface in the viewport and timeline. Add a regression test.
 #
-# [ ] SURF-9  Offset Surface is a naive per-vertex normal offset
+# [~] SURF-9  Offset Surface is a naive per-vertex normal offset
 #     (surfaceEditing.ts:4-26) — no self-intersection handling, no variable offset,
 #     and it cannot generate the offset as a true BRep. After SURF-1, route through
 #     OCC BRepOffset_MakeOffset (or BRepOffsetAPI_MakeOffsetShape) so concave/convex
