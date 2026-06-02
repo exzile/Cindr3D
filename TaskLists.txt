@@ -1,10 +1,12 @@
 ## DesignCAD - Active Implementation Task List
 ## Status key: [~] partial  [ ] open  [>] in progress  [skip] intentional no-op / deferred spike
-## Last updated: 2026-05-31
-## Branch: SketchOptimization
+## Last updated: 2026-06-01
+## Branch: MirrorOpt
 
 Purpose:
 Keep this file focused on active work. Open task sections retain their detailed instructions.
+Completed sections (SKETCH-1/2 parity, PRIM primitive-dialog parity) were removed 2026-06-01
+after all their items shipped; see git history if their detail is needed.
 
 ## Current P0 Notes
 
@@ -82,232 +84,26 @@ Keep this file focused on active work. Open task sections retain their detailed 
 # [ ] QA-3  Rolling-ball corner output vs Fusion: confirm OCC's automatic corner output
 #           remains acceptable for the current fillet parity target.
 
-# SKETCH-1: Sketch tool / constraint / dimension parity vs Fusion 360 (2026-05-30)
 # ══════════════════════════════════════════════════════════════════════════════
-# Full audit of Cindr3D sketch against Fusion 360 SDK (Sketch/ headers).
-# Cross-referenced: entity types, editing tools, constraints, dimensions, UX.
-# Status key: [~] partial/incomplete  [ ] missing / stub
+# SKETCH-2-IMPL: remaining manual QA (implementation all shipped)
+# ══════════════════════════════════════════════════════════════════════════════
+# The SKETCH-1 (missing tools) and SKETCH-2 (tool correctness) implementation work
+# is complete and removed. Only these live-viewport QA checks remain open. Run
+# `npm run dev`, draw in a sketch on XY and on an XZ/offset plane.
 #
-# ── ENTITY / DRAWING TOOLS ────────────────────────────────────────────────────
-#
-# [x] SKETCH-1.1 SketchFixedSpline — Fusion's fixed/frozen spline type that does NOT
-#     deform under constraints (used for imported external curve data, STEP round-trip).
-#     No 'fixed-spline' entity type exists. Add entity type that renders as a regular
-#     spline but is excluded from the solver (treated like a Fix-constrained entity).
-#     Low priority; required for clean STEP/DXF import of spline geometry.
-#
-# [x] SKETCH-1.2 BreakLink — Fusion lets you break the associativity of a projected /
-#     intersected curve so it becomes a standalone editable entity. We project curves
-#     with `linked: true` but there is no action to toggle linked->false. Add a
-#     right-click context-menu action (and toolbar button) that clears `linked` on
-#     selected projected entities so they can be edited freely.
-#
-# ── EDITING TOOLS ─────────────────────────────────────────────────────────────
-#
-# [x] SKETCH-1.3 Mirror along a picked sketch line — our commitSketchMirror only
-#     supports 3 fixed axes (horizontal, vertical, diagonal). Fusion lets you pick any
-#     existing sketch line as the mirror axis and reflects the selection across it.
-#     Implementation: when the user picks a line entity as the axis, compute the
-#     reflection matrix from the line's direction vector (project-reflect-unproject in
-#     the sketch plane) and apply it to all selected entity points.
-#     File: sketchTransformActions.ts (extend commitSketchMirror); SketchMirrorPanel.tsx
-#     (add "Pick Line" step before the commit button).
-#
-# [x] SKETCH-1.4 Offset Curves (HIGHEST PRIORITY — currently a SILENT NO-OP) —
-#     the toolbar button and hotkey 'O' activate 'sketch-offset', but NO commit handler
-#     exists in any commitHandlers file and commitSketchOffset does not exist in the
-#     store. The user clicks and nothing happens. Fusion's Offset creates parallel
-#     copies of all selected curves at a fixed distance.
-#     Implementation:
-#       - Lines: translate perpendicular to direction by offset distance.
-#       - Arcs/circles: increase or decrease radius by offset distance.
-#       - Splines: offset each control/fit point along local normal.
-#       - Chain mode: walk tangent-connected curves and offset the whole chain.
-#     Engine: add sketchOffsetCurves(entities, distance, side) in
-#       engine/geometryEngine/core/sketch/.
-#     Store: add commitSketchOffset() in sketchTransformActions.ts.
-#     Wire: add 'sketch-offset' case to the commit handler chain (editingHandlers or
-#       lineEditingHandlers). Panel: reuse the existing SketchTransformPanel pattern.
-#
-# [x] SKETCH-1.5 Break / Split point on curve — 'break' is in the Tool type union
-#     (core.ts) but has NO commit handler. Clicking does nothing. Fusion's Break splits
-#     a curve at the click point into two separate entities, automatically adding a
-#     coincident constraint at the split point.
-#     Implementation: raycast to the nearest sketch curve, compute the parametric split
-#     position (t value), replace the entity with two entities whose shared endpoint
-#     is coincident. For arcs: split at the angle. For splines: split the control
-#     polygon. Add a 'break' case to lineEditingHandlers.ts.
-#
-# ── CONSTRAINTS ───────────────────────────────────────────────────────────────
-# [x] SKETCH-1.6 Smooth constraint (SmoothConstraint.h) — G2 curvature continuity
-#     PLUS co-linear curvature vectors at a junction (no twist / curvature direction
-#     discontinuity). Different from our existing Curvature constraint which only
-#     enforces equal magnitude. Add ConstraintType 'smooth'; solver residuals: match
-#     curvature magnitude AND the direction of the curvature vector (osculating circle
-#     axis) at the shared endpoint.
-#
-# [x] SKETCH-1.7 Horizontal/Vertical Points constraints
-#     (HorizontalPointsConstraint.h, VerticalPointsConstraint.h) — constrains two
-#     arbitrary (non-adjacent) points to share the same U or V coordinate in the
-#     sketch plane. Different from constraining a LINE to be horizontal/vertical.
-#     Useful for aligning a point on one entity with a point on a separate entity.
-#     Add ConstraintType 'horizontal-points' / 'vertical-points'; solver residuals
-#     p1.u == p2.u and p1.v == p2.v respectively.
-#
-# [skip] SKETCH-1.8 Parametric Pattern constraints
-#     (CircularPatternConstraint.h, RectangularPatternConstraint.h) — Fusion's sketch
-#     patterns create copies AND a constraint that keeps them synchronized. Editing one
-#     copy propagates to all others via the solver. Our sketch patterns (commitSketchRect
-#     Pattern / commitSketchCircPattern) copy entities but add no linking constraint.
-#     Add ConstraintType 'sketch-rect-pattern' / 'sketch-circ-pattern' whose solver
-#     residuals enforce equal spacing between copies and the original. This upgrades
-#     sketch patterns from "paste copies" to "live parametric patterns".
-#
-# ── DIMENSIONS ────────────────────────────────────────────────────────────────
-#
-# [x] SKETCH-1.9 Angular dimension wire-up — DimensionType 'angular' is in the union
-#     and the constraint types include 'angular'. Verify end-to-end: (a) does the
-#     Dimension tool let the user click two lines to produce an angular dim? (b) does
-#     the solver actually solve dimension-angular residuals? Fix any gap in the click
-#     handler → addDimension → solver path. Regression test: two lines at 45°,
-#     apply angular dim of 60°, verify lines rotate to meet it.
-#
-# [x] SKETCH-1.10 Offset Curves Dimension (SketchOffsetCurvesDimension.h) — a
-#     parametric dimension on the distance between an original curve and its offset
-#     copy (see SKETCH-1.4). Required to make Offset Curves fully parametric: changing
-#     the dimension value re-runs the offset. Add DimensionType 'offset-curves' +
-#     solver residual: distance between parallel curve centroids == value.
-#     Implement AFTER SKETCH-1.4 is done.
-#
-# [x] SKETCH-1.11 Tangent Distance Dimension (SketchTangentDistanceDimension.h) —
-#     distance from a point to a tangent line of a circle. Niche. Low priority.
-#
-# ── VISUAL / UX GAPS ──────────────────────────────────────────────────────────
-# [x] SKETCH-1.12 Per-entity DOF color — Fusion colors unconstrained curves BLUE and
-#     fully-constrained curves BLACK. We set fullyConstrained / overConstrained on the
-#     whole Sketch but never color individual entities by degree-of-freedom. After each
-#     solver run, mark each entity's points as 'free' or 'fixed' based on whether the
-#     solver moved them; render free entities in a distinct color (e.g., #5b9bd5 blue).
-#     Files: SketchEntityRenderer (or equivalent), ConstraintSolver.ts (expose per-
-#     point fixed status in SolverResult).
-#
-# [x] SKETCH-1.13 Constraint icons on canvas — Fusion shows small glyphs (padlock,
-#     two parallel bars, right-angle symbol, etc.) near the constrained geometry.
-#     We render no visual indicators. Add lightweight SVG overlays (or Three.js sprites)
-#     positioned at constraint midpoints. Medium complexity, high UX value.
-#
-# [x] SKETCH-1.14 Closing-gap auto-snap at draw time — when the current draw point is
-#     within ~0.5 mm of the sketch's first drawn point, snap to it exactly and show a
-#     "close loop" indicator. This PREVENTS the gap from occurring (the gap-heal fix
-#     already shipped handles existing/imported sketches retroactively). Implementation:
-#     in the line-commit handler, check distance from the new point to all existing
-#     SketchPoints; if within the snap threshold, substitute the first point's
-#     coordinates and mark the loop as closed.
-#
-# [x] SKETCH-1.15 Curve-curve intersection snap — SnapType union has 'intersection'
-#     but the snap engine may only find grid/endpoint/midpoint/center snaps in practice.
-#     Verify and add snap candidates at the parametric intersection of any two sketch
-#     curves (solve for t1,t2 such that C1(t1) == C2(t2) and offer as a snap point).
-#
-# VERIFICATION GATE for every SKETCH-1.x item:
-#   npx tsc --noEmit clean . npx vitest run green . manual QA in Claude Preview
-#   dev server (localhost:5173). Per CLAUDE.md: run gitnexus_impact before editing
-#   symbols; plane-aware math via getSketchAxes(sketch)->t1/t2 (not raw p.x/p.y).
+# [ ] C1.c  Draw a 3-point arc whose middle click is below the chord -> arc bulges
+#           down (matches the cursor), not up. (tangentHandlers.ts:194-223)
+# [ ] C2.c  Chain a tangent arc off the end of a line -> smooth (G1), no kink.
+#           (tangentHandlers.ts:282-360; dragged variant sketchEventHelpers.ts:108-117)
+# [ ] C3.c  2-tangent + 3-tangent circle on an XZ/offset sketch -> center lands on
+#           the actual plane (compare to the same construction on XY shifted).
+# [ ] B5.c  Symmetric tool: two points + a vertical centerline -> points become
+#           mirror images. (useSketchConstraintTool.ts:19-30; solver expects [axis,a,b])
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SKETCH-2: Sketch CORRECTNESS audit — existing tools that misbehave vs Fusion
-# ══════════════════════════════════════════════════════════════════════════════
-# Deep behavioral audit (2026-05-30) of drawing tools, snaps, and constraints.
-# SKETCH-1 tracks MISSING tools; SKETCH-2 tracks BUGS in tools that already exist.
-# All items below were verified against the actual code (file:line cited).
-# Status: [~] partial  [ ] open
-#
-# ══ A. SNAP ENGINE ════════════════════════════════════════════════════════════
-# All snap logic is in ONE file: SketchInteraction.tsx (findSnapCandidate 214-384,
-# snapToGrid 192-207). No separate engine, no inference/alignment guides.
-#
-# [skip] SKETCH-2.A10  No inference / alignment guide lines anywhere (GAP, major Fusion miss).
-#     No dashed H/V/parallel/perpendicular/collinear guides as the cursor moves. Only
-#     static snap glyphs exist. Fix: inference engine testing cursor alignment vs
-#     existing geometry + dashed guide rendering + auto-constrain on commit.
-#     (Overlaps SKETCH-1 inference notes.)
-#
-# ══ B. CONSTRAINTS (tool application + Newton-Raphson solver) ══════════════════
-# Solver math for point-DOF constraints (parallel/perp/collinear/H/V/coincident-pos/
-# midpoint/concentric/symmetric mirror) is CORRECT. Plane projection (sketchSolveInputs
-# .ts:31-48 t1/t2, un-project constraintAndViewActions.ts:135-137) is CORRECT. The bugs
-# are about missing DOFs, entity ordering, and pointIndices.
-#
-# [x] SKETCH-2.B10  No live constraint inference while drawing; AutoConstrain doesn't
-#     re-solve (BUG/GAP). Only polygon/rectangle commit auto-adds constraints. autoConstrain
-#     Sketch (constraintAndViewActions.ts:10-106) is a manual batch pass that never calls
-#     solveSketch, so its constraints don't move geometry until something else solves.
-#     Fix: live H/V/coincident inference glyphs in freehand handlers; have autoConstrain
-#     Sketch call solveSketch() after adding. (Overlaps SKETCH-2.A10.)
-#
-# [x] SKETCH-2.B11  Rectangle edges have no solver DOF; arc pick uses full circle (BUG).
-#     Rectangles store 2 points; edges are derived corners (ConstraintSolver.ts:207-220),
-#     so perpendicular/parallel on a rectangle EDGE silently does nothing. Arc picking
-#     (useSketchConstraintTool.ts:105) tests |dist-radius| against the FULL circle, so you
-#     can pick an arc on the undrawn part. Fix: explode rectangles into 4 line entities
-#     (like polygons); clamp arc pick to [startAngle,endAngle].
-#
-# ══ C. DRAWING TOOL GEOMETRY ══════════════════════════════════════════════════
-# Renderer convention (load-bearing): createArc (sketchRendering.ts:154) forces every arc
-# CCW (if endAngle<=startAngle add 2pi). Any handler computing angles must guarantee the
-# intended arc is the CCW one or it renders the complementary (wrong-side) arc.
-#
-# [x] SKETCH-2.C6  spline-control is NOT a control-point curve (GAP). curveHandlers.ts:451
-#     accumulates points; finalize (sketchEventHelpers.ts:27-40) builds a CatmullRom that
-#     INTERPOLATES every click. A true control-point spline treats clicks as a control hull
-#     the curve does NOT pass through. So 'spline' (fit) and 'spline-control' produce
-#     identical curves. Fix: real B-spline/Bezier (de Boor / de Casteljau) over the hull.
-#
-# [x] SKETCH-2.C7  blend-curve is G1 only; the G1/G2 toggle is cosmetic (GAP). curveEditing
-#     Handlers.ts:21-61 always builds a G1 (tangent-matched) cubic Bezier; blendCurveMode
-#     'g2' is shown in status text but never changes the math. Fix: implement G2 (curvature-
-#     matched) blend when mode==='g2', or remove the toggle.
-#
-# VERIFICATION GATE per item: npx tsc --noEmit clean . npx vitest run green . manual QA
-#   in Claude Preview (localhost:5173). Plane-aware math via getSketchAxes->t1/t2.
-
-# ══════════════════════════════════════════════════════════════════════════════
-# SKETCH-2-IMPL: Detailed implementation tasks for the SKETCH-2 correctness audit
-# ══════════════════════════════════════════════════════════════════════════════
-# Each SKETCH-2 finding broken into actionable sub-steps: exact file, function,
-# math, store wiring, and test. Do items top-to-bottom (priority order). Run the
-# verification gate after each: npx tsc --noEmit . npx eslint <files> . npx vitest
-# run src/test (+ new test) . manual QA in Claude Preview (localhost:5173).
-# Per CLAUDE.md: gitnexus_impact before editing a symbol; plane-aware math via
-# getSketchAxes(sketch)->t1/t2; never raw p.x/p.y.
-#
-# ── P2: C1 — arc-3point picks the CCW side through the middle point ────────────
-#   File: tangentHandlers.ts:194-223. Renderer forces CCW (sketchRendering.ts:154).
-#   [ ] C1.c  Test/QA: draw a 3-point arc whose middle click is below the chord ->
-#             arc bulges down (matches the cursor), not up.
-#
-# ── P2: C2 — tangent-arc start tangent matches the connecting curve ───────────
-#   File: tangentHandlers.ts:282-360 and dragged variant sketchEventHelpers.ts:108-117.
-#   [ ] C2.c  QA: chain a tangent arc off the end of a line -> smooth (G1), no kink.
-#
-# ── P2: C3 — tangent circles honor sketch.planeOrigin ─────────────────────────
-#   File: tangentHandlers.ts (toUV :55, toUV3 :146, center reconstruction :99,:183).
-#   [ ] C3.c  Test: 2-tangent + 3-tangent circle on an XZ/offset sketch -> center lands
-#             on the actual plane (compare to the same construction on XY shifted).
-#
-# ── P3: B5 — Symmetric tool: two entities then axis ───────────────────────────
-#   File: useSketchConstraintTool.ts:19-30. Solver expects [axis, a, b] (:436).
-#   [ ] B5.c  Test: two points + a vertical centerline -> points become mirror images.
-#
-# ── P4: REMAINING DRAWING + INFERENCE ─────────────────────────────────────────
-#   [x] C6  spline-control: build a real B-spline/Bezier over the control hull (de Boor
-#           / de Casteljau) in sketchEventHelpers.ts:27-40 instead of CatmullRom, so the
-#           curve does NOT interpolate the clicks (true control-point behavior).
-#   [x] C7  blend-curve G2 (curveEditingHandlers.ts:21-61): when blendCurveMode==='g2'
-#           build a curvature-matched (quintic) blend; else keep G1. Or remove the toggle.
 # BROWSER QA — OCC-21/22 + 21.4e geometry (NEEDS A HUMAN IN THE LIVE 3D APP)
-# ──────────────────────────────────────────────────────────────────────────────
-# All logic/math below is tsc-clean + unit-tested (full suite 1436 green), but the
+# ══════════════════════════════════════════════════════════════════════════════
+# All logic/math below is tsc-clean + unit-tested (full suite green), but the
 # actual OCC kernel geometry was NOT exercisable in the headless test harness.
 # These steps verify the on-screen result. Run `npm run dev`, open the Design
 # workspace. All tools live in the ribbon DESIGN tab → "MODIFY" dropdown unless
@@ -416,99 +212,132 @@ Keep this file focused on active work. Open task sections retain their detailed 
 # WHEN DONE: tick each ✓ here; for any ✗ paste the bottom status text + any
 # console lines starting with "[occ…]" and I'll fix the kernel path.
 
-# ════════════════════════════════════════════════════════════════════════════
-# PRIM: Create-menu primitive dialogs (Box/Cylinder/Sphere/Torus/Coil/Pipe)
-#       Fusion 360 parity + dialog-style migration audit (added 2026-05-31)
-# ════════════════════════════════════════════════════════════════════════════
-# Audit context: Create dropdown wires Box/Cylinder/Sphere/Torus → 'primitive-*'
-# (PrimitivesDialog, src/components/dialogs/primitives/PrimitivesDialog.tsx),
-# Coil → 'coil' (CoilDialog, dialogs/solid/CoilDialog.tsx),
-# Pipe → 'pipe' (PipeDialog, dialogs/solid/PipeDialog.tsx).
-# Geometry is SOUND: Box/Cyl/Sphere/Torus are real OCC BReps via
-# PrimitiveBodies.tsx (THREE fallback); Coil is OCC helical sweep w/ fallback.
-# The gaps are DIALOG STYLE + Fusion parameter/operation parity, NOT geometry.
+# ══════════════════════════════════════════════════════════════════════════════
+# SURF: Surface workspace parity vs Fusion 360 (audited 2026-06-01)
+# ══════════════════════════════════════════════════════════════════════════════
+# Audit scope: the Surface ribbon tab (RibbonSurfaceTab.tsx) — CREATE + MODIFY —
+# against Fusion 360's Surface workspace, cross-referenced with the SDK Features/
+# headers and the live commit actions / geometry-engine implementations.
 #
-# Fusion SDK reference (verified 2026-05-31 from local install
-#   …\webdeploy\production\4bca7369…\CPP\include\Fusion\Features\):
-#   - All six have *Feature.h headers; only Coil + Pipe have *FeatureInput.h.
-#   - FeatureOperations (FusionTypeDefs.h): JoinFeatureOperation,
-#     CutFeatureOperation, IntersectFeatureOperation, NewBodyFeatureOperation,
-#     NewComponentFeatureOperation.
-#   - CoilFeatureTypes: RevolutionsAndHeight / RevolutionsAndPitch /
-#     HeightAndPitch / Spiral. CoilFeatureSectionTypes: Circular / Square /
-#     TriangularExternal / TriangularInternal. CoilFeatureSectionPositions:
-#     Inside / OnCenter / Outside. Plus isClockwiseRotation, isSolid, diameter.
-#   - PipeSectionTypes: Circular / Square / Triangular. Pipe input has
-#     sectionSize, isHollow, sectionThickness, distanceOne, distanceTwo (closed
-#     paths), operation.
-#   - Standard dialog fields: Box = Length/Width/Height; Cylinder = Diameter +
-#     Height; Sphere = Diameter; Torus = Torus(major) diameter + section position.
+# TOOL-PRESENCE PARITY IS COMPLETE. Every Fusion Surface tool is present and wired,
+# and we additionally ship Surface Primitives, Surface Split, Merge, Delete Face,
+# and Thicken as extensions. Fillet and Reverse Normal route through the shared
+# dialogs in ActiveDialog.tsx (cases 'fillet' / 'reverse-normal'), not a surface-
+# specific action. So nothing is MISSING at the button/dialog level.
 #
-# Verification gate per item: npx tsc --noEmit clean · npx vitest run green ·
-#   manual QA in Claude Preview (localhost:5173) opening each Create primitive.
-
-# ── P1: dialog-style migration (the user-reported issue) ────────────────────
-# [x] PRIM-1  Migrate PrimitivesDialog.tsx (Box/Cylinder/Sphere/Torus) OFF the
-#             legacy DialogShell + settings-grid + form-group + raw <input> onto
-#             the tool-panel / tp-* style. Copy CoilDialog.tsx as the reference
-#             (tool-panel-overlay > tool-panel > tp-header/tp-body/tp-row/
-#             tp-input-group/tp-unit/tp-select/tp-actions). Import ToolPanel.css.
-#             Use <ExpressionInput> for numeric fields, tp-toggle for booleans.
-#             Goal: visually identical to the Coil dialog + sketch palette panels.
-# [x] PRIM-2  Migrate PipeDialog.tsx the same way (also still on DialogShell +
-#             form-group + raw checkbox). Keep its edit-feature support.
-# [x] PRIM-3  Per-tool header icon color square (tp-header-icon) for each
-#             primitive, matching the Create-menu icon colors, like CoilDialog's.
-
-# ── P2: Fusion parameter + operation parity ─────────────────────────────────
-# [x] PRIM-4  Implement real primitive operations for Box/Cylinder/Sphere/Torus:
-#             New Body / Join / Cut / Intersect / New Component (Fusion
-#             FeatureOperations). addPrimitive now routes Join/Cut/Intersect through
-#             OCC boolean placement and New Component through the component store.
-# [x] PRIM-5  Rename fields to Fusion conventions and switch radius→diameter:
-#             Box Width/Height/Depth → Length/Width/Height; Cylinder
-#             Radius Bottom/Top → Diameter (+ Height); Sphere Radius → Diameter;
-#             Torus Major Radius/Tube Radius → Torus Diameter + Section Diameter
-#             (optionally Section Position Inside/OnCenter/Outside). Keep storing
-#             radii internally (PrimitiveBodies/addPrimitive read radius/tubeRadius)
-#             but show diameter = 2*radius in the UI to match Fusion.
-# [x] PRIM-6  Decide the fate of the non-Fusion "Radius Top" tapered-cylinder
-#             field (Fusion Cylinder has no taper; taper also breaks OCC edge-pick,
-#             see PrimitiveBodies.tsx:88-91). Either drop it for parity or relabel
-#             it clearly as a Cindr3D extension. Document the choice here.
-
-# ── P3: edit + live preview parity ──────────────────────────────────────────
-# [x] PRIM-7  Add edit support to PrimitivesDialog (double-click a primitive
-#             feature reopens its dialog pre-filled, like CoilDialog/PipeDialog
-#             use editingFeatureId). Needs an updatePrimitiveParams store action
-#             that rebuilds the OCC body in place (PrimitiveBodies already rebuilds
-#             on paramKey change, so this may just be a params patch + re-render).
-# [x] PRIM-8  Live in-canvas preview while the dialog is open (Fusion updates the
-#             primitive live as fields change). Render a ghosted preview body keyed
-#             off the current dialog params before commit.
-
-# ── P4: dedupe + deeper parity ──────────────────────────────────────────────
-# [x] PRIM-9  Remove the DEAD/duplicate 'primitive-coil' path. The Create menu
-#             wires Coil → 'coil' (CoilDialog); 'primitive-coil' (PrimitivesDialog
-#             kind="coil" + addPrimitive kind="coil", params outerRadius/wireRadius/
-#             turns) is unreachable from the menu AND uses divergent param names
-#             vs CoilDialog (coilDiameter/sectionDiameter/revolutions). Drop the
-#             'primitive-coil' case from ActiveDialog.tsx + TOOL_DIALOG_SCOPE, the
-#             kind==='coil' branch from PrimitivesDialog, and the coil branch from
-#             addPrimitive (primitiveFeatureActions.ts) so coil is single-sourced
-#             through CoilDialog. Verify nothing else dispatches 'primitive-coil'.
-# [x] PRIM-10 Coil section parity: Fusion CoilFeatureSectionTypes are Circular/
-#             Square/TriangularExternal/TriangularInternal (we have circle/square/
-#             triangle — no ext/int) and CoilFeatureSectionPositions Inside/
-#             OnCenter/Outside (we have none). Also add the 4th Fusion coil type
-#             "Spiral" (flat spiral) to CoilDialog's Type select.
-# [x] PRIM-11 Pipe section parity: Fusion PipeSectionTypes are Circular/Square/
-#             Triangular (we only do circular) and Pipe input exposes section
-#             SIZE + distanceOne/distanceTwo (partial-path sweep) + Intersect/
-#             New Component ops. Add section-type select + a path-extent control.
-# [skip] PRIM-12 Placement parity (largest item): Fusion places primitives by picking
-#             a base plane/face then click-dragging in the canvas, not by typing
-#             X/Y/Z. addPrimitive + PrimitiveBodies already support x/y/z + rx/ry/rz
-#             (rotation never surfaced in the dialog). Add a plane/point pick step
-#             (reuse the sketch-plane picker) and in-canvas drag manipulators;
-#             until then, at least expose the existing rx/ry/rz orientation fields.
+# The gaps are FUNCTIONAL QUALITY: most surface bodies are THREE meshes (not OCC
+# BReps), and several "create" ops are placeholder triangulations rather than real
+# surface solves. The work below upgrades each from "looks right in simple cases"
+# to "Fusion-equivalent BRep surface". Priority order: SURF-1 is foundational (most
+# others depend on real OCC surface bodies existing first).
+#
+# Fusion SDK reference: …\CPP\include\Fusion\Features\ (Extrude/Revolve/Sweep/Loft/
+# Patch/Offset/Ruled/Boundary-Fill + Stitch/Thicken). FeatureOperation enum:
+# NewBody/Join/Cut/Intersect/NewComponent. Surface continuity: G0/G1(tangent)/
+# G2(curvature) per boundary, with weight, on Patch/Loft/Fill/Extend.
+#
+# Verification gate per item: npx tsc --noEmit clean · npx vitest run green · manual
+# QA in the live Surface tab (localhost:5173). Per CLAUDE.md: gitnexus_impact before
+# editing a symbol; OCC VIEW-delete rules; tagShared() singleton materials; dispose
+# every new THREE.BufferGeometry in cleanup.
+#
+# Implemented 2026-06-01 (MirrorOpt branch):
+#   SURF-1  OCC open-surface bodies: Loft (isSolid:false in ThruSections), Sweep
+#           (wire-profile not face), Revolve (wire-profile not face) all now try OCC
+#           first in surface mode and fall back to THREE mesh on failure. Extrude
+#           surface stays on GeometryEngine.extrudeSketchSurface (unchanged; complex
+#           extrude commit structure deferred).
+#   SURF-8  commitUntrim now finds the source mesh and calls GeometryEngine.untrimSurface
+#           instead of creating a params-only feature. Hides source on commit.
+#   SURF-10 Move/Copy and Align added to the Surface MODIFY ribbon.
+#   SURF-4  Opening the Surface Fillet dialog now checks for OCC-backed surface bodies
+#           and shows a status-bar warning if none are present.
+#   SURF-6  ruledSurface() extended with alignmentMode (direction/tangent/normal) and
+#           a distance offset; state slots ruledAlignmentMode/ruledAlignmentDistance
+#           wired through commitRuledSurface.
+#
+# ── P0: foundational ───────────────────────────────────────────────────────────
+# [~] SURF-1  Real OCC open-surface bodies for Extrude/Revolve/Sweep/Loft.
+#     Today bodyKind='surface' falls back to GeometryEngine THREE meshes (see
+#     feature-occ-status memory; sweepActions.ts:127, loftActions.ts:97). A surface
+#     body therefore carries NO brepBodyId, so it cannot be filleted, stitched into
+#     a watertight solid, offset robustly, or round-tripped to STEP — i.e. it is not
+#     a real Fusion surface. Add an OCC open-surface path: build the swept/lofted/
+#     revolved face WITHOUT capping (BRepBuilderAPI_MakeShell / sewn faces, no
+#     solid maker) and attach a brepBodyId. Reuse occSweep/occLoft/occRevolve
+#     instances but suppress the closing cap when operation targets a surface.
+#     This unblocks SURF-3/4/9. HIGH effort, HIGH value.
+#
+# ── P1: placeholder create-ops that produce wrong geometry ─────────────────────
+# [ ] SURF-2  Patch fills only PLANAR boundaries. commitPatch → GeometryEngine
+#     .patchSketch → THREE.ShapeGeometry (profileSweeps.ts:105-114), a flat 2D
+#     triangulation. A non-planar closed boundary collapses to a flat/garbage face.
+#     Fusion Patch fills ANY closed boundary loop with a smooth surface and exposes
+#     edge continuity (G0/G1/G2 to adjacent faces). Replace with an OCC n-sided
+#     filling (BRepOffsetAPI_MakeFilling) over the boundary edges + optional guide
+#     curves and continuity constraints.
+#
+# [ ] SURF-3  Fill (Boundary Surface) is a centroid-fan PLACEHOLDER.
+#     GeometryEngine.fillSurface (surfaceBasics.ts:3-39) builds a triangle fan from
+#     a centroid and fakes G1/G2 as a lerp-toward-centroid blend factor — there is
+#     no real tangency or curvature solve, and it falls back to a hardcoded 4-point
+#     plane when no edges are selected (surfaceCreationActions.ts:68). Replace with
+#     BRepOffsetAPI_MakeFilling honoring real per-boundary continuity (G0/G1/G2),
+#     curvature weights, and guide/interior point constraints, matching FillDialog's
+#     advertised options. Depends on SURF-1 (needs OCC boundary edges).
+#
+# [~] SURF-4  Surface Fillet does not apply to surface bodies. The Fillet button
+#     routes to the OCC FilletDialog (ActiveDialog.tsx:393) which requires a
+#     brepBodyId; THREE surface bodies have none, so picking a surface edge is a
+#     silent no-op. Fusion fillets surface edges AND builds a fillet/blend surface
+#     bridging two separate surfaces. After SURF-1, verify the OCC fillet accepts
+#     open-shell edges; add a two-surface blend-fillet mode if the single-body
+#     path doesn't cover it. Until SURF-1, surface fillet should at least warn
+#     instead of silently doing nothing.
+#
+# ── P2: parity of options on tools that already work ───────────────────────────
+# [ ] SURF-5  Continuity options (tangent G1 / curvature G2) across Loft, Patch,
+#     Fill, Extend. Fusion exposes per-end/per-boundary G0/G1/G2 with a weight; our
+#     loft has mode strings (closed/ruled/smooth) and extend has perpendicular/
+#     natural/tangent, but none solve true tangency or curvature against the
+#     adjacent face. Add the continuity controls to the dialogs and implement them
+#     in the OCC ops (loft: BRepOffsetAPI_ThruSections with continuity; fill/patch:
+#     MakeFilling constraints). Pairs with SURF-2/SURF-3.
+#
+# [~] SURF-6  Ruled Surface alignment modes. GeometryEngine.ruledSurface
+#     (profileSweeps.ts:116-151) is a single 64-sample lerp between two curves.
+#     Fusion's Ruled offers alignment by Direction / Tangent / Normal plus a
+#     distance/draft option. Add the alignment mode + distance to RuledSurfacePanel
+#     and build via OCC (BRepFill ruled / BRepOffsetAPI) so the rulings follow the
+#     chosen reference instead of a naive straight lerp.
+#
+# [ ] SURF-7  Trim / Surface Split accept only a PLANE cutting tool. trimSurface
+#     and splitSurface (surfaceTrimSplit.ts:83-180) do a single-plane centroid-side
+#     test. Fusion trims/splits a surface with ANY tool: another surface, a
+#     projected sketch curve, or a body edge — and lets you keep either side.
+#     Add curve- and surface-cutting-tool support (intersect tool with target,
+#     classify regions) and a keep-side selector in SurfaceTrimDialog /
+#     SurfaceSplitDialog. Depends on SURF-1 for robust surface-surface intersection.
+#
+# [x] SURF-8  Untrim does not commit a mesh to the feature. The UntrimDialog stores
+#     params but the audit found no resulting body assigned in state (the geometry
+#     fn surfaceTrimSplit.ts:182-274 exists and works). Wire commitUntrim to assign
+#     the regenerated surface mesh/body so Untrim actually restores the underlying
+#     surface in the viewport and timeline. Add a regression test.
+#
+# [ ] SURF-9  Offset Surface is a naive per-vertex normal offset
+#     (surfaceEditing.ts:4-26) — no self-intersection handling, no variable offset,
+#     and it cannot generate the offset as a true BRep. After SURF-1, route through
+#     OCC BRepOffset_MakeOffset (or BRepOffsetAPI_MakeOffsetShape) so concave/convex
+#     regions and overlaps are handled like Fusion's Offset.
+#
+# ── P3: convenience parity (low effort) ────────────────────────────────────────
+# [x] SURF-10  Add Move/Copy and Align to the Surface MODIFY ribbon. Fusion's
+#     surface MODIFY panel includes Move/Copy and Align; the dialogs already exist
+#     ('move-body', 'align-dialog' in ActiveDialog.tsx) but RibbonSurfaceTab.tsx
+#     does not surface them. Add both buttons to modifyMenuItems.
+#
+# [skip] SURF-11  Freeform / NURBS control-point surface. In Fusion this lives in the
+#     separate FORM (T-Spline) workspace, not the Surface tab, and we already have a
+#     Form tab. Out of scope for Surface parity — tracked here only so the audit is
+#     complete. Revisit under a FORM-workspace task if T-Spline parity is pursued.

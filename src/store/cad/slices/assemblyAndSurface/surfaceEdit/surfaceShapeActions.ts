@@ -84,18 +84,31 @@ export function createSurfaceShapeActions({ set, get }: CADSliceContext): Partia
     commitUntrim: (params) => {
       const { features } = get();
       const n = features.filter((f) => f.params?.featureKind === 'surface-untrim').length + 1;
+      const sourceMesh = features.find((f) => f.id === params.sourceFeatureId)?.mesh as THREE.Mesh | undefined;
+      const mesh = sourceMesh
+        ? configureSurfaceMesh(GeometryEngine.untrimSurface(sourceMesh, params.expandFactor ?? 1.5))
+        : undefined;
       const feature: Feature = {
         id: crypto.randomUUID(),
         name: `Untrim ${n}`,
         type: 'split-body',
         params: { featureKind: 'surface-untrim', ...params },
+        mesh,
         visible: true,
         suppressed: false,
         timestamp: Date.now(),
         bodyKind: 'surface',
       };
-      get().addFeature(feature);
-      get().setStatusMessage(`Untrim ${n} created`);
+      get().pushUndo();
+      set((s) => ({
+        features: [
+          ...s.features.map((f) =>
+            f.id === params.sourceFeatureId ? { ...f, visible: false } : f,
+          ),
+          feature,
+        ],
+      }));
+      get().setStatusMessage(mesh ? `Untrim ${n}: boundary extended` : `Untrim ${n}: no source surface found`);
     },
 
     commitOffsetSurface: (params) => {

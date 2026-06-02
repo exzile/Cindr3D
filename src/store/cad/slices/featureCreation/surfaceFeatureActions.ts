@@ -51,6 +51,10 @@ export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Part
     setRuledSketchAId: (id) => set({ ruledSketchAId: id }),
     ruledSketchBId: null,
     setRuledSketchBId: (id) => set({ ruledSketchBId: id }),
+    ruledAlignmentMode: 'direction' as 'direction' | 'tangent' | 'normal',
+    setRuledAlignmentMode: (m: 'direction' | 'tangent' | 'normal') => set({ ruledAlignmentMode: m }),
+    ruledAlignmentDistance: 0,
+    setRuledAlignmentDistance: (d: number) => set({ ruledAlignmentDistance: d }),
     startRuledSurfaceTool: () => {
       const sketches = get().sketches.filter((s) => s.entities.length > 0);
       if (sketches.length < 2) {
@@ -61,7 +65,7 @@ export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Part
     },
     cancelRuledSurfaceTool: () => set({ activeTool: 'select', ruledSketchAId: null, ruledSketchBId: null, statusMessage: 'Ruled Surface cancelled' }),
     commitRuledSurface: () => {
-      const { ruledSketchAId, ruledSketchBId, sketches, features, units } = get();
+      const { ruledSketchAId, ruledSketchBId, ruledAlignmentMode, ruledAlignmentDistance, sketches, features, units } = get();
       if (!ruledSketchAId || !ruledSketchBId) {
         set({ statusMessage: 'Select two curve sketches for Ruled Surface' });
         return;
@@ -72,13 +76,13 @@ export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Part
         set({ statusMessage: 'One or more selected sketches not found' });
         return;
       }
-      const mesh = GeometryEngine.ruledSurface(sketchA, sketchB);
+      const mesh = GeometryEngine.ruledSurface(sketchA, sketchB, ruledAlignmentMode, ruledAlignmentDistance);
       const feature: Feature = {
         id: crypto.randomUUID(),
         name: `Ruled Surface ${features.filter((f) => f.type === 'loft' && f.bodyKind === 'surface').length + 1}`,
         type: 'loft',
         sketchId: ruledSketchAId,
-        params: { ruledSketchAId, ruledSketchBId },
+        params: { ruledSketchAId, ruledSketchBId, alignmentMode: ruledAlignmentMode, alignmentDistance: ruledAlignmentDistance },
         visible: true,
         suppressed: false,
         timestamp: Date.now(),

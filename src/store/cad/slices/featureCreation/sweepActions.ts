@@ -73,58 +73,69 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
         set({ statusMessage: 'Solid sweep twist requires OCC twist support before it can be committed' });
         return;
       }
-      if (sweepBodyKind === 'solid') {
+      if (sweepBodyKind === 'solid' || sweepBodyKind === 'surface') {
         const occ = getOccSync();
+        const isSurface = sweepBodyKind === 'surface';
         if (!occ) {
-          set({ statusMessage: 'Solid sweep requires OCC to be loaded' });
-          return;
-        }
-        try {
-          const profileShapes = GeometryEngine.sketchToProfileShapesFlat(profileSketch);
-          const firstShape = profileShapes[0];
-          if (firstShape) {
-            const sketchProfile: SketchProfile = {
-              outer: firstShape.getPoints(OCC_PROFILE_POINT_COUNT),
-              holes: firstShape.holes.map((h) => h.getPoints(OCC_PROFILE_POINT_COUNT)).filter((pts) => pts.length >= 3),
-            };
-            const profileFrame = createOccPlaneFrameFromSketch(profileSketch);
-            const pathFrame = createOccPlaneFrameFromSketch(pathSketch);
-            const pathWire = sketchEntitiesToWire(occ.oc, pathSketch.entities, pathFrame);
-            if (pathWire) {
-              let guideWire: unknown | undefined;
-              if (sweepGuideRailId) {
-                const guideSketch = get().sketches.find((s) => s.id === sweepGuideRailId);
-                if (guideSketch) {
-                  const guideFrame = createOccPlaneFrameFromSketch(guideSketch);
-                  guideWire = sketchEntitiesToWire(occ.oc, guideSketch.entities, guideFrame) ?? undefined;
+          if (isSurface) {
+            mesh = GeometryEngine.sweepSketchInternal(profileSketch, pathSketch, true);
+          } else {
+            set({ statusMessage: 'Solid sweep requires OCC to be loaded' });
+            return;
+          }
+        } else {
+          try {
+            const profileShapes = GeometryEngine.sketchToProfileShapesFlat(profileSketch);
+            const firstShape = profileShapes[0];
+            if (firstShape) {
+              const sketchProfile: SketchProfile = {
+                outer: firstShape.getPoints(OCC_PROFILE_POINT_COUNT),
+                holes: firstShape.holes.map((h) => h.getPoints(OCC_PROFILE_POINT_COUNT)).filter((pts) => pts.length >= 3),
+              };
+              const profileFrame = createOccPlaneFrameFromSketch(profileSketch);
+              const pathFrame = createOccPlaneFrameFromSketch(pathSketch);
+              const pathWire = sketchEntitiesToWire(occ.oc, pathSketch.entities, pathFrame);
+              if (pathWire) {
+                let guideWire: unknown | undefined;
+                if (sweepGuideRailId) {
+                  const guideSketch = get().sketches.find((s) => s.id === sweepGuideRailId);
+                  if (guideSketch) {
+                    const guideFrame = createOccPlaneFrameFromSketch(guideSketch);
+                    guideWire = sketchEntitiesToWire(occ.oc, guideSketch.entities, guideFrame) ?? undefined;
+                  }
                 }
+                const occBody = occSweepFromPathWireWithInstance(occ.oc, sketchProfile, profileFrame, pathWire, {
+                  id: featureId,
+                  sourceFeatureId: featureId,
+                  orientation: sweepOrientation === 'default' ? 'perpendicular' : (sweepOrientation as 'perpendicular' | 'frenet' | 'horizontal' | 'vertical'),
+                  guideWire,
+                  taperAngle: Math.abs(sweepTaperAngle) > 0.001 ? sweepTaperAngle : undefined,
+                  surface: isSurface,
+                });
+                pathWire.delete();
+                if (guideWire) (guideWire as { delete(): void }).delete();
+                mesh = createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, featureId);
               }
-              const occBody = occSweepFromPathWireWithInstance(occ.oc, sketchProfile, profileFrame, pathWire, {
-                id: featureId,
-                sourceFeatureId: featureId,
-                orientation: sweepOrientation === 'default' ? 'perpendicular' : (sweepOrientation as 'perpendicular' | 'frenet' | 'horizontal' | 'vertical'),
-                guideWire,
-                taperAngle: Math.abs(sweepTaperAngle) > 0.001 ? sweepTaperAngle : undefined,
-              });
-              pathWire.delete();
-              if (guideWire) (guideWire as { delete(): void }).delete();
-              mesh = createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, featureId);
+            }
+          } catch (err) {
+            const message = errorMessage(err, 'unknown');
+            console.warn(`[commitSweep] OCC path failed (${message})`);
+            if (isSurface) {
+              mesh = GeometryEngine.sweepSketchInternal(profileSketch, pathSketch, true);
+            } else {
+              set({ statusMessage: `Sweep failed in OCC: ${message}` });
+              return;
             }
           }
-        } catch (err) {
-          const message = errorMessage(err, 'unknown');
-          console.warn(`[commitSweep] OCC path failed (${message})`);
-          set({ statusMessage: `Sweep failed in OCC: ${message}` });
-          return;
+          if (!mesh) {
+            if (isSurface) {
+              mesh = GeometryEngine.sweepSketchInternal(profileSketch, pathSketch, true);
+            } else {
+              set({ statusMessage: 'Sweep failed in OCC: no sweep body was created' });
+              return;
+            }
+          }
         }
-        if (!mesh) {
-          set({ statusMessage: 'Sweep failed in OCC: no sweep body was created' });
-          return;
-        }
-      }
-
-      if (!mesh && sweepBodyKind === 'surface') {
-        mesh = GeometryEngine.sweepSketchInternal(profileSketch, pathSketch, sweepBodyKind === 'surface');
       }
 
       const feature: Feature = {

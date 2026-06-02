@@ -113,15 +113,55 @@ export function patchSketch(sketch: Sketch): THREE.Mesh | null {
   return mesh;
 }
 
-export function ruledSurface(sketchA: Sketch, sketchB: Sketch): THREE.Mesh | null {
-  if (sketchA.entities.length === 0 || sketchB.entities.length === 0) return null;
-  const shapeA = sketchToShape(sketchA);
-  const shapeB = sketchToShape(sketchB);
-  if (!shapeA || !shapeB) return null;
+export type RuledAlignmentMode = 'direction' | 'tangent' | 'normal';
 
-  const ptsA = shapeA.getPoints(64).map((point) => new THREE.Vector3(point.x, 0, point.y));
-  const ptsB = shapeB.getPoints(64).map((point) => new THREE.Vector3(point.x, 0, point.y));
+export function ruledSurface(
+  sketchA: Sketch,
+  sketchB: Sketch,
+  alignmentMode: RuledAlignmentMode = 'direction',
+  distance = 0,
+): THREE.Mesh | null {
+  if (sketchA.entities.length === 0 || sketchB.entities.length === 0) return null;
+
+  const getWorldPoints = (sketch: Sketch): THREE.Vector3[] => {
+    if (sketch.plane === 'custom') {
+      const { t1, t2 } = getSketchAxesUtil(sketch);
+      const origin = sketch.planeOrigin;
+      const shape = sketchToShape(sketch);
+      if (!shape) return [];
+      return shape.getPoints(64).map(({ x: u, y: v }) =>
+        new THREE.Vector3(
+          origin.x + t1.x * u + t2.x * v,
+          origin.y + t1.y * u + t2.y * v,
+          origin.z + t1.z * u + t2.z * v,
+        ),
+      );
+    }
+    const shape = sketchToShape(sketch);
+    if (!shape) return [];
+    return shape.getPoints(64).map((point) => new THREE.Vector3(point.x, 0, point.y));
+  };
+
+  let ptsA = getWorldPoints(sketchA);
+  let ptsB = getWorldPoints(sketchB);
   if (ptsA.length < 2 || ptsB.length < 2) return null;
+
+  // Apply distance offset along alignment direction before ruling
+  if (Math.abs(distance) > 1e-6) {
+    const getAlignDir = (pts: THREE.Vector3[], idx: number): THREE.Vector3 => {
+      const tangent = pts[Math.min(idx + 1, pts.length - 1)].clone().sub(pts[Math.max(idx - 1, 0)]).normalize();
+      if (alignmentMode === 'tangent') return tangent;
+      if (alignmentMode === 'normal') {
+        // Approximate surface normal from two consecutive tangents
+        const t2 = pts[Math.min(idx + 2, pts.length - 1)].clone().sub(pts[Math.max(idx, 0)]).normalize();
+        const n = new THREE.Vector3().crossVectors(tangent, t2);
+        return n.lengthSq() > 1e-12 ? n.normalize() : new THREE.Vector3(0, 1, 0);
+      }
+      // direction mode: rule lines along the vector from A to B per segment
+      return new THREE.Vector3(0, 1, 0);
+    };
+    ptsA = ptsA.map((p, i) => p.clone().addScaledVector(getAlignDir(ptsA, i), distance));
+  }
 
   const n = Math.min(ptsA.length, ptsB.length);
   const positions: number[] = [];

@@ -1,8 +1,9 @@
 /**
  * OCC-10.1 — Loft through cross-section profiles.
- * Uses BRepOffsetAPI_ThruSections for solid lofts.
+ * Uses BRepOffsetAPI_ThruSections for solid lofts and open shells (surface mode).
  * Ruled loft: straight-line ruled surface between sections.
  * Smooth loft: SetSmoothing(true) for curvature-continuous blending.
+ * Surface mode (options.surface=true): isSolid=false → open shell BRepBody.
  */
 import type { OcctRaw } from '../types';
 import { makeBRepBodyFromOccShape, type BRepBody } from '../brepBody';
@@ -38,6 +39,8 @@ export interface OccLoftOptions {
   closed?: boolean;
   smooth?: boolean;
   tolerance?: number;
+  /** When true, produce an open shell (surface body) instead of a capped solid. */
+  surface?: boolean;
 }
 
 export async function occLoft(
@@ -69,7 +72,8 @@ export function occLoftWithInstance(
   const smooth = options.smooth ?? !ruled;
   const tol = options.tolerance ?? 1e-6;
 
-  const loftMaker = new occ.BRepOffsetAPI_ThruSections_1(true, ruled, tol);
+  const isSolid = options.surface !== true;
+  const loftMaker = new occ.BRepOffsetAPI_ThruSections_1(isSolid, ruled, tol);
   loftMaker.SetSmoothing(smooth);
   loftMaker.CheckCompatibility(false);
 

@@ -22,6 +22,8 @@ export interface OccRevolveOptions {
   sourceFeatureId?: string;
   /** When set, also revolve in the opposite direction by this angle and union. */
   side2AngleRad?: number;
+  /** When true, revolve the profile wire (not a face) → open shell surface body. */
+  surface?: boolean;
 }
 
 export async function occRevolve(
@@ -47,13 +49,24 @@ export function occRevolveWithInstance(
   const wires = sketchProfileToWires(oc, profile, frame);
   if (!wires) throw new Error('[occRevolve] failed to build wires from profile');
 
+  // Surface mode: revolve the wire (open curve) instead of a capped face.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const face = wireToFace(oc, wires.outerWire as any, wires.holeWires as any[]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (wires.outerWire as any).delete();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  for (const hw of wires.holeWires) (hw as any).delete();
-  if (!face) throw new Error('[occRevolve] failed to build face from wires');
+  const profileShape: unknown = options.surface
+    ? wires.outerWire
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    : wireToFace(oc, wires.outerWire as any, wires.holeWires as any[]);
+
+  if (!options.surface) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (wires.outerWire as any).delete();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const hw of wires.holeWires) (hw as any).delete();
+  } else {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const hw of wires.holeWires) (hw as any).delete();
+  }
+  if (!profileShape) throw new Error('[occRevolve] failed to build profile shape from wires');
+  const face = profileShape;
 
   const { origin, direction } = axis;
   const dir = direction.clone().normalize();

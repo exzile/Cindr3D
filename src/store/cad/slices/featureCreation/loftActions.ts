@@ -57,41 +57,64 @@ export function createLoftActions({ set, get }: CADSliceContext): Partial<CADSta
       }
       const featureId = crypto.randomUUID();
       let mesh: Feature['mesh'] | undefined;
-      if (loftBodyKind === 'solid') {
+      if (loftBodyKind === 'solid' || loftBodyKind === 'surface') {
         const occ = getOccSync();
         if (!occ) {
-          set({ statusMessage: 'Loft: OCC kernel is still loading; try again in a moment' });
-          return;
-        }
-        try {
-          const sections = profileSketches.map((sketch) => {
-            const shape = GeometryEngine.sketchToProfileShapesFlat(sketch)[0];
-            return shape ? shapeToOccSketchProfile(shape) : null;
-          });
-          if (sections.some((section) => section === null)) {
-            set({ statusMessage: 'Loft: every selected sketch needs a closed profile' });
+          if (loftBodyKind === 'solid') {
+            set({ statusMessage: 'Loft: OCC kernel is still loading; try again in a moment' });
             return;
           }
-          const frames = profileSketches.map(createOccPlaneFrameFromSketch);
-          const body = occLoftWithInstance(
-            occ.oc,
-            sections as SketchProfile[],
-            frames,
-            {
-              sourceFeatureId: featureId,
-              closed: get().loftClosed,
-              ruled: get().loftStartCondition === 'free' && get().loftEndCondition === 'free',
-              smooth: get().loftStartCondition !== 'free' || get().loftEndCondition !== 'free',
-            },
-          );
-          if (!body) {
-            set({ statusMessage: 'Loft: OCC failed to build the selected profiles' });
-            return;
+          // Surface fallback: THREE mesh
+          mesh = GeometryEngine.loftSketches(profileSketches, true) ?? undefined;
+        } else {
+          try {
+            const isSurface = loftBodyKind === 'surface';
+            const sections = profileSketches.map((sketch) => {
+              const shape = GeometryEngine.sketchToProfileShapesFlat(sketch)[0];
+              return shape ? shapeToOccSketchProfile(shape) : null;
+            });
+            if (!isSurface && sections.some((section) => section === null)) {
+              set({ statusMessage: 'Loft: every selected sketch needs a closed profile' });
+              return;
+            }
+            const validSections = sections.filter(Boolean) as SketchProfile[];
+            if (validSections.length < 2) {
+              set({ statusMessage: 'Loft: need at least 2 valid sketch profiles' });
+              return;
+            }
+            const frames = profileSketches
+              .filter((_, i) => sections[i] !== null)
+              .map(createOccPlaneFrameFromSketch);
+            const body = occLoftWithInstance(
+              occ.oc,
+              validSections,
+              frames,
+              {
+                sourceFeatureId: featureId,
+                closed: get().loftClosed,
+                ruled: get().loftStartCondition === 'free' && get().loftEndCondition === 'free',
+                smooth: get().loftStartCondition !== 'free' || get().loftEndCondition !== 'free',
+                surface: isSurface,
+              },
+            );
+            if (!body) {
+              if (isSurface) {
+                mesh = GeometryEngine.loftSketches(profileSketches, true) ?? undefined;
+              } else {
+                set({ statusMessage: 'Loft: OCC failed to build the selected profiles' });
+                return;
+              }
+            } else {
+              mesh = createRegisteredOccMesh(occ.oc, body, BODY_MATERIAL, featureId);
+            }
+          } catch (err) {
+            if (loftBodyKind === 'surface') {
+              mesh = GeometryEngine.loftSketches(profileSketches, true) ?? undefined;
+            } else {
+              set({ statusMessage: `Loft: OCC failed (${errorMessage(err, 'unknown OCC error')})` });
+              return;
+            }
           }
-          mesh = createRegisteredOccMesh(occ.oc, body, BODY_MATERIAL, featureId);
-        } catch (err) {
-          set({ statusMessage: `Loft: OCC failed (${errorMessage(err, 'unknown OCC error')})` });
-          return;
         }
       } else {
         mesh = GeometryEngine.loftSketches(profileSketches, true) ?? undefined;

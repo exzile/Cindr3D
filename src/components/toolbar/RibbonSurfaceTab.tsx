@@ -2,7 +2,7 @@ import {
   PenTool, ArrowUpFromLine, RotateCcw, Spline, Layers, Diamond,
   Grid3X3, ZoomOut, Scissors, FlipHorizontal, Link, Unlink,
   SplitSquareHorizontal, RefreshCw, Combine, Trash2,
-  MousePointer2, MoveRight, Grid3x3, Blend,
+  MousePointer2, MoveRight, Grid3x3, Blend, Move, AlignCenter,
 } from 'lucide-react';
 import { useCallback } from 'react';
 import { useCADStore } from '../../store/cadStore';
@@ -51,8 +51,23 @@ export function RibbonSurfaceTab() {
     { icon: <Grid3x3 size={MI} />, ribbonIcon: <Grid3x3 size={ICON_LG} />, ribbonColorClass: 'icon-green', promoteToRibbon: true, label: 'Primitives', onClick: openSurfacePrimitivesDialog },
   ];
 
+  const openSurfaceFillet = useCallback(() => {
+    const surfaceBodies = useCADStore.getState().features.filter(
+      (f) => f.bodyKind === 'surface' && f.mesh && f.visible,
+    );
+    const hasOccSurface = surfaceBodies.some(
+      (f) => (f.mesh as { userData?: Record<string, unknown> })?.userData?.['brepBodyId'],
+    );
+    if (surfaceBodies.length > 0 && !hasOccSurface) {
+      useCADStore.getState().setStatusMessage(
+        'Surface Fillet: surface bodies need OCC BRep backing (create via Loft, Sweep, or Revolve in surface mode)',
+      );
+    }
+    setActiveDialog('fillet');
+  }, [setActiveDialog]);
+
   const modifyMenuItems: MenuItem[] = [
-    { icon: <Blend size={MI} />, ribbonIcon: <Blend size={ICON_LG} />, ribbonColorClass: 'icon-orange', promoteToRibbon: true, label: 'Fillet', onClick: () => setActiveDialog('fillet') },
+    { icon: <Blend size={MI} />, ribbonIcon: <Blend size={ICON_LG} />, ribbonColorClass: 'icon-orange', promoteToRibbon: true, label: 'Fillet', onClick: openSurfaceFillet },
     { icon: <ZoomOut size={MI} />, ribbonIcon: <ZoomOut size={ICON_LG} />, ribbonColorClass: 'icon-orange', promoteToRibbon: true, label: 'Offset Surface', onClick: () => setActiveDialog('offset-surface') },
     { icon: <Scissors size={MI} />, ribbonIcon: <Scissors size={ICON_LG} />, ribbonColorClass: 'icon-orange', promoteToRibbon: true, label: 'Trim', onClick: () => setActiveDialog('surface-trim') },
     { icon: <FlipHorizontal size={MI} />, ribbonIcon: <FlipHorizontal size={ICON_LG} />, ribbonColorClass: 'icon-orange', promoteToRibbon: true, label: 'Extend', onClick: () => setActiveDialog('surface-extend') },
@@ -64,6 +79,8 @@ export function RibbonSurfaceTab() {
     { icon: <Combine size={MI} />, ribbonIcon: <Combine size={ICON_LG} />, ribbonColorClass: 'icon-orange', promoteToRibbon: true, label: 'Merge', onClick: openSurfaceMergeDialog },
     { icon: <Trash2 size={MI} />, ribbonIcon: <Trash2 size={ICON_LG} />, ribbonColorClass: 'icon-orange', promoteToRibbon: true, label: 'Delete Face', onClick: openDeleteFaceDialog },
     { icon: <Layers size={MI} />, ribbonIcon: <Layers size={ICON_LG} />, ribbonColorClass: 'icon-orange', promoteToRibbon: true, label: 'Thicken', onClick: () => setActiveDialog('thicken') },
+    { icon: <Move size={MI} />, ribbonIcon: <Move size={ICON_LG} />, ribbonColorClass: 'icon-orange', promoteToRibbon: true, label: 'Move/Copy', onClick: () => setActiveDialog('move-body') },
+    { icon: <AlignCenter size={MI} />, ribbonIcon: <AlignCenter size={ICON_LG} />, ribbonColorClass: 'icon-orange', promoteToRibbon: true, label: 'Align', onClick: () => setActiveDialog('align-dialog') },
   ];
 
   return (
@@ -81,7 +98,7 @@ export function RibbonSurfaceTab() {
         <ToolButton icon={<Grid3x3 size={ICON_LG} />} label="Primitives" onClick={openSurfacePrimitivesDialog} large colorClass="icon-green" />
       </RibbonSection>
       <RibbonSection title="MODIFY" menuItems={modifyMenuItems} accentColor="#ff6b00" maxVisible={5}>
-        <ToolButton icon={<Blend size={ICON_LG} />} label="Fillet" onClick={() => setActiveDialog('fillet')} active={activeDialog === 'fillet'} large colorClass="icon-orange" />
+        <ToolButton icon={<Blend size={ICON_LG} />} label="Fillet" onClick={openSurfaceFillet} active={activeDialog === 'fillet'} large colorClass="icon-orange" />
         <ToolButton icon={<ZoomOut size={ICON_LG} />} label="Offset Surface" onClick={() => setActiveDialog('offset-surface')} large colorClass="icon-orange" />
         <ToolButton icon={<Scissors size={ICON_LG} />} label="Trim" onClick={() => setActiveDialog('surface-trim')} large colorClass="icon-orange" />
         <ToolButton icon={<FlipHorizontal size={ICON_LG} />} label="Extend" onClick={() => setActiveDialog('surface-extend')} large colorClass="icon-orange" />
@@ -93,6 +110,8 @@ export function RibbonSurfaceTab() {
         <ToolButton icon={<Combine size={ICON_LG} />} label="Merge" onClick={openSurfaceMergeDialog} large colorClass="icon-orange" />
         <ToolButton icon={<Trash2 size={ICON_LG} />} label="Delete Face" onClick={openDeleteFaceDialog} large colorClass="icon-orange" />
         <ToolButton icon={<Layers size={ICON_LG} />} label="Thicken" onClick={() => setActiveDialog('thicken')} large colorClass="icon-orange" />
+        <ToolButton icon={<Move size={ICON_LG} />} label="Move/Copy" onClick={() => setActiveDialog('move-body')} large colorClass="icon-orange" />
+        <ToolButton icon={<AlignCenter size={ICON_LG} />} label="Align" onClick={() => setActiveDialog('align-dialog')} large colorClass="icon-orange" />
       </RibbonSection>
       <RibbonSection title="SELECT">
         <ToolButton icon={<MousePointer2 size={ICON_LG} />} label="Select" tool="select" large colorClass="icon-blue" />

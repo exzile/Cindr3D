@@ -282,8 +282,8 @@ export class GeometryEngine {
     return patchSketchImpl(sketch);
   }
 
-  static ruledSurface(sketchA: Sketch, sketchB: Sketch): THREE.Mesh | null {
-    return ruledSurfaceImpl(sketchA, sketchB);
+  static ruledSurface(sketchA: Sketch, sketchB: Sketch, alignmentMode?: import('./solid/profileSweeps').RuledAlignmentMode, distance?: number): THREE.Mesh | null {
+    return ruledSurfaceImpl(sketchA, sketchB, alignmentMode, distance);
   }
 
   static sweepSketchInternal(profileSketch: Sketch, pathSketch: Sketch, surface = false): THREE.Mesh | null {

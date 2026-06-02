@@ -364,22 +364,24 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       }
     }
 
-    // OCC new-body path: build an exact BRep revolve solid.
-    // Only for solid, non-boolean, one-sided/symmetric/two-sides sketch revolves.
-    if (revolveBodyKind === 'solid' && (!revolveOperation || revolveOperation === 'new-body')) {
+    // OCC new-body path: build an exact BRep revolve (solid or open-shell surface).
+    if (
+      (revolveBodyKind === 'solid' || revolveBodyKind === 'surface') &&
+      (!revolveOperation || revolveOperation === 'new-body')
+    ) {
+      const isSurface = revolveBodyKind === 'surface';
       const occ = getOccSync();
-      if (!occ) {
+      if (!occ && !isSurface) {
         set({ statusMessage: 'Revolve requires OCC to be loaded' });
         return;
       }
-      try {
-        const shapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
-        const firstShape = shapes[0];
-        if (firstShape) {
-          const sketchProfile = makeRevolveSketchProfileFromShape(firstShape);
-          const frame = createOccPlaneFrameFromSketch(sketch);
-
-            // Axis origin: world origin for standard axes; start of centerline for custom.
+      if (occ) {
+        try {
+          const shapes = GeometryEngine.sketchToProfileShapesFlat(sketch);
+          const firstShape = shapes[0];
+          if (firstShape) {
+            const sketchProfile = makeRevolveSketchProfileFromShape(firstShape);
+            const frame = createOccPlaneFrameFromSketch(sketch);
             const axisVec = resolveRevolveAxisVec(resolvedAxisKey, centerlineAxisDirection);
             const axisOriginVec = revolveAxisOriginVector(centerlineAxisOrigin);
 
@@ -393,16 +395,21 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
                 id: feature.id,
                 sourceFeatureId: feature.id,
                 side2AngleRad: sketchRevolveAngles.side2AngleRad,
+                surface: isSurface,
               },
             );
 
-          feature.mesh = createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, feature.id);
+            feature.mesh = createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, feature.id);
+          }
+        } catch (err) {
+          const message = errorMessage(err, 'unknown');
+          console.warn(`[commitRevolve] OCC path failed (${message})`);
+          if (!isSurface) {
+            set({ statusMessage: `Revolve failed in OCC: ${message}` });
+            return;
+          }
+          // Surface revolve falls through with no mesh (params-only fallback)
         }
-      } catch (err) {
-        const message = errorMessage(err, 'unknown');
-        console.warn(`[commitRevolve] OCC path failed (${message})`);
-        set({ statusMessage: `Revolve failed in OCC: ${message}` });
-        return;
       }
     }
 

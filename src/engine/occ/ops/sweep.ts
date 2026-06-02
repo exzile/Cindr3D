@@ -186,6 +186,8 @@ export function occSweepFromPathWireWithInstance(
   options: Omit<OccSweepOptions, 'guideRail' | 'guideRailFrame'> & {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     guideWire?: any;
+    /** When true, sweep the profile wire (not a closed face) → open shell surface body. */
+    surface?: boolean;
   } = {},
 ): BRepBody {
   const occ = oc as OccSweepApi;
@@ -200,22 +202,32 @@ export function occSweepFromPathWireWithInstance(
   let resultShape: unknown;
 
   if (!useAdvanced) {
+    // Surface mode: sweep the wire (open) instead of a face (closed solid).
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const profileFace = wireToFace(oc, profileWires.outerWire as any, profileWires.holeWires as any[]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (profileWires.outerWire as any).delete();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    for (const hw of profileWires.holeWires) (hw as any).delete();
-    if (!profileFace) throw new Error('[occSweep] failed to build profile face');
+    const profileShape: unknown = options.surface
+      ? profileWires.outerWire
+      : wireToFace(oc, profileWires.outerWire as any, profileWires.holeWires as any[]);
 
-    const pipe = new occ.BRepOffsetAPI_MakePipe_1(pathWire, profileFace);
+    if (!options.surface) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (profileWires.outerWire as any).delete();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const hw of profileWires.holeWires) (hw as any).delete();
+    }
+    if (!profileShape) throw new Error('[occSweep] failed to build profile shape');
+
+    const pipe = new occ.BRepOffsetAPI_MakePipe_1(pathWire, profileShape);
     try {
       runEdgeOpBuild(oc, pipe);
       resultShape = pipe.Shape();
     } finally {
       pipe.delete();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (profileFace as any).delete();
+      (profileShape as any).delete?.();
+      if (options.surface) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        for (const hw of profileWires.holeWires) (hw as any).delete();
+      }
     }
   } else {
     const pipeShell = new occ.BRepOffsetAPI_MakePipeShell_1(pathWire);
