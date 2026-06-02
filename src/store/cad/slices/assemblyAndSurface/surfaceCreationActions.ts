@@ -67,13 +67,11 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
       };
 
       const loop = buildLoop(fillBoundaryEdgeData);
-      const fallbackLoop = [
-        new THREE.Vector3(-5, 0, -5),
-        new THREE.Vector3(5, 0, -5),
-        new THREE.Vector3(5, 0, 5),
-        new THREE.Vector3(-5, 0, 5),
-      ];
-      const boundaryLoop = loop.length >= 3 ? loop : fallbackLoop;
+      if (loop.length < 3) {
+        get().setStatusMessage('Fill: select at least 3 boundary edges in the viewport first');
+        return;
+      }
+      const boundaryLoop = loop;
 
       // Build per-edge OCC constraints (used by BRepOffsetAPI_MakeFilling for G1/G2).
       const continuityPerEdge: FillContinuity[] = params.continuityPerEdge.length > 0
@@ -225,15 +223,18 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
     commitSurfaceMerge: (params) => {
       const { features } = get();
       const n = features.filter((f) => f.params?.featureKind === 'surface-merge').length + 1;
-      const findMeshByFaceId = (faceId: string) => {
+      // Look up by feature ID first (primary key); fall back to userData.faceId for legacy files.
+      const findMesh = (id: string) => {
+        const byFeature = features.find((f) => f.id === id && f.mesh);
+        if (byFeature) return byFeature.mesh as THREE.Mesh;
         for (const f of features) {
-          if (f.mesh && (f.mesh as THREE.Object3D).userData?.faceId === faceId) return f.mesh as THREE.Mesh;
+          if (f.mesh && (f.mesh as THREE.Object3D).userData?.faceId === id) return f.mesh as THREE.Mesh;
         }
         return null;
       };
 
-      const meshA = params.face1Id ? findMeshByFaceId(params.face1Id) : null;
-      const meshB = params.face2Id ? findMeshByFaceId(params.face2Id) : null;
+      const meshA = params.face1Id ? findMesh(params.face1Id) : null;
+      const meshB = params.face2Id ? findMesh(params.face2Id) : null;
       const mesh = meshA && meshB ? configureSurfaceMesh(GeometryEngine.mergeSurfaces(meshA, meshB)) : undefined;
 
       const feature: Feature = {

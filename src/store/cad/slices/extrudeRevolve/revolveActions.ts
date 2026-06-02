@@ -26,7 +26,6 @@ import {
 
 export function createRevolveActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
-  // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Revolve tool Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   ...REVOLVE_DEFAULTS,
   setRevolveSelectedSketchId: (id) => set({ revolveSelectedSketchId: id }),
   setRevolveAxis: (a) => set({ revolveAxis: a }),
@@ -51,14 +50,14 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
     set({
       revolveFaceBoundary: flat,
       revolveFaceNormal: [normal.x, normal.y, normal.z],
-      statusMessage: 'Face selected Ã¢â‚¬â€ set axis and angle, then click OK',
+      statusMessage: 'Face selected - set axis and angle, then click OK',
     });
   },
   startRevolveTool: () => {
     set({
       activeTool: 'revolve',
       ...REVOLVE_DEFAULTS,
-      statusMessage: 'Revolve Ã¢â‚¬â€ pick a sketch profile or use Face mode',
+      statusMessage: 'Revolve - pick a sketch profile or use Face mode',
     });
   },
   cancelRevolveTool: () => {
@@ -91,7 +90,6 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       effectiveRevolveAngle = angleDeg < 0.5 ? 360 : angleDeg;
     }
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Face mode Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     if (revolveProfileMode === 'face') {
       if (!revolveFaceBoundary || revolveFaceBoundary.length < 9) {
         set({ statusMessage: 'Click a face in the viewport first' });
@@ -122,7 +120,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
         timestamp: Date.now(),
         bodyKind: revolveBodyKind === 'surface' ? 'surface' : 'solid',
       };
-      const angleDesc = revolveDirection === 'symmetric' ? `Ã‚Â±${revolveAngle / 2}Ã‚Â°` : `${revolveAngle}Ã‚Â°`;
+      const angleDesc = revolveDirection === 'symmetric' ? `±${revolveAngle / 2}°` : `${revolveAngle}°`;
 
       const faceFallbackNote = '';
       if (revolveOperation && revolveOperation !== 'new-body' && revolveOperation !== 'new-component' && revolveBodyKind !== 'surface') {
@@ -236,7 +234,6 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       return;
     }
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Sketch mode Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     if (!revolveSelectedSketchId) {
       set({ statusMessage: 'No profile selected for revolve' });
       return;
@@ -247,7 +244,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       return;
     }
     // For symmetric, each side gets angle/2; for two-sides, side1=revolveAngle, side2=revolveAngle2.
-    // The stored angle is always the primary (or full) angle Ã¢â‚¬â€ the renderer uses revolveDirection.
+    // The stored angle is always the primary (or full) angle - the renderer uses revolveDirection.
     const sketchRevolveAngles = resolveRevolveAngles(revolveDirection, effectiveRevolveAngle, revolveAngle2);
     const primaryAngle = sketchRevolveAngles.primaryAngleDeg;
     if (Math.abs(primaryAngle) < 0.5) {
@@ -261,7 +258,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
     if (revolveAxis === 'centerline') {
       const clEntity = sketch.entities.find((e) => e.type === 'centerline' && e.points.length >= 2);
       if (!clEntity) {
-        set({ statusMessage: 'Spun Profile: no centerline found in sketch Ã¢â‚¬â€ add a centerline entity first' });
+        set({ statusMessage: 'Spun Profile: no centerline found in sketch - add a centerline entity first' });
         return;
       }
       const p0 = clEntity.points[0];
@@ -294,12 +291,12 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       bodyKind: revolveBodyKind === 'surface' ? 'surface' : 'solid',
     };
     const angleDesc = revolveDirection === 'symmetric'
-      ? `Ã‚Â±${revolveAngle / 2}Ã‚Â°`
+      ? `±${revolveAngle / 2}°`
       : revolveDirection === 'two-sides'
-        ? `${revolveAngle}Ã‚Â°/${revolveAngle2}Ã‚Â°`
-        : `${revolveAngle}Ã‚Â°`;
+        ? `${revolveAngle}°/${revolveAngle2}°`
+        : `${revolveAngle}°`;
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Boolean operation (join / cut / intersect) Ã¢â€â‚¬Ã¢â€â‚¬
+    // -- Boolean operation (join / cut / intersect) --
     // For non-new-body ops, run an OCC boolean against the chosen target body
     // and store the result on feature.mesh so the stored-mesh render path draws it.
     // new-body falls through unchanged.
