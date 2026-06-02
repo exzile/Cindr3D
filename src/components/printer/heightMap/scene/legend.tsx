@@ -30,6 +30,7 @@ export function ColorScaleLegend({
 }
 
 /** RMS → quality bucket used by the stats panel. */
+// eslint-disable-next-line react-refresh/only-export-components
 export function getBedQuality(rms: number): { label: string; color: string } {
   if (rms < 0.05) return { label: 'Excellent', color: '#22c55e' };
   if (rms < 0.1)  return { label: 'Good',      color: '#4ade80' };

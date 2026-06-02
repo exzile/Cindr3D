@@ -31,6 +31,7 @@ export function DecalDialog({ open, onOk, onClose, faceId }: Props) {
   const [scaleU, setScaleU] = useState(10);
   const [scaleV, setScaleV] = useState(10);
   const [rotation, setRotation] = useState(0);
+  // Must be before early return — hooks cannot come after conditional returns.
   const safeUrl = useMemo(() => safeImageUrl(imageUrl), [imageUrl]);
 
   if (!open) return null;

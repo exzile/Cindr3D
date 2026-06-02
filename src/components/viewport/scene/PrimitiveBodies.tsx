@@ -575,12 +575,22 @@ export function PrimitivePreview() {
   }, [preview]);
   useEffect(() => () => { geo?.dispose(); }, [geo]);
 
+  // Extract coords before the early return so primitiveCenter useMemo is not
+  // called conditionally (hooks must not appear after conditional returns).
+  const px = preview?.params.x ?? 0;
+  const py = preview?.params.y ?? 0;
+  const pz = preview?.params.z ?? 0;
+  const primitiveCenter = useMemo(
+    () => new THREE.Vector3(px, py, pz),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [px, py, pz],
+  );
+
   if (!preview || !geo) return null;
-  const position = [preview.params.x ?? 0, preview.params.y ?? 0, preview.params.z ?? 0] as [number, number, number];
+  const position = [px, py, pz] as [number, number, number];
   const boxLength = preview.params.width ?? 20;   // X
   const boxWidth = preview.params.depth ?? 20;    // Z
   const boxHeight = preview.params.height ?? 20;  // Y
-  const primitiveCenter = new THREE.Vector3(position[0], position[1], position[2]);
   const cylinderRadius = preview.params.radius ?? 10;
   const cylinderHeight = preview.params.height ?? 20;
   const updateBoxPreview = (next: { width?: number; height?: number; depth?: number }) => {

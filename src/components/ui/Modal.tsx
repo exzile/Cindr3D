@@ -25,6 +25,7 @@ function isEditableTarget(target: EventTarget | null): boolean {
  * input/textarea/contenteditable target so submit-on-Enter never fires
  * mid-edit.
  */
+// eslint-disable-next-line react-refresh/only-export-components
 export function useModalKeys(onClose: () => void, onEnter?: () => void): void {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

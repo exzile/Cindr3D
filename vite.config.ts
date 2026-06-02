@@ -336,7 +336,7 @@ function localFfmpegPath(): string {
     const bundled = require('@ffmpeg-installer/ffmpeg') as { path?: string };
     if (bundled.path) return bundled.path;
   } catch (error) {
-    throw new Error(`Bundled FFmpeg package is unavailable: ${(error as Error).message}`);
+    throw new Error(`Bundled FFmpeg package is unavailable: ${(error as Error).message}`, { cause: error });
   }
   throw new Error('Bundled FFmpeg package did not expose an executable path.');
 }
