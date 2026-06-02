@@ -28,6 +28,8 @@ export default function RevolveTool() {
   const revolveDir     = useCADStore((s) => s.revolveDirection);
   const revolveAxis    = useCADStore((s) => s.revolveAxis);
   const startFromFace  = useCADStore((s) => s.startRevolveFromFace);
+  const setToEntityFace = useCADStore((s) => s.setRevolveToEntityFace);
+  const extentType     = useCADStore((s) => s.revolveExtentType);
   const sketches       = useCADStore((s) => s.sketches);
   const selectedSketchId = useCADStore((s) => s.revolveSelectedSketchId);
 
@@ -36,9 +38,10 @@ export default function RevolveTool() {
   const [selBoundary, setSelBoundary] = useState<THREE.Vector3[] | null>(null);
   const dragRef = useRef<{ startX: number; startAngle: number } | null>(null);
 
-  const isFaceMode    = activeTool === 'revolve' && profileMode === 'face';
-  const isPicking     = isFaceMode && !faceBoundary;
-  const hasFace       = isFaceMode && !!faceBoundary;
+  const isFaceMode       = activeTool === 'revolve' && profileMode === 'face';
+  const isToObjectMode   = activeTool === 'revolve' && profileMode === 'sketch' && extentType === 'to-object';
+  const isPicking        = (isFaceMode && !faceBoundary) || isToObjectMode;
+  const hasFace          = isFaceMode && !!faceBoundary;
 
   // Clear selBoundary when the panel X chip clears the store boundary
   useEffect(() => {
@@ -50,8 +53,15 @@ export default function RevolveTool() {
     enabled: isPicking,
     onHover: setFaceHit,
     onClick: (result) => {
-      setSelBoundary(result.boundary);   // keep highlight visible
-      startFromFace(result.boundary, result.normal);
+      if (isToObjectMode) {
+        // To-object mode: store target face centroid for angle calculation
+        const c = result.boundary.reduce((a, b) => a.clone().add(b), new THREE.Vector3()).divideScalar(result.boundary.length);
+        setToEntityFace([c.x, c.y, c.z], [result.normal.x, result.normal.y, result.normal.z]);
+        setSelBoundary(result.boundary);
+      } else {
+        setSelBoundary(result.boundary);
+        startFromFace(result.boundary, result.normal);
+      }
       setFaceHit(null);
     },
   });

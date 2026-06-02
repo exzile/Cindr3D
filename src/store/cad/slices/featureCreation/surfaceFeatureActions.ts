@@ -79,6 +79,8 @@ export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Part
         statusMessage: `Patch surface created (${units})`,
       });
     },
+    ruledMode: 'two-curves' as 'two-curves' | 'extend-edge',
+    setRuledMode: (m: 'two-curves' | 'extend-edge') => set({ ruledMode: m }),
     ruledSketchAId: null,
     setRuledSketchAId: (id) => set({ ruledSketchAId: id }),
     ruledSketchBId: null,
@@ -87,17 +89,66 @@ export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Part
     setRuledAlignmentMode: (m: 'direction' | 'tangent' | 'normal') => set({ ruledAlignmentMode: m }),
     ruledAlignmentDistance: 0,
     setRuledAlignmentDistance: (d: number) => set({ ruledAlignmentDistance: d }),
+    ruledExtendDistance: 10,
+    setRuledExtendDistance: (d: number) => set({ ruledExtendDistance: d }),
+    ruledExtendAxis: 'Z' as 'X' | 'Y' | 'Z',
+    setRuledExtendAxis: (a: 'X' | 'Y' | 'Z') => set({ ruledExtendAxis: a }),
     startRuledSurfaceTool: () => {
       const sketches = get().sketches.filter((s) => s.entities.length > 0);
-      if (sketches.length < 2) {
-        set({ statusMessage: 'Ruled Surface requires at least 2 sketches' });
+      const ruledMode = get().ruledMode;
+      if (ruledMode === 'two-curves' && sketches.length < 2) {
+        set({ statusMessage: 'Ruled Surface (Two Curves) requires at least 2 sketches' });
         return;
       }
-      set({ activeTool: 'ruled-surface' as Tool, ruledSketchAId: null, ruledSketchBId: null, statusMessage: 'Ruled Surface - select Curve A and Curve B sketches in the panel' });
+      if (sketches.length === 0) {
+        set({ statusMessage: 'Create a sketch first before using Ruled Surface' });
+        return;
+      }
+      set({ activeTool: 'ruled-surface' as Tool, ruledSketchAId: null, ruledSketchBId: null, statusMessage: 'Ruled Surface - select curve sketches in the panel' });
     },
     cancelRuledSurfaceTool: () => set({ activeTool: 'select', ruledSketchAId: null, ruledSketchBId: null, statusMessage: 'Ruled Surface cancelled' }),
     commitRuledSurface: () => {
-      const { ruledSketchAId, ruledSketchBId, ruledAlignmentMode, ruledAlignmentDistance, sketches, features, units } = get();
+      const { ruledMode, ruledSketchAId, ruledSketchBId, ruledAlignmentMode, ruledAlignmentDistance, ruledExtendDistance, ruledExtendAxis, sketches, features, units } = get();
+
+      // ── Extend-Edge mode ──────────────────────────────────────────────────
+      if (ruledMode === 'extend-edge') {
+        if (!ruledSketchAId) {
+          set({ statusMessage: 'Select a curve sketch to extend' });
+          return;
+        }
+        const sketchA = sketches.find((s) => s.id === ruledSketchAId);
+        if (!sketchA) {
+          set({ statusMessage: 'Selected sketch not found' });
+          return;
+        }
+        // Collect edge points and extrude in the chosen axis direction
+        const pts = sketchA.entities.flatMap((e) => e.points.map((p) => new THREE.Vector3(p.x, p.y, p.z)));
+        const axisDir = ruledExtendAxis === 'X'
+          ? new THREE.Vector3(1, 0, 0)
+          : ruledExtendAxis === 'Y'
+            ? new THREE.Vector3(0, 1, 0)
+            : new THREE.Vector3(0, 0, 1);
+        const geom = GeometryEngine.offsetCurveToSurface(pts, ruledExtendDistance, axisDir);
+        const extMesh = new THREE.Mesh(geom, new THREE.MeshPhysicalMaterial({ color: 0x8899aa, side: THREE.DoubleSide }));
+        extMesh.material.userData['shared'] = false;
+        const n = features.filter((f) => f.type === 'loft' && f.bodyKind === 'surface').length + 1;
+        const feature: Feature = {
+          id: crypto.randomUUID(),
+          name: `Ruled Surface ${n}`,
+          type: 'loft',
+          sketchId: ruledSketchAId,
+          params: { ruledMode: 'extend-edge', ruledSketchAId, extendDistance: ruledExtendDistance, extendAxis: ruledExtendAxis },
+          visible: true,
+          suppressed: false,
+          timestamp: Date.now(),
+          mesh: extMesh,
+          bodyKind: 'surface',
+        };
+        set({ features: [...features, feature], activeTool: 'select', ruledSketchAId: null, statusMessage: `Ruled Surface (extend) created (${units})` });
+        return;
+      }
+
+      // ── Two-Curves mode ───────────────────────────────────────────────────
       if (!ruledSketchAId || !ruledSketchBId) {
         set({ statusMessage: 'Select two curve sketches for Ruled Surface' });
         return;

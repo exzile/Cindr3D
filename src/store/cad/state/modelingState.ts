@@ -137,9 +137,15 @@ export interface CADModelingState {
   setRevolveOperation: (
     op: "new-body" | "join" | "cut" | "intersect" | "new-component",
   ) => void;
-  // CORR-10: project axis onto profile plane before revolving
   revolveIsProjectAxis: boolean;
   setRevolveIsProjectAxis: (v: boolean) => void;
+  // SURF-CREATE-7: to-object extent
+  revolveExtentType: "angle" | "to-object";
+  setRevolveExtentType: (t: "angle" | "to-object") => void;
+  revolveToEntityFaceCentroid: [number, number, number] | null;
+  revolveToEntityFaceNormal: [number, number, number] | null;
+  setRevolveToEntityFace: (centroid: [number, number, number], normal: [number, number, number]) => void;
+  clearRevolveToEntityFace: () => void;
   revolveProfileMode: "sketch" | "face";
   setRevolveProfileMode: (m: "sketch" | "face") => void;
   revolveFaceBoundary: number[] | null;
@@ -224,6 +230,8 @@ export interface CADModelingState {
   commitPatch: () => void;
 
   // Ruled Surface tool (D107)
+  ruledMode: "two-curves" | "extend-edge";
+  setRuledMode: (mode: "two-curves" | "extend-edge") => void;
   ruledSketchAId: string | null;
   setRuledSketchAId: (id: string | null) => void;
   ruledSketchBId: string | null;
@@ -232,6 +240,11 @@ export interface CADModelingState {
   setRuledAlignmentMode: (mode: "direction" | "tangent" | "normal") => void;
   ruledAlignmentDistance: number;
   setRuledAlignmentDistance: (distance: number) => void;
+  // Extend-edge mode (SURF-CREATE-5)
+  ruledExtendDistance: number;
+  setRuledExtendDistance: (d: number) => void;
+  ruledExtendAxis: "X" | "Y" | "Z";
+  setRuledExtendAxis: (a: "X" | "Y" | "Z") => void;
   startRuledSurfaceTool: () => void;
   cancelRuledSurfaceTool: () => void;
   commitRuledSurface: () => void;

@@ -37,8 +37,11 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
   // D103 body kind
   setRevolveBodyKind: (k) => set({ revolveBodyKind: k }),
   setRevolveOperation: (op) => set({ revolveOperation: op }),
-  // CORR-10
   setRevolveIsProjectAxis: (v) => set({ revolveIsProjectAxis: v }),
+  // SURF-CREATE-7: to-object extent
+  setRevolveExtentType: (t) => set({ revolveExtentType: t }),
+  setRevolveToEntityFace: (centroid, normal) => set({ revolveToEntityFaceCentroid: centroid, revolveToEntityFaceNormal: normal, revolveExtentType: 'to-object' }),
+  clearRevolveToEntityFace: () => set({ revolveToEntityFaceCentroid: null, revolveToEntityFaceNormal: null, revolveExtentType: 'angle' }),
   // Face mode
   setRevolveProfileMode: (m) => set({ revolveProfileMode: m }),
   clearRevolveFace: () => set({ revolveFaceBoundary: null, revolveFaceNormal: null }),
@@ -66,7 +69,27 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
     });
   },
   commitRevolve: async () => {
-    const { revolveProfileMode, revolveSelectedSketchId, revolveFaceBoundary, revolveFaceNormal, revolveAxis, revolveAngle, revolveDirection, revolveAngle2, revolveBodyKind, revolveOperation, revolveIsProjectAxis, sketches, features, units } = get();
+    const { revolveProfileMode, revolveSelectedSketchId, revolveFaceBoundary, revolveFaceNormal, revolveAxis, revolveAngle, revolveDirection, revolveAngle2, revolveBodyKind, revolveOperation, revolveIsProjectAxis, revolveExtentType, revolveToEntityFaceCentroid, sketches, features, units } = get();
+
+    // Compute to-object angle if extent type is 'to-object' (sketch mode only)
+    let effectiveRevolveAngle = revolveAngle;
+    if (revolveExtentType === 'to-object' && revolveToEntityFaceCentroid && revolveProfileMode !== 'face') {
+      const axisKey = revolveAxis === 'centerline' ? 'Y' : revolveAxis;
+      const [cx, cy, cz] = revolveToEntityFaceCentroid;
+      // Project centroid onto the plane perpendicular to the revolve axis
+      // and compute the angle from the profile's reference direction
+      let angleRad: number;
+      if (axisKey === 'Y') {
+        angleRad = Math.atan2(cz, cx);
+      } else if (axisKey === 'X') {
+        angleRad = Math.atan2(cy, cz);
+      } else {
+        angleRad = Math.atan2(cy, cx);
+      }
+      // Ensure positive and convert to degrees
+      const angleDeg = ((angleRad * 180) / Math.PI + 360) % 360;
+      effectiveRevolveAngle = angleDeg < 0.5 ? 360 : angleDeg;
+    }
 
     // Ã¢â€â‚¬Ã¢â€â‚¬ Face mode Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     if (revolveProfileMode === 'face') {
@@ -225,7 +248,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
     }
     // For symmetric, each side gets angle/2; for two-sides, side1=revolveAngle, side2=revolveAngle2.
     // The stored angle is always the primary (or full) angle Ã¢â‚¬â€ the renderer uses revolveDirection.
-    const sketchRevolveAngles = resolveRevolveAngles(revolveDirection, revolveAngle, revolveAngle2);
+    const sketchRevolveAngles = resolveRevolveAngles(revolveDirection, effectiveRevolveAngle, revolveAngle2);
     const primaryAngle = sketchRevolveAngles.primaryAngleDeg;
     if (Math.abs(primaryAngle) < 0.5) {
       set({ statusMessage: 'Angle must be greater than 0' });
