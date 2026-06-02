@@ -33,11 +33,20 @@ const ACTIVE_TOOLS = new Set(['sweep', 'loft', 'patch', 'ruled-surface']);
 /** What does the next click set, and is it a profile or a curve? null = all inputs filled. */
 function nextPick(tool: string, s: ReturnType<typeof useCADStore.getState>): { target: string; kind: PickKind } | null {
   switch (tool) {
-    case 'sweep':
+    case 'sweep': {
+      // An explicitly-activated input (clicked in the panel) takes priority.
+      const a = s.sweepActiveInput;
+      if (a === 'profile1') return { target: 'sweep-profile', kind: 'profile' };
+      if (a === 'profile2') return { target: 'sweep-profile2', kind: 'profile' };
+      if (a === 'path') return { target: 'sweep-path', kind: 'curve' };
+      if (a === 'guide') return { target: 'sweep-guide', kind: 'curve' };
+      // Auto-advance: Profile 1 → Path → Guide. Profile 2 is optional and only
+      // picked when its row is explicitly activated.
       if (!s.sweepProfileSketchId) return { target: 'sweep-profile', kind: 'profile' };
       if (!s.sweepPathSketchId) return { target: 'sweep-path', kind: 'curve' };
       if (s.sweepType === 'guide-rail' && !s.sweepGuideRailId) return { target: 'sweep-guide', kind: 'curve' };
       return null;
+    }
     case 'loft': {
       const i = s.loftProfileSketchIds.findIndex((id) => !id);
       return i >= 0 ? { target: `loft-profile-${i}`, kind: 'profile' } : null;
@@ -55,7 +64,10 @@ function nextPick(tool: string, s: ReturnType<typeof useCADStore.getState>): { t
 
 function dispatchPick(sketchId: string, target: string) {
   const s = useCADStore.getState();
+  // Clear the explicit active input after a pick so auto-advance resumes.
+  if (target.startsWith('sweep-')) s.setSweepActiveInput(null);
   if (target === 'sweep-profile') { s.setSweepProfileSketchId(sketchId); return; }
+  if (target === 'sweep-profile2') { s.setSweepProfileSketchId2(sketchId); return; }
   if (target === 'sweep-path') { s.setSweepPathSketchId(sketchId); return; }
   if (target === 'sweep-guide') { s.setSweepGuideRailId(sketchId); return; }
   if (target.startsWith('loft-profile-')) {
@@ -162,22 +174,45 @@ export function SurfaceSketchPicker() {
   const activeTool = useCADStore((s) => s.activeTool);
   const sketches = useCADStore((s) => s.sketches);
   // Subscribe to all selection fields so the active pick target recomputes on change.
-  useCADStore((s) => s.sweepProfileSketchId);
-  useCADStore((s) => s.sweepPathSketchId);
-  useCADStore((s) => s.sweepGuideRailId);
+  const sweepP1 = useCADStore((s) => s.sweepProfileSketchId);
+  const sweepP2 = useCADStore((s) => s.sweepProfileSketchId2);
+  const sweepPath = useCADStore((s) => s.sweepPathSketchId);
+  const sweepGuide = useCADStore((s) => s.sweepGuideRailId);
+  useCADStore((s) => s.sweepActiveInput);
   useCADStore((s) => s.sweepType);
-  useCADStore((s) => s.loftProfileSketchIds);
-  useCADStore((s) => s.patchSelectedSketchId);
-  useCADStore((s) => s.ruledSketchAId);
-  useCADStore((s) => s.ruledSketchBId);
+  const loftIds = useCADStore((s) => s.loftProfileSketchIds);
+  const patchId = useCADStore((s) => s.patchSelectedSketchId);
+  const ruledA = useCADStore((s) => s.ruledSketchAId);
+  const ruledB = useCADStore((s) => s.ruledSketchBId);
   useCADStore((s) => s.ruledMode);
 
   if (!ACTIVE_TOOLS.has(activeTool)) return null;
 
-  const pick = nextPick(activeTool, useCADStore.getState());
+  const state = useCADStore.getState();
+  const pick = nextPick(activeTool, state);
   if (!pick) return null;
 
-  const available = sketches.filter((s) => s.entities.length > 0);
+  // Sketches already assigned to OTHER inputs of the active tool — exclude them so
+  // the same profile/curve can't be picked twice in-canvas.
+  const usedElsewhere = new Set<string>();
+  if (activeTool === 'sweep') {
+    const own = pick.target === 'sweep-profile' ? sweepP1
+      : pick.target === 'sweep-profile2' ? sweepP2
+      : pick.target === 'sweep-path' ? sweepPath
+      : sweepGuide;
+    for (const id of [sweepP1, sweepP2, sweepPath, sweepGuide]) {
+      if (id && id !== own) usedElsewhere.add(id);
+    }
+  } else if (activeTool === 'loft') {
+    for (const id of loftIds) if (id) usedElsewhere.add(id);
+  } else if (activeTool === 'ruled-surface') {
+    const own = pick.target === 'ruled-a' ? ruledA : ruledB;
+    for (const id of [ruledA, ruledB]) if (id && id !== own) usedElsewhere.add(id);
+  } else if (activeTool === 'patch' && patchId) {
+    usedElsewhere.add(patchId);
+  }
+
+  const available = sketches.filter((s) => s.entities.length > 0 && !usedElsewhere.has(s.id));
   if (available.length === 0) return null;
 
   return (

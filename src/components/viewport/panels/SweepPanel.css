@@ -24,3 +24,10 @@
   color: var(--accent, #4a9eff);
   white-space: nowrap;
 }
+
+/* Active selection input — the in-canvas picker fills this row */
+.sweep-row-active {
+  box-shadow: inset 2px 0 0 var(--accent, #4a9eff);
+  background: rgba(74, 158, 255, 0.08);
+  border-radius: 3px;
+}

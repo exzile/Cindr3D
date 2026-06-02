@@ -13,6 +13,10 @@ export default function SweepPanel() {
 
   const profileId = useCADStore((s) => s.sweepProfileSketchId);
   const setProfileId = useCADStore((s) => s.setSweepProfileSketchId);
+  const profileId2 = useCADStore((s) => s.sweepProfileSketchId2);
+  const setProfileId2 = useCADStore((s) => s.setSweepProfileSketchId2);
+  const activeInput = useCADStore((s) => s.sweepActiveInput);
+  const setActiveInput = useCADStore((s) => s.setSweepActiveInput);
   const pathId = useCADStore((s) => s.sweepPathSketchId);
   const setPathId = useCADStore((s) => s.setSweepPathSketchId);
   const guideRailId = useCADStore((s) => s.sweepGuideRailId);
@@ -40,11 +44,13 @@ export default function SweepPanel() {
   if (activeTool !== 'sweep') return null;
 
   const available = sketches.filter((s) => s.entities.length > 0);
-  const canCommit = !!profileId && !!pathId && profileId !== pathId;
+  const canCommit = !!profileId && !!pathId && profileId !== pathId
+    && profileId2 !== profileId && profileId2 !== pathId;
 
   const nameOf = (id: string | null) => available.find((s) => s.id === id)?.name ?? null;
 
   // Fusion-style selection row: cursor icon + dropdown + "1 selected" chip + clear.
+  // Clicking the field marks this input active so the in-canvas picker fills it.
   // Plain render helper (not a component) to avoid remounting on every parent render.
   const selectionRow = (
     key: string,
@@ -52,11 +58,14 @@ export default function SweepPanel() {
     value: string | null,
     onChange: (id: string | null) => void,
     exclude: (string | null)[],
+    activeKey?: 'profile1' | 'profile2' | 'path' | 'guide',
   ) => {
     const opts = available.filter((s) => !exclude.includes(s.id));
     const selName = nameOf(value);
+    const isActive = activeKey !== undefined && activeInput === activeKey;
     return (
-      <div className="tp-row" key={key}>
+      <div className={`tp-row${isActive ? ' sweep-row-active' : ''}`} key={key}
+        onPointerDown={() => activeKey && setActiveInput(activeKey)}>
         <span className="tp-label">{label}</span>
         <div className="sweep-select-field">
           <MousePointer2 size={12} className="sweep-select-cursor" />
@@ -93,9 +102,10 @@ export default function SweepPanel() {
             </select>
           </div>
 
-          {selectionRow('profile', 'Profile', profileId, setProfileId, [pathId, guideRailId])}
-          {selectionRow('path', 'Path', pathId, setPathId, [profileId, guideRailId])}
-          {sweepType === 'guide-rail' && selectionRow('guide', 'Guide Rail', guideRailId, setGuideRailId, [profileId, pathId])}
+          {selectionRow('profile1', 'Profile 1', profileId, setProfileId, [profileId2, pathId, guideRailId], 'profile1')}
+          {selectionRow('profile2', 'Profile 2', profileId2, setProfileId2, [profileId, pathId, guideRailId], 'profile2')}
+          {selectionRow('path', 'Path', pathId, setPathId, [profileId, profileId2, guideRailId], 'path')}
+          {sweepType === 'guide-rail' && selectionRow('guide', 'Guide Rail', guideRailId, setGuideRailId, [profileId, profileId2, pathId], 'guide')}
 
           <div className="tp-row">
             <label className="tp-checkbox-label">
