@@ -18,6 +18,7 @@ import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMateria
 import { errorMessage } from '../../../../utils/errorHandling';
 import { OCC_PROFILE_POINT_COUNT } from '../../../../utils/occConstants';
 import { toolBooleanOp } from './featureCreationShared';
+import { addToast } from '../../../toastStore';
 
 export function createSweepActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -50,6 +51,7 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
     startSweepTool: () => {
       const extrudable = get().sketches.filter((s) => s.entities.length > 0);
       if (extrudable.length < 2) {
+        addToast('warning', 'Sweep needs 2 sketches', 'Draw a profile sketch and a path sketch first');
         set({ statusMessage: 'Sweep requires at least 2 sketches - a profile and a path' });
         return;
       }

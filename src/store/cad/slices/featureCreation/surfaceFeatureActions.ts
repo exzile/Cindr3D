@@ -8,6 +8,7 @@ import { occFillSurfaceWithInstance, type FillContinuity } from '../../../../eng
 import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
 import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
 import { errorMessage } from '../../../../utils/errorHandling';
+import { addToast } from '../../../toastStore';
 
 export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -18,6 +19,7 @@ export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Part
     startPatchTool: () => {
       const sketches = get().sketches.filter((s) => s.entities.length > 0);
       if (sketches.length === 0) {
+        addToast('warning', 'Patch needs a sketch', 'Draw a closed profile sketch first');
         set({ statusMessage: 'Create a sketch first before using Patch' });
         return;
       }
@@ -97,10 +99,12 @@ export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Part
       const sketches = get().sketches.filter((s) => s.entities.length > 0);
       const ruledMode = get().ruledMode;
       if (ruledMode === 'two-curves' && sketches.length < 2) {
+        addToast('warning', 'Ruled Surface needs 2 sketches', 'Draw Curve A and Curve B sketches first');
         set({ statusMessage: 'Ruled Surface (Two Curves) requires at least 2 sketches' });
         return;
       }
       if (sketches.length === 0) {
+        addToast('warning', 'Ruled Surface needs a sketch', 'Draw a curve sketch first');
         set({ statusMessage: 'Create a sketch first before using Ruled Surface' });
         return;
       }

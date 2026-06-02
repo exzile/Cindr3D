@@ -2,6 +2,7 @@ import type { Feature, Tool } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
+import { addToast } from '../../../toastStore';
 
 export function createRibActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -16,6 +17,7 @@ export function createRibActions({ set, get }: CADSliceContext): Partial<CADStat
     startRibTool: () => {
       const sketches = get().sketches.filter((s) => s.entities.length > 0);
       if (sketches.length === 0) {
+        addToast('warning', 'Rib needs a sketch', 'Draw a profile sketch first');
         set({ statusMessage: 'Create a sketch first before adding a rib' });
         return;
       }

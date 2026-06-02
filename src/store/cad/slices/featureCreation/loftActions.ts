@@ -16,6 +16,7 @@ import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
 import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
 import { errorMessage } from '../../../../utils/errorHandling';
 import { shapeToOccSketchProfile, toolBooleanOp } from './featureCreationShared';
+import { addToast } from '../../../toastStore';
 
 export function createLoftActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -40,6 +41,7 @@ export function createLoftActions({ set, get }: CADSliceContext): Partial<CADSta
     startLoftTool: () => {
       const extrudable = get().sketches.filter((s) => s.entities.length > 0);
       if (extrudable.length < 2) {
+        addToast('warning', 'Loft needs 2+ sketches', 'Draw at least 2 profile sketches first');
         set({ statusMessage: 'Loft requires at least 2 profile sketches' });
         return;
       }
