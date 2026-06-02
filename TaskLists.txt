@@ -36,6 +36,6 @@ Completed sections are removed after shipping; see git history if detail is need
     fillSurface.ts extended with Add_3 type. analysisState fillBoundaryEdgeData
     extended with adjacentFacePtr.
 
-# Note: Fill commit uses a hardcoded 4-point fallback quad when no edges are
-# picked (surfaceCreationActions.ts). Surface Merge matches meshes by a fragile
-# userData.faceId lookup — fold these fixes in when those areas are next touched.
+# Also fixed 2026-06-02: Fill shows status message instead of silent fallback quad
+# when no edges are picked; Surface Merge uses feature-ID lookup instead of fragile
+# userData.faceId; revolveActions.ts mojibake cleaned up.
