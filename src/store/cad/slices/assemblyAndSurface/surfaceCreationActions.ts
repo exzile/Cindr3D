@@ -7,6 +7,8 @@ import { getOccSync } from '../../../../engine/occ/loader';
 import { occFillSurfaceWithInstance, type OccFillEdge, type FillContinuity } from '../../../../engine/occ/ops/fillSurface';
 import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
 import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
+import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
+import { occDeref } from '../../../../engine/occ/brepBody';
 
 const SURFACE_MATERIAL = new THREE.MeshPhysicalMaterial({
   color: 0x8899aa,
@@ -30,12 +32,14 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
     fillBoundaryEdgeData: [],
     openFillDialog: () =>
       set({ activeDialog: 'fill', showFillDialog: true, fillBoundaryEdgeIds: [], fillBoundaryEdgeData: [] }),
-    addFillBoundaryEdge: (id, a, b) =>
+    addFillBoundaryEdge: (id, a, b, adjacentFacePtr) =>
       set((s) => {
         if (s.fillBoundaryEdgeIds.includes(id)) return s;
         return {
           fillBoundaryEdgeIds: [...s.fillBoundaryEdgeIds, id],
-          fillBoundaryEdgeData: a && b ? [...s.fillBoundaryEdgeData, { id, a, b }] : s.fillBoundaryEdgeData,
+          fillBoundaryEdgeData: a && b
+            ? [...s.fillBoundaryEdgeData, { id, a, b, ...(adjacentFacePtr !== undefined ? { adjacentFacePtr } : {}) }]
+            : s.fillBoundaryEdgeData,
         };
       }),
     closeFillDialog: () =>
@@ -63,13 +67,11 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
       };
 
       const loop = buildLoop(fillBoundaryEdgeData);
-      const fallbackLoop = [
-        new THREE.Vector3(-5, 0, -5),
-        new THREE.Vector3(5, 0, -5),
-        new THREE.Vector3(5, 0, 5),
-        new THREE.Vector3(-5, 0, 5),
-      ];
-      const boundaryLoop = loop.length >= 3 ? loop : fallbackLoop;
+      if (loop.length < 3) {
+        get().setStatusMessage('Fill: select at least 3 boundary edges in the viewport first');
+        return;
+      }
+      const boundaryLoop = loop;
 
       // Build per-edge OCC constraints (used by BRepOffsetAPI_MakeFilling for G1/G2).
       const continuityPerEdge: FillContinuity[] = params.continuityPerEdge.length > 0
@@ -82,11 +84,49 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
       const occ = getOccSync();
       if (occ) {
         try {
-          // MakeFilling currently consumes continuity order only. True adjacent-face
-          // constraints need a future API that passes OCC edge/face pairs explicitly.
-          const edgeConstraints: OccFillEdge[] = fillBoundaryEdgeData.map((_, i) => {
+          // Resolve OCC edge VIEWs from owned body.edgeIds handles for G1/G2 constraints.
+          // The handle is long-lived (owned by BRepBody), so the VIEW is valid for the
+          // duration of occFillSurfaceWithInstance. Per WASM patterns: occDeref returns
+          // a Shape — cast via TopoDS.Edge_1 before passing to type-strict APIs.
+          const edgeConstraints: OccFillEdge[] = fillBoundaryEdgeData.map((edgeData, i) => {
             const continuity = continuityPerEdge[i] ?? 'G0';
-            return { continuity };
+            if (continuity === 'G0') return { continuity };
+
+            // Parse "occ:<bodyId>:<edgePtr>" format
+            const parts = edgeData.id.split(':');
+            if (parts.length < 3 || parts[0] !== 'occ') return { continuity };
+            const bodyId = parts[1];
+            const edgePtr = Number(parts[2]);
+            const brepBody = globalBRepBodyRegistry.get(bodyId);
+            const edgeHandle = brepBody?.edgeIds.get(edgePtr);
+            if (!edgeHandle) return { continuity };
+
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const oc = occ.oc as any;
+              // Always deref as TopoDS_Shape, then cast to the target type via
+              // TopoDS.Edge_1 — occDeref with a type ctor other than TopoDS_Shape
+              // uses wrapPointer which may throw in builds that don't expose the ctor.
+              const shapeView = occDeref(occ.oc, edgeHandle, oc.TopoDS_Shape);
+              const edgeView = oc.TopoDS.Edge_1(shapeView); // VIEW — do not delete
+
+              // Resolve adjacent face for true G1/G2 tangency (Add_3 overload)
+              let occAdjacentFace: unknown | undefined;
+              const { adjacentFacePtr } = edgeData;
+              if (adjacentFacePtr !== undefined) {
+                const faceHandle = brepBody?.faceIds.get(adjacentFacePtr);
+                if (faceHandle) {
+                  try {
+                    const faceShapeView = occDeref(occ.oc, faceHandle, oc.TopoDS.Face);
+                    occAdjacentFace = oc.TopoDS.Face_1(faceShapeView); // VIEW
+                  } catch { /* fall through to edge-only constraint */ }
+                }
+              }
+
+              return { continuity, occEdge: edgeView, occAdjacentFace };
+            } catch {
+              return { continuity };
+            }
           });
 
           const body = occFillSurfaceWithInstance(occ.oc, boundaryLoop, {
@@ -134,8 +174,8 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
       let geom: THREE.BufferGeometry;
       const sketch = params.sketchId ? sketches.find((s) => s.id === params.sketchId) : null;
       if (sketch && sketch.entities.length > 0) {
-        const entity = sketch.entities[0];
-        const pts = entity.points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+        // Collect all entity points across all entities in order
+        const pts = sketch.entities.flatMap((e) => e.points.map((p) => new THREE.Vector3(p.x, p.y, p.z)));
         const normal = sketch.planeNormal.clone().normalize();
         const dir = params.direction === 'flip' ? normal.clone().negate() : normal;
         geom = GeometryEngine.offsetCurveToSurface(pts, params.distance, dir);
@@ -186,15 +226,18 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
     commitSurfaceMerge: (params) => {
       const { features } = get();
       const n = features.filter((f) => f.params?.featureKind === 'surface-merge').length + 1;
-      const findMeshByFaceId = (faceId: string) => {
+      // Look up by feature ID first (primary key); fall back to userData.faceId for legacy files.
+      const findMesh = (id: string) => {
+        const byFeature = features.find((f) => f.id === id && f.mesh);
+        if (byFeature) return byFeature.mesh as THREE.Mesh;
         for (const f of features) {
-          if (f.mesh && (f.mesh as THREE.Object3D).userData?.faceId === faceId) return f.mesh as THREE.Mesh;
+          if (f.mesh && (f.mesh as THREE.Object3D).userData?.faceId === id) return f.mesh as THREE.Mesh;
         }
         return null;
       };
 
-      const meshA = params.face1Id ? findMeshByFaceId(params.face1Id) : null;
-      const meshB = params.face2Id ? findMeshByFaceId(params.face2Id) : null;
+      const meshA = params.face1Id ? findMesh(params.face1Id) : null;
+      const meshB = params.face2Id ? findMesh(params.face2Id) : null;
       const mesh = meshA && meshB ? configureSurfaceMesh(GeometryEngine.mergeSurfaces(meshA, meshB)) : undefined;
 
       const feature: Feature = {

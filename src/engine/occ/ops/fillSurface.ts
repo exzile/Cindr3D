@@ -31,6 +31,8 @@ type OccFillApi = OcctRaw & {
   };
   BRepOffsetAPI_MakeFilling_1: new () => {
     Add_2(edge: unknown, order: unknown, isOnBoundary: boolean): void;
+    /** Add edge + adjacent face reference for true G1/G2 tangency. */
+    Add_3(edge: unknown, support: unknown, order: unknown, isOnBoundary: boolean): void;
     Build(progress?: unknown): void;
     IsDone(): boolean;
     Shape(): unknown;
@@ -46,6 +48,8 @@ export interface OccFillEdge {
   /** Pre-built OCC TopoDS_Edge (VIEW — do not delete). Pass when the edge comes
    *  from an existing OCC BRep surface so MakeFilling can apply G1/G2 tangency. */
   occEdge?: unknown;
+  /** Adjacent TopoDS_Face VIEW for true G1/G2 face-tangency (Add_3 overload). */
+  occAdjacentFace?: unknown;
   continuity?: FillContinuity;
 }
 
@@ -143,7 +147,12 @@ export function occFillSurfaceWithInstance(
                            constraint?.continuity === 'G1' ? c1 : c0;
           const edgeToAdd = constraint?.occEdge ?? edgeShapes[i];
           try {
-            filling.Add_2(edgeToAdd, orderVal ?? c0, true);
+            if (constraint?.occAdjacentFace && typeof filling.Add_3 === 'function') {
+              // True G1/G2: Add_3(edge, adjacentFace, order, isBound) — face provides tangent ref
+              filling.Add_3(edgeToAdd, constraint.occAdjacentFace, orderVal ?? c0, true);
+            } else {
+              filling.Add_2(edgeToAdd, orderVal ?? c0, true);
+            }
           } catch {
             filling.Add_2(edgeShapes[i], c0, true); // fallback to G0 with built edge
           }

@@ -25,6 +25,7 @@ import {
 } from './adjacency';
 import { topologicalFilletOrder } from './filletOrder';
 import { getSelectableEdges } from './selectableEdges';
+import { freeWasmException } from '../freeWasmException';
 import { computeEdgeAnchor, findEdgeByAnchor, type EdgeAnchor } from './edgeAnchor';
 import { isOccShapeValid } from './shapeValidity';
 
@@ -75,8 +76,11 @@ function buildFilletBuilder(occ: OccFilletApi, mk: OccFilletBuilder): void {
             ? (err as { message: string }).message
             : String(err);
       if (!message.includes('expected 0 args')) {
-        throw err;
+        throw err; // rethrow — caller is responsible for calling freeWasmException
       }
+      // 'expected 0 args' means Build(progress) not bound; fall through to Build().
+      // Free the numeric exception pointer before falling through.
+      freeWasmException(occ, err);
     } finally {
       progress.delete?.();
     }
@@ -665,6 +669,9 @@ export function occFilletEdgeSetsWithInstance(
       // shape may be an open or missing-face solid. Never install partial
       // fillets into the model; let the caller preserve the previous body.
       console.warn('[occFillet] Build() threw; rejecting partial result. Error:', buildErr);
+      // Free the WASM heap memory held by the C++ exception pointer — without
+      // this, each failed Build() leaks ~500 KB of WASM heap.
+      freeWasmException(occ, buildErr);
       mk.delete();
       return null;
     }

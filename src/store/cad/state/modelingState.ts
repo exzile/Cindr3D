@@ -137,9 +137,15 @@ export interface CADModelingState {
   setRevolveOperation: (
     op: "new-body" | "join" | "cut" | "intersect" | "new-component",
   ) => void;
-  // CORR-10: project axis onto profile plane before revolving
   revolveIsProjectAxis: boolean;
   setRevolveIsProjectAxis: (v: boolean) => void;
+  // SURF-CREATE-7: to-object extent
+  revolveExtentType: "angle" | "to-object";
+  setRevolveExtentType: (t: "angle" | "to-object") => void;
+  revolveToEntityFaceCentroid: [number, number, number] | null;
+  revolveToEntityFaceNormal: [number, number, number] | null;
+  setRevolveToEntityFace: (centroid: [number, number, number], normal: [number, number, number]) => void;
+  clearRevolveToEntityFace: () => void;
   revolveProfileMode: "sketch" | "face";
   setRevolveProfileMode: (m: "sketch" | "face") => void;
   revolveFaceBoundary: number[] | null;
@@ -154,27 +160,36 @@ export interface CADModelingState {
   commitRevolve: () => void;
 
   // Sweep tool (D30)
+  sweepType: "single-path" | "guide-rail";
+  setSweepType: (t: "single-path" | "guide-rail") => void;
+  sweepChainSelection: boolean;
+  setSweepChainSelection: (v: boolean) => void;
+  /** Selected profile, as a "sketchId::profileIndex" key (a specific region on a sketch). */
   sweepProfileSketchId: string | null;
   setSweepProfileSketchId: (id: string | null) => void;
+  /** Which selection input the in-canvas picker fills (null = auto-advance). */
+  sweepActiveInput: 'profile' | 'path' | 'guide' | null;
+  setSweepActiveInput: (i: 'profile' | 'path' | 'guide' | null) => void;
   sweepPathSketchId: string | null;
   setSweepPathSketchId: (id: string | null) => void;
   // D104 surface sweep
   sweepBodyKind: "solid" | "surface";
   setSweepBodyKind: (k: "solid" | "surface") => void;
   // D71 sweep upgrades
-  sweepOrientation: "perpendicular" | "parallel" | "default";
-  sweepProfileScaling: "none" | "scale-to-path" | "scale-to-rail"; // SDK-4
+  sweepOrientation: "perpendicular" | "frenet" | "horizontal" | "vertical";
+  sweepProfileScaling: "none" | "scale-to-path" | "scale-to-rail";
   sweepTwistAngle: number;
   sweepTaperAngle: number;
   sweepGuideRailId: string | null;
+  sweepIsDirectionFlipped: boolean;
   sweepOperation: "new-body" | "join" | "cut" | "intersect" | "new-component";
   sweepDistance: "entire" | "distance";
-  // SDK-5: path parametric start/end (0–1 fraction of path length)
   sweepDistanceOne: number;
   sweepDistanceTwo: number;
+  setSweepIsDirectionFlipped: (v: boolean) => void;
   setSweepDistanceOne: (v: number) => void;
   setSweepDistanceTwo: (v: number) => void;
-  setSweepOrientation: (v: "perpendicular" | "parallel" | "default") => void;
+  setSweepOrientation: (v: "perpendicular" | "frenet" | "horizontal" | "vertical") => void;
   setSweepProfileScaling: (
     v: "none" | "scale-to-path" | "scale-to-rail",
   ) => void; // SDK-4
@@ -196,9 +211,12 @@ export interface CADModelingState {
   setLoftBodyKind: (k: "solid" | "surface") => void;
   // D72 loft upgrades
   loftClosed: boolean;
-  loftTangentEdgesMerged: boolean; // SDK-8
+  loftTangentEdgesMerged: boolean;
   loftStartCondition: "free" | "tangent" | "curvature";
   loftEndCondition: "free" | "tangent" | "curvature";
+  loftRailSketchIds: string[];
+  setLoftRailSketchIds: (ids: string[]) => void;
+  /** @deprecated kept for serialization compat — use loftRailSketchIds */
   loftRailSketchId: string | null;
   loftOperation: "new-body" | "join" | "cut" | "intersect" | "new-component";
   setLoftClosed: (v: boolean) => void;
@@ -215,12 +233,16 @@ export interface CADModelingState {
 
   // Patch tool (D106)
   patchSelectedSketchId: string | null;
+  patchContinuity: 'G0' | 'G1' | 'G2';
+  setPatchContinuity: (v: 'G0' | 'G1' | 'G2') => void;
   setPatchSelectedSketchId: (id: string | null) => void;
   startPatchTool: () => void;
   cancelPatchTool: () => void;
   commitPatch: () => void;
 
   // Ruled Surface tool (D107)
+  ruledMode: "two-curves" | "extend-edge";
+  setRuledMode: (mode: "two-curves" | "extend-edge") => void;
   ruledSketchAId: string | null;
   setRuledSketchAId: (id: string | null) => void;
   ruledSketchBId: string | null;
@@ -229,6 +251,11 @@ export interface CADModelingState {
   setRuledAlignmentMode: (mode: "direction" | "tangent" | "normal") => void;
   ruledAlignmentDistance: number;
   setRuledAlignmentDistance: (distance: number) => void;
+  // Extend-edge mode (SURF-CREATE-5)
+  ruledExtendDistance: number;
+  setRuledExtendDistance: (d: number) => void;
+  ruledExtendAxis: "X" | "Y" | "Z";
+  setRuledExtendAxis: (a: "X" | "Y" | "Z") => void;
   startRuledSurfaceTool: () => void;
   cancelRuledSurfaceTool: () => void;
   commitRuledSurface: () => void;

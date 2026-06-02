@@ -17,6 +17,7 @@ import {
   restoreComponentStoreSnapshot,
   type HistorySnapshot,
 } from "./historyRestoreHelpers";
+import { clearEdgeModProbeCache } from "../featureManagement/edgeModActions";
 
 export function createHistoryActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -37,6 +38,11 @@ export function createHistoryActions({ set, get }: CADSliceContext): Partial<CAD
 
     pushUndo: () => {
       const state = get();
+      // pushUndo is called at the start of every geometry-mutating action (commit,
+      // delete, edit). Drop the fillet/chamfer probe cache so a stale validity
+      // result can't survive a mutation that changes geometry without bumping the
+      // cached body revision. (undo/redo clear it separately — they don't call this.)
+      clearEdgeModProbeCache();
       const snapshot = snapshotCADState(state);
       const next = [...state.undoStack, snapshot];
       set({
@@ -48,6 +54,10 @@ export function createHistoryActions({ set, get }: CADSliceContext): Partial<CAD
     undo: () => {
       const state = get();
       if (state.undoStack.length === 0) return;
+      // History navigation can restore bodies whose IDs/revisions no longer match
+      // the cached fillet/chamfer probe entries — drop the cache to avoid serving
+      // a stale validity result for geometry that just changed under undo.
+      clearEdgeModProbeCache();
       const currentSnapshot = snapshotCADState(state);
       const stack = [...state.undoStack];
       const snapshot = stack.pop()!;
@@ -170,6 +180,7 @@ export function createHistoryActions({ set, get }: CADSliceContext): Partial<CAD
     redo: () => {
       const state = get();
       if (state.redoStack.length === 0) return;
+      clearEdgeModProbeCache();
       const currentSnapshot = snapshotCADState(state);
       const stack = [...state.redoStack];
       const snapshot = stack.pop()!;

@@ -1,8 +1,24 @@
 import { occDeref, type BRepBody } from '../brepBody';
 import type { OcctRaw } from '../types';
 import { propagateBooleanIds, type OccBooleanAlgo } from './booleanBase';
+import { freeWasmException, occErrorMessage } from '../freeWasmException';
 
 export type OccBooleanOperation = 'subtract' | 'union' | 'intersect';
+
+/**
+ * Run a boolean builder's Build(), freeing the WASM-heap exception object if the
+ * OCC C++ code throws (otherwise the dropped numeric pointer leaks). Rethrows a
+ * plain Error so callers never hold the freed pointer.
+ */
+function buildBooleanOrThrow(oc: OcctRaw, op: { Build(): void }): void {
+  try {
+    op.Build();
+  } catch (err) {
+    const message = occErrorMessage(err);
+    freeWasmException(oc, err);
+    throw err instanceof Error ? err : new Error(`OCC boolean failed: ${message}`);
+  }
+}
 
 export interface OccBooleanOptions {
   id?: string;
@@ -70,7 +86,7 @@ export function performOccBooleanWithInstance(
     op.SetNonDestructive?.(true);
     if (options.fuzzyValue !== undefined) op.SetFuzzyValue?.(options.fuzzyValue);
     if (options.runParallel !== undefined) op.SetRunParallel?.(options.runParallel);
-    op.Build();
+    buildBooleanOrThrow(oc, op);
 
     if (op.IsDone?.() === false || op.HasErrors?.()) {
       return null;
@@ -101,7 +117,7 @@ export function performOccBooleanWithRawTool(
     op.SetNonDestructive?.(true);
     if (options.fuzzyValue !== undefined) op.SetFuzzyValue?.(options.fuzzyValue);
     if (options.runParallel !== undefined) op.SetRunParallel?.(options.runParallel);
-    op.Build();
+    buildBooleanOrThrow(oc, op);
 
     if (op.IsDone?.() === false || op.HasErrors?.()) {
       return null;

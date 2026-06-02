@@ -1,13 +1,21 @@
 import './SweepPanel.css';
-import { X, Check, Spline } from 'lucide-react';
+import { X, Check, Spline, MousePointer2 } from 'lucide-react';
 import { useCADStore } from '../../../store/cadStore';
+import { GeometryEngine } from '../../../engine/GeometryEngine';
 
 export default function SweepPanel() {
   const activeTool = useCADStore((s) => s.activeTool);
   const sketches = useCADStore((s) => s.sketches);
 
+  const sweepType = useCADStore((s) => s.sweepType);
+  const setSweepType = useCADStore((s) => s.setSweepType);
+  const chainSelection = useCADStore((s) => s.sweepChainSelection);
+  const setChainSelection = useCADStore((s) => s.setSweepChainSelection);
+
   const profileId = useCADStore((s) => s.sweepProfileSketchId);
   const setProfileId = useCADStore((s) => s.setSweepProfileSketchId);
+  const activeInput = useCADStore((s) => s.sweepActiveInput);
+  const setActiveInput = useCADStore((s) => s.setSweepActiveInput);
   const pathId = useCADStore((s) => s.sweepPathSketchId);
   const setPathId = useCADStore((s) => s.setSweepPathSketchId);
   const guideRailId = useCADStore((s) => s.sweepGuideRailId);
@@ -15,19 +23,15 @@ export default function SweepPanel() {
 
   const orientation = useCADStore((s) => s.sweepOrientation);
   const setOrientation = useCADStore((s) => s.setSweepOrientation);
-  const profileScaling = useCADStore((s) => s.sweepProfileScaling);
-  const setProfileScaling = useCADStore((s) => s.setSweepProfileScaling);
-  const twistAngle = useCADStore((s) => s.sweepTwistAngle);
-  const setTwistAngle = useCADStore((s) => s.setSweepTwistAngle);
   const taperAngle = useCADStore((s) => s.sweepTaperAngle);
   const setTaperAngle = useCADStore((s) => s.setSweepTaperAngle);
-
-  const distance = useCADStore((s) => s.sweepDistance);
-  const setDistance = useCADStore((s) => s.setSweepDistance);
-  const distanceOne = useCADStore((s) => s.sweepDistanceOne);
-  const setDistanceOne = useCADStore((s) => s.setSweepDistanceOne);
+  const twistAngle = useCADStore((s) => s.sweepTwistAngle);
+  const setTwistAngle = useCADStore((s) => s.setSweepTwistAngle);
   const distanceTwo = useCADStore((s) => s.sweepDistanceTwo);
   const setDistanceTwo = useCADStore((s) => s.setSweepDistanceTwo);
+
+  const isDirectionFlipped = useCADStore((s) => s.sweepIsDirectionFlipped);
+  const setIsDirectionFlipped = useCADStore((s) => s.setSweepIsDirectionFlipped);
   const operation = useCADStore((s) => s.sweepOperation);
   const setOperation = useCADStore((s) => s.setSweepOperation);
   const bodyKind = useCADStore((s) => s.sweepBodyKind);
@@ -39,7 +43,54 @@ export default function SweepPanel() {
   if (activeTool !== 'sweep') return null;
 
   const available = sketches.filter((s) => s.entities.length > 0);
-  const canCommit = !!profileId && !!pathId && profileId !== pathId;
+  const baseOf = (id: string | null) => (id ? id.split('::')[0] : null);
+  const profileBase = baseOf(profileId);
+  const canCommit = !!profileId && !!pathId && profileBase !== pathId && profileBase !== guideRailId;
+
+  // Profile options = each closed region on each sketch, labelled "Sketch — Profile N"
+  // so the user sees which sketch the profile lives on. Value = "sketchId::profileIndex".
+  const profileOptions = available.flatMap((sketch) => {
+    const count = Math.max(1, GeometryEngine.sketchToProfileShapesFlat(sketch).length);
+    return Array.from({ length: count }, (_, i) => ({
+      id: `${sketch.id}::${i}`,
+      label: count > 1 ? `${sketch.name} — Profile ${i + 1}` : sketch.name,
+    }));
+  });
+  const sketchOptions = (excludeIds: (string | null)[]) =>
+    available.filter((s) => !excludeIds.includes(s.id)).map((s) => ({ id: s.id, label: s.name }));
+
+  // Fusion-style selection row: cursor icon + dropdown + "1 selected" chip + clear.
+  // Clicking the field marks this input active so the in-canvas picker fills it.
+  // Plain render helper (not a component) to avoid remounting on every parent render.
+  const selectionRow = (
+    key: string,
+    label: string,
+    value: string | null,
+    onChange: (id: string | null) => void,
+    opts: { id: string; label: string }[],
+    activeKey?: 'profile' | 'path' | 'guide',
+  ) => {
+    const selOpt = opts.find((o) => o.id === value);
+    const isActive = activeKey !== undefined && activeInput === activeKey;
+    return (
+      <div className={`tp-row${isActive ? ' sweep-row-active' : ''}`} key={key}
+        onPointerDown={() => activeKey && setActiveInput(activeKey)}>
+        <span className="tp-label">{label}</span>
+        <div className="sweep-select-field">
+          <MousePointer2 size={12} className="sweep-select-cursor" />
+          <select className="tp-select sweep-select-input" value={value ?? ''}
+            onChange={(e) => onChange(e.target.value || null)}>
+            <option value="">{selOpt?.label ?? 'Select'}</option>
+            {opts.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+          {value && <span className="sweep-select-count">1 selected</span>}
+          {value && (
+            <button className="tp-chip__clear" title="Clear" onClick={() => onChange(null)}><X size={11} /></button>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="tool-panel">
@@ -50,98 +101,38 @@ export default function SweepPanel() {
       </div>
 
       <div className="tp-body">
-        {/* Profile */}
         <div className="tp-section">
-          <div className="tp-section-title">Profile</div>
           <div className="tp-row">
-            <span className="tp-label">Sketch</span>
-            <select className="tp-select" value={profileId ?? ''}
-              onChange={(e) => setProfileId(e.target.value || null)}>
-              <option value="" disabled>Select profile</option>
-              {available.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            <span className="tp-label">Type</span>
+            <select className="tp-select" value={sweepType}
+              onChange={(e) => setSweepType(e.target.value as 'single-path' | 'guide-rail')}>
+              <option value="single-path">Single Path</option>
+              <option value="guide-rail">Path + Guide Rail</option>
             </select>
+          </div>
+
+          {selectionRow('profile', 'Profile', profileId, setProfileId,
+            profileOptions.filter((o) => baseOf(o.id) !== pathId && baseOf(o.id) !== guideRailId), 'profile')}
+          {selectionRow('path', 'Path', pathId, setPathId, sketchOptions([profileBase, guideRailId]), 'path')}
+          {sweepType === 'guide-rail' && selectionRow('guide', 'Guide Rail', guideRailId, setGuideRailId, sketchOptions([profileBase, pathId]), 'guide')}
+
+          <div className="tp-row">
+            <label className="tp-checkbox-label">
+              <input type="checkbox" checked={chainSelection} onChange={(e) => setChainSelection(e.target.checked)} />
+              <span>Chain Selection</span>
+            </label>
           </div>
         </div>
 
         <div className="tp-divider" />
 
-        {/* Path */}
         <div className="tp-section">
-          <div className="tp-section-title">Path</div>
-          <div className="tp-row">
-            <span className="tp-label">Sketch</span>
-            <select className="tp-select" value={pathId ?? ''}
-              onChange={(e) => setPathId(e.target.value || null)}>
-              <option value="" disabled>Select path</option>
-              {available.filter((s) => s.id !== profileId)
-                .map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
           <div className="tp-row">
             <span className="tp-label">Distance</span>
-            <select className="tp-select" value={distance}
-              onChange={(e) => setDistance(e.target.value as 'entire' | 'distance')}>
-              <option value="entire">Entire Path</option>
-              <option value="distance">Partial (0–1)</option>
-            </select>
-          </div>
-          {distance === 'distance' && (
-            <>
-              <div className="tp-row">
-                <span className="tp-label">Start (0–1)</span>
-                <input
-                  type="number"
-                  className="tp-input"
-                  min={0} max={1} step={0.05}
-                  value={distanceOne}
-                  onChange={(e) => setDistanceOne(parseFloat(e.target.value) || 0)}
-                />
-              </div>
-              <div className="tp-row">
-                <span className="tp-label">End (0–1)</span>
-                <input
-                  type="number"
-                  className="tp-input"
-                  min={0} max={1} step={0.05}
-                  value={distanceTwo}
-                  onChange={(e) => setDistanceTwo(parseFloat(e.target.value) || 1)}
-                />
-              </div>
-            </>
-          )}
-          <div className="tp-row">
-            <span className="tp-label">Guide Rail</span>
-            <select className="tp-select" value={guideRailId ?? ''}
-              onChange={(e) => setGuideRailId(e.target.value || null)}>
-              <option value="">— none —</option>
-              {available.filter((s) => s.id !== profileId && s.id !== pathId)
-                .map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </div>
-        </div>
-
-        <div className="tp-divider" />
-
-        {/* Options */}
-        <div className="tp-section">
-          <div className="tp-section-title">Options</div>
-          <div className="tp-row">
-            <span className="tp-label">Orientation</span>
-            <select className="tp-select" value={orientation}
-              onChange={(e) => setOrientation(e.target.value as 'perpendicular' | 'parallel' | 'default')}>
-              <option value="perpendicular">Perpendicular to Path</option>
-              <option value="parallel">Parallel (Fixed)</option>
-              <option value="default">Default</option>
-            </select>
-          </div>
-          <div className="tp-row">
-            <span className="tp-label">Scaling</span>
-            <select className="tp-select" value={profileScaling}
-              onChange={(e) => setProfileScaling(e.target.value as 'none' | 'scale-to-path' | 'scale-to-rail')}>
-              <option value="none">No Scaling</option>
-              <option value="scale-to-path">Scale to Path</option>
-              <option value="scale-to-rail">Scale to Rail</option>
-            </select>
+            <div className="tp-input-group">
+              <input type="number" step={0.05} min={0.01} max={1} value={distanceTwo}
+                onChange={(e) => setDistanceTwo(parseFloat(e.target.value) || 1)} />
+            </div>
           </div>
           <div className="tp-row">
             <span className="tp-label">Taper Angle</span>
@@ -159,25 +150,40 @@ export default function SweepPanel() {
               <span className="tp-unit">°</span>
             </div>
           </div>
+          <div className="tp-row">
+            <span className="tp-label">Orientation</span>
+            <select className="tp-select" value={orientation}
+              onChange={(e) => setOrientation(e.target.value as 'perpendicular' | 'frenet' | 'horizontal' | 'vertical')}>
+              <option value="perpendicular">Perpendicular</option>
+              <option value="frenet">Frenet (Follow Path)</option>
+              <option value="horizontal">Horizontal</option>
+              <option value="vertical">Vertical</option>
+            </select>
+          </div>
+          <div className="tp-row">
+            <label className="tp-checkbox-label">
+              <input type="checkbox" checked={isDirectionFlipped}
+                onChange={(e) => setIsDirectionFlipped(e.target.checked)} />
+              <span>Flip Direction</span>
+            </label>
+          </div>
         </div>
 
         <div className="tp-divider" />
 
-        {/* Output */}
         <div className="tp-section">
-          <div className="tp-section-title">Output</div>
           {bodyKind !== 'surface' && (
-          <div className="tp-row">
-            <span className="tp-label">Operation</span>
-            <select className="tp-select" value={operation}
-              onChange={(e) => setOperation(e.target.value as 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component')}>
-              <option value="new-body">New Body</option>
-              <option value="join">Join</option>
-              <option value="cut">Cut</option>
-              <option value="intersect">Intersect</option>
-              <option value="new-component">New Component</option>
-            </select>
-          </div>
+            <div className="tp-row">
+              <span className="tp-label">Operation</span>
+              <select className="tp-select" value={operation}
+                onChange={(e) => setOperation(e.target.value as 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component')}>
+                <option value="new-body">New Body</option>
+                <option value="join">Join</option>
+                <option value="cut">Cut</option>
+                <option value="intersect">Intersect</option>
+                <option value="new-component">New Component</option>
+              </select>
+            </div>
           )}
           <div className="tp-row">
             <span className="tp-label">Body</span>

@@ -10,6 +10,8 @@ import { useThemeStore } from '../../store/themeStore';
 import { EnvErrorBoundary, CrashBoundary } from './EnvErrorBoundary';
 import ExtrudeTool from './tools/ExtrudeTool';
 import RevolveTool from './tools/RevolveTool';
+import { SurfaceCreatePreviews } from './scene/SurfaceCreatePreviews';
+import { SurfaceSketchPicker } from './scene/SurfaceSketchPicker';
 import SceneTheme from './scene/SceneTheme';
 import SceneInvalidator from './scene/SceneInvalidator';
 import VisualStyleEffect from './scene/VisualStyleEffect';
@@ -269,6 +271,8 @@ export default function Viewport() {
         <MeasureInteraction />
         <ExtrudeTool />
         <RevolveTool />
+        <SurfaceCreatePreviews />
+        <SurfaceSketchPicker />
         <FormBodies />
         <FormInteraction />
         <JointGizmos />

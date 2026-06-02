@@ -39,9 +39,9 @@ export interface CADAnalysisState {
   showFillDialog: boolean;
   fillBoundaryEdgeIds: string[];
   /** Per-edge endpoint data captured at pick time so commitFill can assemble a real boundary loop. */
-  fillBoundaryEdgeData: Array<{ id: string; a: [number, number, number]; b: [number, number, number] }>;
+  fillBoundaryEdgeData: Array<{ id: string; a: [number, number, number]; b: [number, number, number]; adjacentFacePtr?: number }>;
   openFillDialog(): void;
-  addFillBoundaryEdge(id: string, a?: [number, number, number], b?: [number, number, number]): void;
+  addFillBoundaryEdge(id: string, a?: [number, number, number], b?: [number, number, number], adjacentFacePtr?: number): void;
   closeFillDialog(): void;
   commitFill(params: import('../../../components/dialogs/surface/FillDialog').FillParams): void;
 

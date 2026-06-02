@@ -16,6 +16,7 @@ import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
 import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
 import { errorMessage } from '../../../../utils/errorHandling';
 import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
+import { useComponentStore } from '../../../componentStore';
 import {
   makeFaceBoundarySketchProfile,
   makeRevolveSketchProfileFromShape,
@@ -26,7 +27,6 @@ import {
 
 export function createRevolveActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
-  // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Revolve tool Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   ...REVOLVE_DEFAULTS,
   setRevolveSelectedSketchId: (id) => set({ revolveSelectedSketchId: id }),
   setRevolveAxis: (a) => set({ revolveAxis: a }),
@@ -37,8 +37,11 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
   // D103 body kind
   setRevolveBodyKind: (k) => set({ revolveBodyKind: k }),
   setRevolveOperation: (op) => set({ revolveOperation: op }),
-  // CORR-10
   setRevolveIsProjectAxis: (v) => set({ revolveIsProjectAxis: v }),
+  // SURF-CREATE-7: to-object extent
+  setRevolveExtentType: (t) => set({ revolveExtentType: t }),
+  setRevolveToEntityFace: (centroid, normal) => set({ revolveToEntityFaceCentroid: centroid, revolveToEntityFaceNormal: normal, revolveExtentType: 'to-object' }),
+  clearRevolveToEntityFace: () => set({ revolveToEntityFaceCentroid: null, revolveToEntityFaceNormal: null, revolveExtentType: 'angle' }),
   // Face mode
   setRevolveProfileMode: (m) => set({ revolveProfileMode: m }),
   clearRevolveFace: () => set({ revolveFaceBoundary: null, revolveFaceNormal: null }),
@@ -48,14 +51,14 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
     set({
       revolveFaceBoundary: flat,
       revolveFaceNormal: [normal.x, normal.y, normal.z],
-      statusMessage: 'Face selected Ã¢â‚¬â€ set axis and angle, then click OK',
+      statusMessage: 'Face selected - set axis and angle, then click OK',
     });
   },
   startRevolveTool: () => {
     set({
       activeTool: 'revolve',
       ...REVOLVE_DEFAULTS,
-      statusMessage: 'Revolve Ã¢â‚¬â€ pick a sketch profile or use Face mode',
+      statusMessage: 'Revolve - pick a sketch profile or use Face mode',
     });
   },
   cancelRevolveTool: () => {
@@ -66,9 +69,49 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
     });
   },
   commitRevolve: async () => {
-    const { revolveProfileMode, revolveSelectedSketchId, revolveFaceBoundary, revolveFaceNormal, revolveAxis, revolveAngle, revolveDirection, revolveAngle2, revolveBodyKind, revolveOperation, revolveIsProjectAxis, sketches, features, units } = get();
+    const { revolveProfileMode, revolveSelectedSketchId, revolveFaceBoundary, revolveFaceNormal, revolveAxis, revolveAngle, revolveDirection, revolveAngle2, revolveBodyKind, revolveOperation, revolveIsProjectAxis, revolveExtentType, revolveToEntityFaceCentroid, sketches, features, units } = get();
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Face mode Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // Compute to-object angle if extent type is 'to-object' (sketch mode only)
+    let effectiveRevolveAngle = revolveAngle;
+    if (revolveExtentType === 'to-object' && revolveToEntityFaceCentroid && revolveProfileMode !== 'face') {
+      const [cx, cy, cz] = revolveToEntityFaceCentroid;
+      let angleRad: number;
+      if (revolveAxis === 'centerline') {
+        // For centerline axis, derive the actual axis direction from the sketch entity
+        // instead of hardcoding global Y — this handles non-Y centerlines correctly.
+        const sketch = sketches.find((s) => s.id === revolveSelectedSketchId);
+        const clEntity = sketch?.entities.find((e) => e.type === 'centerline' && e.points.length >= 2);
+        if (clEntity) {
+          const p0 = clEntity.points[0];
+          const p1 = clEntity.points[clEntity.points.length - 1];
+          const axisDir = new THREE.Vector3(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z).normalize();
+          const axisOrigin = new THREE.Vector3(p0.x, p0.y, p0.z);
+          // Project centroid onto the plane perpendicular to the centerline axis
+          const centroid = new THREE.Vector3(cx, cy, cz);
+          const proj = centroid.clone().sub(axisOrigin);
+          const along = proj.dot(axisDir);
+          const inPlane = proj.sub(axisDir.clone().multiplyScalar(along));
+          // Find a reference perpendicular direction (any vector not parallel to axisDir)
+          const refBase = Math.abs(axisDir.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);
+          const refX = refBase.clone().sub(axisDir.clone().multiplyScalar(refBase.dot(axisDir))).normalize();
+          const refY = new THREE.Vector3().crossVectors(axisDir, refX).normalize();
+          angleRad = Math.atan2(inPlane.dot(refY), inPlane.dot(refX));
+        } else {
+          // No centerline entity — fall back to global Y
+          angleRad = Math.atan2(cz, cx);
+        }
+      } else if (revolveAxis === 'Y') {
+        angleRad = Math.atan2(cz, cx);
+      } else if (revolveAxis === 'X') {
+        angleRad = Math.atan2(cy, cz);
+      } else {
+        angleRad = Math.atan2(cy, cx);
+      }
+      // Ensure positive and convert to degrees
+      const angleDeg = ((angleRad * 180) / Math.PI + 360) % 360;
+      effectiveRevolveAngle = angleDeg < 0.5 ? 360 : angleDeg;
+    }
+
     if (revolveProfileMode === 'face') {
       if (!revolveFaceBoundary || revolveFaceBoundary.length < 9) {
         set({ statusMessage: 'Click a face in the viewport first' });
@@ -99,7 +142,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
         timestamp: Date.now(),
         bodyKind: revolveBodyKind === 'surface' ? 'surface' : 'solid',
       };
-      const angleDesc = revolveDirection === 'symmetric' ? `Ã‚Â±${revolveAngle / 2}Ã‚Â°` : `${revolveAngle}Ã‚Â°`;
+      const angleDesc = revolveDirection === 'symmetric' ? `±${revolveAngle / 2}°` : `${revolveAngle}°`;
 
       const faceFallbackNote = '';
       if (revolveOperation && revolveOperation !== 'new-body' && revolveOperation !== 'new-component' && revolveBodyKind !== 'surface') {
@@ -210,10 +253,10 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
         ...REVOLVE_DEFAULTS,
         statusMessage: `Revolved face by ${angleDesc} around ${revolveAxis} (${units})${faceFallbackNote}`,
       });
+      registerRevolveBody(feature, revolveOperation, revolveBodyKind, undefined);
       return;
     }
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Sketch mode Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
     if (!revolveSelectedSketchId) {
       set({ statusMessage: 'No profile selected for revolve' });
       return;
@@ -224,8 +267,8 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       return;
     }
     // For symmetric, each side gets angle/2; for two-sides, side1=revolveAngle, side2=revolveAngle2.
-    // The stored angle is always the primary (or full) angle Ã¢â‚¬â€ the renderer uses revolveDirection.
-    const sketchRevolveAngles = resolveRevolveAngles(revolveDirection, revolveAngle, revolveAngle2);
+    // The stored angle is always the primary (or full) angle - the renderer uses revolveDirection.
+    const sketchRevolveAngles = resolveRevolveAngles(revolveDirection, effectiveRevolveAngle, revolveAngle2);
     const primaryAngle = sketchRevolveAngles.primaryAngleDeg;
     if (Math.abs(primaryAngle) < 0.5) {
       set({ statusMessage: 'Angle must be greater than 0' });
@@ -238,7 +281,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
     if (revolveAxis === 'centerline') {
       const clEntity = sketch.entities.find((e) => e.type === 'centerline' && e.points.length >= 2);
       if (!clEntity) {
-        set({ statusMessage: 'Spun Profile: no centerline found in sketch Ã¢â‚¬â€ add a centerline entity first' });
+        set({ statusMessage: 'Spun Profile: no centerline found in sketch - add a centerline entity first' });
         return;
       }
       const p0 = clEntity.points[0];
@@ -257,7 +300,10 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       type: 'revolve',
       sketchId: revolveSelectedSketchId,
       params: {
-        angle: revolveAngle,
+        // Store the effective angle so regen/save-load reproduces the same geometry.
+        // For to-object extent the UI shows revolveAngle (user's intent) but the
+        // committed solid uses effectiveRevolveAngle (computed to face centroid).
+        angle: effectiveRevolveAngle,
         axis: resolvedAxisKey,
         ...(centerlineAxisDirection ? { useCenterline: true, axisDirection: centerlineAxisDirection, axisOrigin: centerlineAxisOrigin } : {}),
         direction: revolveDirection,
@@ -271,12 +317,12 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       bodyKind: revolveBodyKind === 'surface' ? 'surface' : 'solid',
     };
     const angleDesc = revolveDirection === 'symmetric'
-      ? `Ã‚Â±${revolveAngle / 2}Ã‚Â°`
+      ? `±${effectiveRevolveAngle / 2}°`
       : revolveDirection === 'two-sides'
-        ? `${revolveAngle}Ã‚Â°/${revolveAngle2}Ã‚Â°`
-        : `${revolveAngle}Ã‚Â°`;
+        ? `${effectiveRevolveAngle}°/${revolveAngle2}°`
+        : `${effectiveRevolveAngle}°`;
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Boolean operation (join / cut / intersect) Ã¢â€â‚¬Ã¢â€â‚¬
+    // -- Boolean operation (join / cut / intersect) --
     // For non-new-body ops, run an OCC boolean against the chosen target body
     // and store the result on feature.mesh so the stored-mesh render path draws it.
     // new-body falls through unchanged.
@@ -408,7 +454,10 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
             set({ statusMessage: `Revolve failed in OCC: ${message}` });
             return;
           }
-          // Surface revolve falls through with no mesh (params-only fallback)
+          // Surface revolve: fall back to THREE mesh so the feature is visible
+          const axisVec = resolveRevolveAxisVec(resolvedAxisKey, centerlineAxisDirection);
+          feature.mesh = GeometryEngine.revolveSketch(sketch, sketchRevolveAngles.primaryAngleRad, axisVec) ?? undefined;
+          set({ statusMessage: `Surface Revolve: OCC failed (${message}), using mesh fallback` });
         }
       }
     }
@@ -419,6 +468,31 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       ...REVOLVE_DEFAULTS,
       statusMessage: `Revolved ${sketch.name} by ${angleDesc} around ${revolveAxis === 'centerline' ? 'sketch centerline' : revolveAxis} (${units})${sketchFallbackNote}`,
     });
+    registerRevolveBody(feature, revolveOperation, revolveBodyKind, sketch.componentId);
   },
   };
+}
+
+/** Register a browser body for a new-body / new-component revolve so it appears
+ *  under "Bodies" (revolve sets features directly rather than via placeToolFeatureAsync). */
+function registerRevolveBody(
+  feature: Feature,
+  operation: string | undefined,
+  bodyKind: 'solid' | 'surface',
+  sketchComponentId: string | undefined,
+): void {
+  if (operation && operation !== 'new-body' && operation !== 'new-component') return;
+  if (!feature.mesh) return;
+  const cs = useComponentStore.getState();
+  let componentId = sketchComponentId ?? cs.activeComponentId ?? cs.rootComponentId;
+  if (operation === 'new-component') {
+    const parentId = cs.activeComponentId ?? cs.rootComponentId;
+    componentId = cs.addComponent(parentId, `Component ${Object.keys(cs.components ?? {}).length + 1}`);
+  }
+  const bodyCount = Object.keys(cs.bodies).length + 1;
+  const bodyId = cs.addBody(componentId, `${bodyKind === 'surface' ? 'Surface' : 'Body'} ${bodyCount}`);
+  if (bodyId) {
+    cs.addFeatureToBody(bodyId, feature.id);
+    cs.setBodyMesh(bodyId, feature.mesh as THREE.Mesh);
+  }
 }

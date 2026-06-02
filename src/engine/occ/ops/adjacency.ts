@@ -7,6 +7,7 @@
  */
 import type { OcctRaw } from '../types';
 import { occDeref, type BRepBody, type BRepTopologyHandle } from '../brepBody';
+import { freeWasmException, occErrorMessage } from '../freeWasmException';
 
 type OccShapeRef = { ptr: number; delete(): void };
 
@@ -132,13 +133,29 @@ export function runEdgeOpBuild(
       mk.Build(progress);
       return;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String((err as { message?: unknown })?.message ?? err);
-      if (!message.includes('expected 0 args')) throw err;
+      const message = occErrorMessage(err);
+      // 'expected 0 args' = embind arity mismatch (Build(progress) not bound in
+      // this WASM build) — a JS-side error, not a C++ throw; fall through to Build().
+      if (message.includes('expected 0 args')) {
+        freeWasmException(oc, err); // harmless no-op for non-numeric errors
+      } else {
+        // Real OCC C++ failure: free the WASM-heap exception object before it is
+        // dropped (otherwise it leaks), then rethrow a plain Error so callers'
+        // catch blocks never hold the now-freed numeric pointer.
+        freeWasmException(oc, err);
+        throw err instanceof Error ? err : new Error(`OCC build failed: ${message}`);
+      }
     } finally {
       progress.delete?.();
     }
   }
-  mk.Build();
+  try {
+    mk.Build();
+  } catch (err) {
+    const message = occErrorMessage(err);
+    freeWasmException(oc, err);
+    throw err instanceof Error ? err : new Error(`OCC build failed: ${message}`);
+  }
 }
 
 /**

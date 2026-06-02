@@ -182,7 +182,9 @@ export function occChamferWithInstance(
     try {
       runEdgeOpBuild(oc, mk);
     } catch (buildErr) {
-      // Never install a partial/open chamfer; let the caller keep the previous body.
+      // runEdgeOpBuild already freed the WASM exception heap and rethrew a plain
+      // Error. Never install a partial/open chamfer; let the caller keep the
+      // previous body.
       console.warn('[occChamfer] Build() threw; rejecting partial result. Error:', buildErr);
       mk.delete();
       return null;

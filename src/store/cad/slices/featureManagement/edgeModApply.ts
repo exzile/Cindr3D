@@ -532,6 +532,9 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       for (let i = 0; i < limit; i++) {
         const f = allFeatures[i];
         if (f.type !== 'fillet' || f.suppressed || f.id === featureId) continue;
+        // Exclude previously-failed fillets from the combined build — they failed
+        // once and including their edge set would cause the new build to fail too.
+        if (f.healthState === 'error') continue;
         const mode = f.params.mode as string | undefined;
         if (mode === 'full-round' || mode === 'rule-fillet') continue;
         const sibStoredIds = storedEdgeIds(f.params.edgeIds);
@@ -580,6 +583,9 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       for (let i = replayStartIndex; i < limit; i++) {
         const f = allFeatures[i];
         if (f.type === 'sketch' || f.suppressed || f.id === featureId) continue;
+        // Skip previously-errored fillets — replaying them would trigger another
+        // failing OCC Build() and poison the chain. Keep running body unchanged.
+        if (f.type === 'fillet' && f.healthState === 'error') continue;
         if (f.type !== 'fillet') {
           if (ownsRunning) running.dispose();
           return null;
@@ -677,6 +683,18 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
           occ.oc, srcBody, effectiveFilletEdgeSets,
           { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
         );
+
+        // Dry-run (validity probe): the primary attempt is sufficient to determine
+        // whether OCC can solve this fillet at the current value. All the fallback
+        // strategies below are commit-path optimisations that should not run during
+        // a live-preview probe — each involves a full synchronous OCC Build() call
+        // that blocks the main thread for multiple seconds on complex geometry.
+        if (dryRun && !result) {
+          return reportError(
+            `${tool} cannot be solved at this value.` +
+            edgeModSizeHint(tool, radius, distance, 'likely'),
+          );
+        }
 
         // Vertex-neighbor fallback (OCC-13.3): if a filleted edge shares a vertex with
         // a non-filleted edge, OCC cannot close the corner blend in a combined pass.
@@ -885,6 +903,15 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
         ...chamferOpts,
         sourceFeatureId: featureId,
       });
+
+      // Dry-run short-circuit: the degeneracy-heal loop below runs 6 extra Build()
+      // calls — none needed for a validity probe; one failure is sufficient.
+      if (dryRun && !result) {
+        return reportError(
+          `${tool} cannot be solved at this value.` +
+          edgeModSizeHint(tool, radius, distance, 'likely'),
+        );
+      }
 
       // Degeneracy heal: right at OCC's valid-chamfer ceiling an EXACT distance
       // (e.g. d=1.0 against neighbouring r=1 fillets) can fail to build OR build a

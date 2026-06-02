@@ -20,6 +20,7 @@ import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
 import { performOccBooleanWithInstance, type OccBooleanOperation } from '../../../../engine/occ/ops/booleanCore';
 import { tessellate, tessellateWithInstance, tessellationToGeometry } from '../../../../engine/occ/tessellate';
 import { attachTessellationToMesh, detachTessellationFromMesh } from '../../../../engine/occ/picking';
+import { useComponentStore } from '../../../componentStore';
 
 export type BodyBooleanOp = 'new-body' | 'join' | 'cut' | 'intersect';
 
@@ -37,6 +38,12 @@ interface PickOpts {
   excludeType?: Feature['type'];
   /** Skip features whose `params.featureKind` equals this. */
   excludeFeatureKind?: string;
+  /**
+   * When true, skip features whose mesh lacks a `brepBodyId` (non-OCC bodies
+   * such as Rib). Prevents non-OCC meshes from being picked as a boolean target
+   * only to fail the OCC check a few lines later.
+   */
+  requireOccBody?: boolean;
 }
 
 /**
@@ -55,6 +62,7 @@ export function pickMostRecentSolidTarget(
     if (!f.visible || f.suppressed) continue;
     if (f.bodyKind === 'surface') continue;
     if (!(f.mesh instanceof THREE.Mesh)) continue;
+    if (opts.requireOccBody && !(f.mesh as THREE.Mesh).userData['brepBodyId']) continue;
     if (!best || f.timestamp >= best.timestamp) best = f;
   }
   return best;
@@ -182,7 +190,7 @@ export async function placeToolFeatureAsync(
 
   if (operation === 'new-body') return append('');
 
-  const target = pickMostRecentSolidTarget(state.features, pickOpts);
+  const target = pickMostRecentSolidTarget(state.features, { ...pickOpts, requireOccBody: true });
   if (!target || !(target.mesh instanceof THREE.Mesh) || !(feature.mesh instanceof THREE.Mesh)) {
     return fail(` (${operation} failed: OCC target/tool body required)`);
   }
@@ -214,6 +222,31 @@ export async function placeToolFeatureAsync(
             f.id === target.id ? { ...f, suppressed: true, visible: false } : f,
           );
           features.push(combined);
+
+          // ── Reconcile the Bodies browser folder ─────────────────────────
+          // The target feature is now suppressed; reroute its body entry to the
+          // merged result so the folder stays consistent (target body → combined,
+          // tool body consumed/removed).
+          try {
+            const cs = useComponentStore.getState();
+            const targetBodyId = Object.keys(cs.bodies).find((bid) =>
+              cs.bodies[bid]?.featureIds.includes(target.id),
+            );
+            if (targetBodyId) {
+              cs.removeFeatureFromBody(targetBodyId, target.id);
+              cs.addFeatureToBody(targetBodyId, combined.id);
+              if (combined.mesh instanceof THREE.Mesh) cs.setBodyMesh(targetBodyId, combined.mesh);
+            }
+            // The tool body (if any — only exists for new-body ops, which can't
+            // reach this branch, but guard anyway) should be cleaned up.
+            const toolBodyId = Object.keys(cs.bodies).find((bid) =>
+              bid !== targetBodyId && cs.bodies[bid]?.featureIds.includes(feature.id),
+            );
+            if (toolBodyId) cs.removeBody(toolBodyId);
+          } catch {
+            // Body reconciliation is best-effort — never block the commit.
+          }
+
           return {
             ok: true,
             features,

@@ -23,6 +23,16 @@ type OccLoftApi = OcctRaw & {
     Shape(): unknown;
     delete(): void;
   };
+  BRepOffsetAPI_MakePipeShell_1: new (spine: unknown) => {
+    SetMode_2(isFrenet: boolean): void;
+    Add_2(profile: unknown, withContact: boolean, withCorrection: boolean): void;
+    SetTolerance(tol3d: number, boundTol: number, angTol: number): void;
+    IsReady(): boolean;
+    Build(progress?: unknown): void;
+    IsDone(): boolean;
+    Shape(): unknown;
+    delete(): void;
+  };
   Message_ProgressRange_1: new () => { delete?: () => void };
   TopExp_Explorer_2: new (shape: unknown, toFind: unknown, toAvoid: unknown) => {
     More(): boolean;
@@ -41,6 +51,13 @@ export interface OccLoftOptions {
   tolerance?: number;
   /** When true, produce an open shell (surface body) instead of a capped solid. */
   surface?: boolean;
+  /**
+   * Optional rail wires (pre-built OCC TopoDS_Wire objects).
+   * When provided, uses BRepOffsetAPI_MakePipeShell instead of ThruSections.
+   * The first section wire becomes the cross-section; rails guide the shape.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  railWires?: any[];
 }
 
 export async function occLoft(
@@ -68,6 +85,45 @@ export function occLoftWithInstance(
   }
 
   const occ = oc as OccLoftApi;
+
+  // ── Rail path: MakePipeShell when rails are provided ─────────────────────
+  if (options.railWires && options.railWires.length > 0) {
+    const spineWire = options.railWires[0];
+    const pipeShell = new occ.BRepOffsetAPI_MakePipeShell_1(spineWire);
+    pipeShell.SetMode_2(true); // Frenet trihedron for smooth cross-section orientation
+    pipeShell.SetTolerance(1e-4, 1e-4, 1e-6);
+
+    // Add each cross-section wire as a profile
+    const profileWireList: Array<{ delete(): void }> = [];
+    for (let i = 0; i < sections.length; i++) {
+      const w = sketchProfileToWires(oc, sections[i], frames[i]);
+      if (!w) { for (const pw of profileWireList) pw.delete(); pipeShell.delete(); return null; }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      pipeShell.Add_2(w.outerWire as any, false, true);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      profileWireList.push(w.outerWire as any);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const hw of w.holeWires) (hw as any).delete();
+    }
+    // Add additional guide rails (wires 1+)
+    for (let r = 1; r < options.railWires.length; r++) {
+      pipeShell.Add_2(options.railWires[r], true, true);
+    }
+
+    try {
+      if (pipeShell.IsReady?.() === false) { console.warn('[occLoft] MakePipeShell not ready'); return null; }
+      runEdgeOpBuild(oc, pipeShell);
+      if (!pipeShell.IsDone?.()) { console.warn('[occLoft] MakePipeShell Build failed'); return null; }
+      const shape = pipeShell.Shape();
+      return makeBRepBodyFromOccShape(oc, shape, { id: options.id, sourceFeatureId: options.sourceFeatureId });
+    } catch (e) {
+      console.warn('[occLoft] MakePipeShell threw:', e);
+      return null;
+    } finally {
+      for (const pw of profileWireList) pw.delete();
+      pipeShell.delete();
+    }
+  }
   const ruled = options.ruled ?? false;
   const smooth = options.smooth ?? !ruled;
   const tol = options.tolerance ?? 1e-6;
@@ -93,6 +149,19 @@ export function occLoftWithInstance(
     builtWires.push(wires.outerWire as any);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const hw of wires.holeWires) (hw as any).delete();
+  }
+
+  // Close the loft by re-adding the first section as the last.
+  if (options.closed && builtWires.length >= 2) {
+    const firstWires = sketchProfileToWires(oc, sections[0], frames[0]);
+    if (firstWires) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      loftMaker.AddWire(firstWires.outerWire as any);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      builtWires.push(firstWires.outerWire as any);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const hw of firstWires.holeWires) (hw as any).delete();
+    }
   }
 
   try {

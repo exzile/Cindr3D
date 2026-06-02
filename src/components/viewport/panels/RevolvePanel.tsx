@@ -25,9 +25,10 @@ export default function RevolvePanel() {
   const setBodyKind = useCADStore((s) => s.setRevolveBodyKind);
   const revolveOperation = useCADStore((s) => s.revolveOperation);
   const setRevolveOperation = useCADStore((s) => s.setRevolveOperation);
-  const isProjectAxis = useCADStore((s) => s.revolveIsProjectAxis);
-  const setIsProjectAxis = useCADStore((s) => s.setRevolveIsProjectAxis);
-
+  const extentType = useCADStore((s) => s.revolveExtentType);
+  const setExtentType = useCADStore((s) => s.setRevolveExtentType);
+  const toEntityFaceCentroid = useCADStore((s) => s.revolveToEntityFaceCentroid);
+  const clearToEntityFace = useCADStore((s) => s.clearRevolveToEntityFace);
   const commitRevolve = useCADStore((s) => s.commitRevolve);
   const cancelRevolveTool = useCADStore((s) => s.cancelRevolveTool);
 
@@ -38,7 +39,9 @@ export default function RevolvePanel() {
 
   const sketchReady = profileMode === 'sketch' && !!selectedId;
   const faceReady = profileMode === 'face' && !!revolveFaceBoundary;
-  const canCommit = (sketchReady || faceReady) && Math.abs(primaryAngle) > 0.5;
+  const toObjectReady = extentType === 'to-object' ? !!toEntityFaceCentroid : true;
+  const angleReady = extentType === 'angle' ? Math.abs(primaryAngle) > 0.5 : true;
+  const canCommit = (sketchReady || faceReady) && toObjectReady && angleReady;
 
   const axisOptions = profileMode === 'face'
     ? [['X', 'X axis'], ['Y', 'Y axis'], ['Z', 'Z axis']]
@@ -156,16 +159,29 @@ export default function RevolvePanel() {
               </div>
             </div>
           )}
-          <div className="tp-row">
-            <label className="tp-checkbox-label">
-              <input
-                type="checkbox"
-                checked={isProjectAxis}
-                onChange={(e) => setIsProjectAxis(e.target.checked)}
-              />
-              <span>Project Axis to Profile Plane</span>
-            </label>
-          </div>
+          {profileMode === 'sketch' && (
+            <div className="tp-row">
+              <span className="tp-label">Extent</span>
+              <select className="tp-select" value={extentType}
+                onChange={(e) => setExtentType(e.target.value as 'angle' | 'to-object')}>
+                <option value="angle">Angle</option>
+                <option value="to-object">To Object</option>
+              </select>
+            </div>
+          )}
+          {extentType === 'to-object' && profileMode === 'sketch' && (
+            <div className="tp-row">
+              <span className="tp-label">Target face</span>
+              {toEntityFaceCentroid ? (
+                <span className="tp-chip">
+                  Face selected
+                  <button className="tp-chip__clear" onClick={clearToEntityFace} title="Clear"><X size={10} /></button>
+                </span>
+              ) : (
+                <span style={{ fontSize: '11px', color: 'var(--text-muted,#888)' }}>Click a face in viewport</span>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="tp-divider" />

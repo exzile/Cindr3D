@@ -9,7 +9,7 @@ import {
 } from "../../../../engine/occ/ops/fillet";
 import { getSelectableEdges } from "../../../../engine/occ/ops/selectableEdges";
 import { getOccSync } from "../../../../engine/occ/loader";
-import { storedEdgeIds } from "../../../../utils/occEdgeUtils";
+import { parseOccEdgeSelection, storedEdgeIds } from "../../../../utils/occEdgeUtils";
 import { errorMessage } from "../../../../utils/errorHandling";
 import {
   DEFAULT_FILLET_RADIUS,
@@ -17,6 +17,47 @@ import {
   resolveOccFilletOptions,
 } from "./edgeModHelpers";
 import { createOccEdgeModificationHelpers } from "./edgeModApply";
+
+// ── Validity-probe result cache ────────────────────────────────────────────────
+// Caches the last OCC probe result keyed on (tool, featureId, bodyId, bodyRevision,
+// sorted edge ids, relevant params). When the user adjusts a radius/distance value
+// that was already probed — especially when repeatedly hitting the same bad value
+// during slider dragging — the cached failure is returned instantly without any OCC
+// Build() call, eliminating even the single-build hitch the dry-run short-circuit
+// left behind. Auto-invalidates when the body revision changes (body rebuild).
+//
+// Max 32 entries (LRU via insertion-order deletion). Cleared on page load.
+const PROBE_CACHE_MAX = 32;
+const _probeCache = new Map<string, { ok: boolean; message?: string }>();
+
+function _probeCacheKey(
+  tool: string,
+  featureId: string,
+  bodyId: string,
+  bodyRevision: number,
+  sortedEdgeIds: string,
+  paramSig: string,
+): string {
+  return `${tool}|${featureId}|${bodyId}@${bodyRevision}|${sortedEdgeIds}|${paramSig}`;
+}
+
+function _getProbeCacheResult(key: string): { ok: boolean; message?: string } | undefined {
+  return _probeCache.get(key);
+}
+
+function _setProbeCacheResult(key: string, result: { ok: boolean; message?: string }): void {
+  if (_probeCache.size >= PROBE_CACHE_MAX) {
+    // Evict the oldest entry (Map preserves insertion order)
+    const oldest = _probeCache.keys().next().value;
+    if (oldest !== undefined) _probeCache.delete(oldest);
+  }
+  _probeCache.set(key, result);
+}
+
+/** Clear the probe cache (call after undo/redo or any model mutation that invalidates prior results). */
+export function clearEdgeModProbeCache(): void {
+  _probeCache.clear();
+}
 
 function pickSideGroup(
   dialogParams: Record<string, unknown> | undefined,
@@ -408,6 +449,26 @@ export function createEdgeModActions({
       // as the eventual commit will).
       const featureId = get().editingFeatureId ?? "__edgeModPreview__";
 
+      // ── Probe result cache ────────────────────────────────────────────────────
+      // Build a cache key from the body's current revision + sorted edge ids +
+      // relevant parameters. A body rebuild increments revision, auto-invalidating
+      // any cached result for that body. Avoids even the single primary-path Build()
+      // call when the same failing value is probed again (e.g. slider snapping back,
+      // or re-opening a dialog with a radius that previously failed).
+      const sel = parseOccEdgeSelection(edgeIds);
+      const bodyId = sel?.bodyId ?? '';
+      const bodyRevision = bodyId ? (globalBRepBodyRegistry.get(bodyId)?.revision ?? -1) : -1;
+      const sortedEdgeIds = [...edgeIds].sort().join(',');
+      let paramSig: string;
+      if (tool === "Fillet") {
+        paramSig = `r=${radius ?? '?'},m=${filletParams?.mode ?? 'const'},c=${filletParams?.continuity ?? 'G1'}`;
+      } else {
+        paramSig = `d=${distance ?? '?'},d2=${distance2 ?? '?'},a=${angle ?? '?'},p=${propagate ? 1 : 0}`;
+      }
+      const cacheKey = _probeCacheKey(tool, featureId, bodyId, bodyRevision, sortedEdgeIds, paramSig);
+      const cached = _getProbeCacheResult(cacheKey);
+      if (cached !== undefined) return cached;
+
       if (tool === "Fillet") {
         const mode = filletParams?.mode as string | undefined;
         // Face-picker modes don't go through the edge-list apply path — skip.
@@ -415,6 +476,7 @@ export function createEdgeModActions({
         const { continuity, tangencyWeight, isRollingBallCorner } =
           resolveOccFilletOptions(filletParams);
         let message: string | undefined;
+        let result: { ok: boolean; message?: string };
         try {
           const ok = applyOccEdgeModification({
             tool: "Fillet",
@@ -428,14 +490,17 @@ export function createEdgeModActions({
             dryRun: true,
             onDryRunError: (m) => { message = m; },
           });
-          return { ok, message };
+          result = { ok, message };
         } catch (err) {
-          return { ok: false, message: errorMessage(err, "OCC could not solve this fillet") };
+          result = { ok: false, message: errorMessage(err, "OCC could not solve this fillet") };
         }
+        _setProbeCacheResult(cacheKey, result);
+        return result;
       }
 
       // Chamfer (three-face mode is gated by the dialog before it reaches here).
       let message: string | undefined;
+      let result: { ok: boolean; message?: string };
       try {
         const ok = applyOccEdgeModification({
           tool: "Chamfer",
@@ -448,10 +513,12 @@ export function createEdgeModActions({
           dryRun: true,
           onDryRunError: (m) => { message = m; },
         });
-        return { ok, message };
+        result = { ok, message };
       } catch (err) {
-        return { ok: false, message: errorMessage(err, "OCC could not solve this chamfer") };
+        result = { ok: false, message: errorMessage(err, "OCC could not solve this chamfer") };
       }
+      _setProbeCacheResult(cacheKey, result);
+      return result;
     },
   };
 }

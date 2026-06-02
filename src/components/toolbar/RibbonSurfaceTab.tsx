@@ -89,10 +89,10 @@ export function RibbonSurfaceTab() {
         <ToolButton icon={<PenTool size={ICON_LG} />} label="Sketch" onClick={() => setSketchPlaneSelecting(true)} large colorClass="icon-blue" />
         <ToolButton icon={<ArrowUpFromLine size={ICON_LG} />} label="Extrude" onClick={startSurfaceExtrudeTool} active={activeTool === 'extrude'} large colorClass="icon-green" />
         <ToolButton icon={<RotateCcw size={ICON_LG} />} label="Revolve" onClick={startRevolveTool} active={activeTool === 'revolve'} large colorClass="icon-green" />
-        <ToolButton icon={<Spline size={ICON_LG} />} label="Sweep" onClick={startSweepTool} large colorClass="icon-green" />
-        <ToolButton icon={<Layers size={ICON_LG} />} label="Loft" onClick={startLoftTool} large colorClass="icon-green" />
-        <ToolButton icon={<Diamond size={ICON_LG} />} label="Patch" onClick={startPatchTool} large colorClass="icon-green" />
-        <ToolButton icon={<Grid3X3 size={ICON_LG} />} label="Ruled Surface" onClick={startRuledSurfaceTool} large colorClass="icon-green" />
+        <ToolButton icon={<Spline size={ICON_LG} />} label="Sweep" onClick={startSweepTool} active={activeTool === 'sweep'} large colorClass="icon-green" />
+        <ToolButton icon={<Layers size={ICON_LG} />} label="Loft" onClick={startLoftTool} active={activeTool === 'loft'} large colorClass="icon-green" />
+        <ToolButton icon={<Diamond size={ICON_LG} />} label="Patch" onClick={startPatchTool} active={activeTool === 'patch'} large colorClass="icon-green" />
+        <ToolButton icon={<Grid3X3 size={ICON_LG} />} label="Ruled Surface" onClick={startRuledSurfaceTool} active={activeTool === 'ruled-surface'} large colorClass="icon-green" />
         <ToolButton icon={<Layers size={ICON_LG} />} label="Fill" onClick={openFillDialog} large colorClass="icon-green" />
         <ToolButton icon={<MoveRight size={ICON_LG} />} label="Offset Curve" onClick={openOffsetCurveDialog} large colorClass="icon-green" />
         <ToolButton icon={<Grid3x3 size={ICON_LG} />} label="Primitives" onClick={openSurfacePrimitivesDialog} large colorClass="icon-green" />
