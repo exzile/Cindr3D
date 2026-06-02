@@ -259,8 +259,7 @@ export function findAdjacentFacesToFace(
   // centerRaw is a VIEW from occDeref — do NOT delete.
   const centerRaw = occDeref(oc, centerHandle, oc.TopoDS_Shape) as OccShapeRef;
   const centerEdgeIndices = new Set<number>();
-  let centerFaceIdx = -1;
-  centerFaceIdx = findShapeIndex(faceMap, centerRaw);
+  const centerFaceIdx = findShapeIndex(faceMap, centerRaw);
   const centerExp = new occ.TopExp_Explorer_2(centerRaw, oc.TopAbs_ShapeEnum.TopAbs_EDGE, oc.TopAbs_ShapeEnum.TopAbs_SHAPE);
   try {
     while (centerExp.More()) {
@@ -342,7 +341,6 @@ export function collectTangentChainEdges(
   // Map bodyEdgeId ↔ canonical edge index.
   const bodyIdToCanonical = new Map<number, number>();
   const canonicalToBodyId = new Map<number, number>();
-  let mapMisses = 0;
   for (const [bodyEdgeId, edgeHandle] of body.edgeIds) {
     const raw = occDeref(oc, edgeHandle, oc.TopoDS_Shape) as OccShapeRef;
     // raw is a VIEW from occDeref — do NOT delete.
@@ -350,9 +348,7 @@ export function collectTangentChainEdges(
     if (idx > 0) {
       bodyIdToCanonical.set(bodyEdgeId, idx);
       canonicalToBodyId.set(idx, bodyEdgeId);
-    } else {
-      mapMisses++;
-    }
+    } // else: edge not in map (expected for degenerate edges)
   }
   // For each canonical edge index, compute endpoint vertex indices and tangents.
   interface EdgeInfo {

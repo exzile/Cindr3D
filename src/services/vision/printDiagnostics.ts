@@ -127,7 +127,7 @@ function parseDiagnosisJson(text: string): Omit<PrintDiagnosisResult, 'rawText'>
   try {
     parsed = JSON.parse(jsonText) as Partial<PrintDiagnosisResult>;
   } catch (error) {
-    throw new Error(`Diagnostics provider returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Diagnostics provider returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
   const rankedCauses = Array.isArray(parsed.rankedCauses)
     ? parsed.rankedCauses.map((cause) => {

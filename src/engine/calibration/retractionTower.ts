@@ -67,8 +67,10 @@ export function generateRetractionTowerGCode(
     const spikeStart = { x: spikeX - 6, y: spikeY };
     const spikeEnd = { x: spikeX + 6, y: spikeY };
     writer.travel(spikeStart.x, spikeStart.y, feedTravel);
+    // eslint-disable-next-line no-useless-assignment
     current = spikeStart;
     writer.extrudeTo(current, spikeEnd, print.lineWidth, activeLayerHeight, feedPrint);
+    // eslint-disable-next-line no-useless-assignment
     current = spikeEnd;
 
     writer.extrudeAmount(-activeRetract, feedRetract);

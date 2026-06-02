@@ -227,7 +227,7 @@ function parseMarlinJson(body: string): DuetHeightMap {
   try {
     json = JSON.parse(body) as Record<string, unknown>;
   } catch (e) {
-    throw new Error(`Height map JSON parse error: ${errorMessage(e, 'Unknown error')}`);
+    throw new Error(`Height map JSON parse error: ${errorMessage(e, 'Unknown error')}`, { cause: e });
   }
 
   // Klipper saved-variables wrapper

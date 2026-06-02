@@ -25,6 +25,7 @@ export function SlicerWorkspaceTopNav() {
   ) => {
     const index = availableModes.indexOf(mode);
     if (index < 0) return;
+    // eslint-disable-next-line no-useless-assignment
     let nextIndex = index;
     if (event.key === 'ArrowRight') nextIndex = (index + 1) % availableModes.length;
     else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + availableModes.length) % availableModes.length;

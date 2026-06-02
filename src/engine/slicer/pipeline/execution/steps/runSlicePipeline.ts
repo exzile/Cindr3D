@@ -460,6 +460,7 @@ export async function runSlicePipeline(
   const cacheBuildErrors: number[] = [];
   for (let li = 0; li < run.totalLayers; li++) {
     if (slicer.cancelled) throw new Error('Slicing cancelled by user.');
+    // eslint-disable-next-line no-useless-assignment
     let geometryState: SliceLayerGeometryState | null = null;
     try {
       geometryState = layerPrepPool
@@ -532,14 +533,17 @@ export async function runSlicePipeline(
         addTiming('prepare-layer', nowMs() - timingStartMs);
         if (!layer) continue;
         // Continue with this sequentially prepared layer.
+        // eslint-disable-next-line preserve-caught-error
         if (slicer.cancelled) throw new Error('Slicing cancelled by user.');
         timingStartMs = nowMs();
         const contourData = emitGroupedAndContourWalls(pipeline, run, layer);
         addTiming('walls', nowMs() - timingStartMs);
+        // eslint-disable-next-line preserve-caught-error
         if (slicer.cancelled) throw new Error('Slicing cancelled by user.');
         timingStartMs = nowMs();
         emitContourInfill(pipeline, run, layer, contourData);
         addTiming('infill', nowMs() - timingStartMs);
+        // eslint-disable-next-line preserve-caught-error
         if (slicer.cancelled) throw new Error('Slicing cancelled by user.');
         timingStartMs = nowMs();
         finalizeLayer(pipeline, run, layer);

@@ -167,7 +167,9 @@ function splitInfillByTopSkin(
       pipeline.contourToClosedPCRing(region.contour),
       ...region.holes.map((h) => pipeline.contourToClosedPCRing(h)),
     ]];
+    // eslint-disable-next-line no-useless-assignment
     let solidMP: PCMultiPolygon = [];
+    // eslint-disable-next-line no-useless-assignment
     let sparseMP: PCMultiPolygon = [];
     try {
       solidMP = requireMP(
@@ -856,7 +858,9 @@ export function emitContourInfill(
               infillLines.push(...genPattern(safeInfillRegion.contour, subDensity, safeInfillRegion.holes));
             } else {
               const infillRegionMP: PCMultiPolygon = [[slicer.contourToClosedPCRing(safeInfillRegion.contour), ...safeInfillRegion.holes.map((hole) => slicer.contourToClosedPCRing(hole))]];
+              // eslint-disable-next-line no-useless-assignment
               let boostedMP: PCMultiPolygon = [];
+              // eslint-disable-next-line no-useless-assignment
               let normalMP: PCMultiPolygon = infillRegionMP;
               try {
                 boostedMP = intersectMultiPolygon(infillRegionMP, overhangShadowMP);

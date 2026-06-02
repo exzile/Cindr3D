@@ -116,6 +116,7 @@ export default function RevolveTool() {
   const previewMesh = useMemo(() => {
     const { phiStart, sweep } = GeometryEngine.resolveRevolveSweep(revolveAngle, revolveAngle2, revolveDir);
     if (Math.abs(sweep) < 1e-3) return null;
+    // eslint-disable-next-line no-useless-assignment
     let m: THREE.Mesh | null = null;
     if (profileMode === 'face') {
       if (!selBoundary || selBoundary.length < 3) return null;

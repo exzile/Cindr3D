@@ -81,18 +81,18 @@ export default function SketchPointHandles() {
     return new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
   }, [activeSketch]);
 
-  if (!activeSketch || editableEntities.length === 0) return null;
-
   // Draggable point dots show in select mode. Arc/fillet dots are constraints,
   // so they show in any tool but obey the Constraints visibility toggle.
   const showDragHandles = activeTool === 'select';
   const showArcDots = showConstraints;
 
+  // Hooks must come before any conditional return (Rules of Hooks).
   const toggleArc = useCallback((eid: string) => {
     setEditingArcId(useCADStore.getState().sketchEditingArcId === eid ? null : eid);
   }, [setEditingArcId]);
 
   const handles = useMemo(() => {
+    if (!activeSketch || editableEntities.length === 0) return null;
     if (!showDragHandles && !showArcDots) return null;
     const arr: React.ReactElement[] = [];
     for (const entity of editableEntities) {
@@ -152,6 +152,6 @@ export default function SketchPointHandles() {
     return arr;
   }, [editableEntities, showDragHandles, showArcDots, sketchPlaneQuat, editingArcId, toggleArc]);
 
-  if (!handles) return null;
+  if (!activeSketch || !handles) return null;
   return <>{handles}</>;
 }

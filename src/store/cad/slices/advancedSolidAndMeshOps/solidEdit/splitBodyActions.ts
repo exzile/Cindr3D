@@ -323,7 +323,7 @@ export function createSplitBodyActions({ set, get }: CADSliceContext): Partial<C
         return;
       }
 
-      let result: BRepBody | null = null;
+      let result: BRepBody | null;
       try {
         result = occSilhouetteSplitWithInstance(
           occ.oc,

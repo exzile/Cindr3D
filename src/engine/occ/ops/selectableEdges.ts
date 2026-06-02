@@ -388,6 +388,7 @@ function computeSelectableEdges(oc: OcctRaw, body: BRepBody): Map<number, Select
 
       // Edge midpoint: middle vertex of the polyline stored in the tessellation.
       // This is the query point for nearest-triangle lookup on each adjacent face.
+      // eslint-disable-next-line no-useless-assignment
       let emx = 0, emy = 0, emz = 0;
       const poly = tess.edgePolylines?.get(edgeId);
       if (poly && poly.length >= 3) {

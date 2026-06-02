@@ -54,13 +54,15 @@ after all their items shipped; see git history if their detail is needed.
 #           jsdom 29.1.1, typescript-eslint latest, eslint-plugin-react-hooks 7.1.1,
 #           @types/opentype.js 1.3.10. (typescript, vite, vitest were already current.)
 #
-# [ ] DEP-1.4 Review separately before upgrading (major / viewport-sensitive):
-#           - eslint / @eslint/js 10.x — major ESLint API change; review rules config
-#           - opentype.js 2.x — major API; audit font loading + text glyph code
-#           - puppeteer 25.x — dev-only; review scraper/calibration scripts
-#           - three 0.184.x — patch geometry APIs; run viewport smoke test after
-#           - @types/three 0.184.x — type-only, low risk but pair with three upgrade
-#           - three-bvh-csg 0.0.18 — CSG/slicer: review changelog for mesh-op API breaks
+# [~] DEP-1.4 Review separately before upgrading (major / viewport-sensitive):
+#           - [x] opentype.js 2.x — callback API unchanged; no source changes needed (applied)
+#           - [x] puppeteer 25.x — dev-only; no source changes needed (applied)
+#           - [x] three 0.184.x — zero TS errors, all tests pass (applied)
+#           - [x] @types/three 0.184.x — paired with three upgrade (applied)
+#           - [x] three-bvh-csg 0.0.18 — no API breaks in our usage (applied)
+#           - [ ] eslint / @eslint/js 10.x — new rules fire on valid patterns:
+#                 react-hooks/no-direct-setState-in-effect, no-useless-assignment.
+#                 Fix the real code issues flagged by these rules, then adopt eslint 10.
 #
 # [x] DEP-1.5 opencascade.js NOT downgraded (2.0.0-beta.fdece36 > registry 1.1.1).
 # [x] DEP-1.6 Verification gate passed: npm audit --omit=dev: 0 vulns; tests 1471 pass.

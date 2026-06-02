@@ -138,6 +138,7 @@ export function findSeamPosition(
   if (contour.length === 0) return 0;
 
   const mode: string = pp.zSeamPosition ?? pp.zSeamAlignment ?? 'shortest';
+  // eslint-disable-next-line no-useless-assignment
   let seamIdx = 0;
 
   switch (mode) {

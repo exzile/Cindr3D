@@ -289,7 +289,7 @@ function parseVisionJson(text: string): Omit<VisionCheckResult, 'shouldPause' | 
   try {
     parsed = JSON.parse(jsonText) as Partial<VisionCheckResult>;
   } catch (error) {
-    throw new Error(`Vision provider returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Vision provider returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
   const category = (parsed.category ?? 'unknown') as VisionFailureCategory;
   const severity = parsed.severity ?? (category === 'none' ? 'none' : 'warning');

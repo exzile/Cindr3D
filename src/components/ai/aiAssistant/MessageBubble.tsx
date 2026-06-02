@@ -23,7 +23,7 @@ export function MessageBubble({ msg }: { msg: ChatMessage }) {
 
 function DiagnosisResultBubble({ msg }: { msg: ChatMessage }) {
   const [applying, setApplying] = useState<string | null>(null);
-  let parsed: DiagnosisToolResult | null = null;
+  let parsed: DiagnosisToolResult | null;
   try {
     parsed = JSON.parse(msg.content) as DiagnosisToolResult;
   } catch {

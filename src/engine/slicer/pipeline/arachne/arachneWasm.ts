@@ -164,7 +164,9 @@ export function configValues(
 function emitInnerContoursWithModule(mod: ArachneModule): THREE.Vector2[][] {
   const countsPtr = mod._malloc(2 * 4);
   if (!countsPtr) throw new Error('arachneWasm: malloc failed for inner contour counts');
+  // eslint-disable-next-line no-useless-assignment
   let contourCount = 0;
+  // eslint-disable-next-line no-useless-assignment
   let pointCount = 0;
   try {
     mod._getArachneInnerContourCounts(countsPtr);

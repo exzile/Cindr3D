@@ -109,6 +109,7 @@ export default function SketchProfile({
     // place to avoid allocating a fresh THREE.Color each frame.
     let targetColor: number;
     let targetOpacity: number;
+    // eslint-disable-next-line no-useless-assignment
     let pulsing = false;
     if (state === 'selected') {
       targetColor = PROFILE_SELECTED_MATERIAL.color.getHex();

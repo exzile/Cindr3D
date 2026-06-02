@@ -123,6 +123,7 @@ describe('occTransformBodyWithInstance', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (oc as any).BRepBuilderAPI_Transform_2 = class {
       constructor() { throw new Error('boom'); }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       Shape() { return null as any; }
       delete() { transformerDeleted++; }
     };

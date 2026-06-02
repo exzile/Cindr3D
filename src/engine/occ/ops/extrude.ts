@@ -122,7 +122,7 @@ export function occExtrudeShapeWithInstance(
   // and other ops fail). So validate the analytic solid with BRepCheck and fall back
   // to the proven faceted polygon path when it isn't a valid solid.
   if (options.profileShape) {
-    let analyticWires: { outerWire: unknown; holeWires: unknown[] } | null = null;
+    let analyticWires: { outerWire: unknown; holeWires: unknown[] } | null;
     try {
       analyticWires = sketchShapeToWires(oc, options.profileShape, frame);
     } catch (e) {
@@ -130,7 +130,7 @@ export function occExtrudeShapeWithInstance(
       analyticWires = null;
     }
     if (analyticWires) {
-      let analytic: OccExtrudedShape | null = null;
+      let analytic: OccExtrudedShape | null;
       try {
         analytic = buildFrom(analyticWires, true); // heal arc↔line junction gaps before validating
       } catch (e) {

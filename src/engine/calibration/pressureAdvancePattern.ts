@@ -50,6 +50,7 @@ export function generatePressureAdvancePatternGCode(
   const cornerX = 175;
   const rowSpacing = Math.max(6, lineWidth * 12);
   const y0 = 55;
+  // eslint-disable-next-line no-useless-assignment
   let current = { x: x0, y: y0 };
 
   for (let row = 0; row < values.length; row++) {

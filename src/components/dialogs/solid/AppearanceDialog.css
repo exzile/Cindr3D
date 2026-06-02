@@ -22,3 +22,58 @@
   background: var(--bg-input);
   cursor: pointer;
 }
+
+.appearance-empty {
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.appearance-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.appearance-preset {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 5px 6px;
+  border: 1px solid color-mix(in srgb, var(--border-light) 75%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-secondary) 82%, transparent);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+
+.appearance-preset:hover {
+  border-color: color-mix(in srgb, #8b5cf6 55%, var(--border-light));
+  background: color-mix(in srgb, #8b5cf6 12%, var(--bg-secondary));
+  transform: translateY(-1px);
+}
+
+.appearance-preset__swatch {
+  width: 18px;
+  height: 18px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, #fff 20%);
+  border-radius: 50%;
+  box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.45), 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.appearance-preset__name {
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 1.15;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

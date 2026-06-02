@@ -57,6 +57,7 @@ export function useFirmwareUpdate({
 
       const ac = new AbortController();
       const abortTimer = setTimeout(() => ac.abort(), 4000);
+      // eslint-disable-next-line no-useless-assignment
       let ok = false;
       try {
         const res = await fetch(pingUrl, { signal: ac.signal, cache: 'no-store' });

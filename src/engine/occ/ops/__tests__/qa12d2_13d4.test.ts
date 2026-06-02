@@ -83,7 +83,7 @@ function makeFakeOcc(): any {
     ChFi3d_FilletShape: { ChFi3d_Rational: {}, ChFi3d_Polynomial: {} },
     BRepFilletAPI_MakeFillet: FakeFilletBuilder,
     BRepCheck_Analyzer_2: class {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars
       constructor(_s: any) {}
       IsValid() { return true; }
       delete() {}

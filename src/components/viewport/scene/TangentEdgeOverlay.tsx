@@ -52,6 +52,7 @@ function createTangentLineSegments(mesh: THREE.Mesh, bodyId: string | undefined)
   } catch {
     return null;
   }
+  // eslint-disable-next-line no-useless-assignment
   let geometry: THREE.BufferGeometry | null = null;
   try {
     geometry = buildTangentEdgeLineGeometry(tess, meta);

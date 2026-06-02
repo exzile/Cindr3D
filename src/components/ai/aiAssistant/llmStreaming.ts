@@ -38,6 +38,7 @@ async function* readSSE(response: Response): AsyncGenerator<{ event?: string; da
   }
   // Flush any partial line remaining after stream end (no trailing newline).
   if (buf.startsWith('event:')) {
+    // eslint-disable-next-line no-useless-assignment
     currentEvent = buf.slice(6).trim();
   } else if (buf.startsWith('data:')) {
     const data = buf.slice(5).trim();

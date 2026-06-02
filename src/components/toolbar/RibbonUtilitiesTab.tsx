@@ -11,6 +11,7 @@ const ICON_LG = 28;
 const MI = 16;
 
 export function RibbonUtilitiesTab() {
+  const setActiveDialog = useCADStore((s) => s.setActiveDialog);
   const setStatusMessage = useCADStore((s) => s.setStatusMessage);
   const setShowExportDialog = useCADStore((s) => s.setShowExportDialog);
   const openBOMDialog = useCADStore((s) => s.openBOMDialog);
@@ -18,7 +19,7 @@ export function RibbonUtilitiesTab() {
   const hideFeature = useCADStore((s) => s.hideFeature);
   const selectedFeatureId = useCADStore((s) => s.selectedFeatureId);
 
-  const changeAppearance = () => setStatusMessage('Select a body to change materials');
+  const changeAppearance = () => setActiveDialog('appearance');
   const hideSelectedFeature = () => {
     if (selectedFeatureId) hideFeature(selectedFeatureId);
     else setStatusMessage('Hide: select a feature first');

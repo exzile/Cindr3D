@@ -380,8 +380,10 @@ export function generatePerimetersEx(
         const minLW = printProfile.minWallLineWidth ?? lineWidth * 0.5;
         const minOffset = outerWallInset + Math.max(0, minLW / 2);
         if (minOffset < nominalOffset) {
+          // eslint-disable-next-line no-useless-assignment
           let lo = minOffset;
           let hi = nominalOffset;
+          // eslint-disable-next-line no-useless-assignment
           let best: ReturnType<typeof computeDepth> = null;
           const minTrial = computeDepth(minOffset);
           if (minTrial) {

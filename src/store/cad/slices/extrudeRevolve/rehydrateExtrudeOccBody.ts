@@ -97,7 +97,7 @@ export async function rehydrateExtrudeOccBody(
     }
 
     return result.needsStoredMesh;
-  } catch (e) {
+  } catch {
     return false;
   }
 }

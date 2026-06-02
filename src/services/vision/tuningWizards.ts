@@ -300,7 +300,7 @@ function parseTuningJson(text: string, kind: TuningWizardKind): Omit<TuningTower
   try {
     parsed = JSON.parse(jsonText) as Partial<TuningTowerRecommendation>;
   } catch (error) {
-    throw new Error(`Tuning provider returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(`Tuning provider returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
   return {
     kind: (parsed.kind ?? kind) as TuningWizardKind,

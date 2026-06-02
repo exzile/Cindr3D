@@ -9,10 +9,11 @@ on:
 # Deny all permissions by default; grant only what each job needs.
 permissions: {}
 
-# Prevent concurrent deploys. A queued run will wait; a superseded one is cancelled.
+# Prevent duplicate deploys when master receives several pushes close together.
+# Only the newest production deploy should continue.
 concurrency:
   group: azure-deploy-production
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build_and_deploy_job:

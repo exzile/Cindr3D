@@ -65,7 +65,7 @@ function now(): number {
 }
 
 function createId(): string {
-  return `ab-${now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return `ab-${crypto.randomUUID()}`;
 }
 
 function fileNameFromPath(filePath: string): string {

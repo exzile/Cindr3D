@@ -52,6 +52,7 @@ export function WorkspaceTabBar({
     if (inSketch) return;
     const index = currentTabs.findIndex((tab) => tab.id === tabId);
     if (index < 0) return;
+    // eslint-disable-next-line no-useless-assignment
     let nextIndex = index;
     if (event.key === 'ArrowRight') nextIndex = (index + 1) % currentTabs.length;
     else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + currentTabs.length) % currentTabs.length;
@@ -79,6 +80,7 @@ export function WorkspaceTabBar({
   ) => {
     const workspaces: Workspace[] = ['design', 'prepare', 'printer'];
     const index = workspaces.indexOf(ws);
+    // eslint-disable-next-line no-useless-assignment
     let nextIndex = index;
     if (event.key === 'ArrowDown') nextIndex = (index + 1) % workspaces.length;
     else if (event.key === 'ArrowUp') nextIndex = (index - 1 + workspaces.length) % workspaces.length;

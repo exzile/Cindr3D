@@ -18,7 +18,9 @@ export function occComputeBodyProperties(oc: any, body: BRepBody): OccBodyProper
   const shape = body.shape?.deref?.();
   if (!shape) return null;
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let volProps: any = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let surfProps: any = null;
 
   try {
