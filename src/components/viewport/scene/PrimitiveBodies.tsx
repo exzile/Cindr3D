@@ -706,21 +706,19 @@ export default function PrimitiveBodies() {
 
   const getMaterial = useCallback((featureComponentId: string | undefined, bodyId: string | undefined): THREE.Material => {
     const effectiveComponentId = featureComponentId ?? (bodyId ? bodiesById[bodyId]?.componentId : undefined);
-    const shouldDim = editingInPlace && effectiveComponentId !== activeComponentId;
     const componentColor = effectiveComponentId ? components[effectiveComponentId]?.color : undefined;
     const componentMaterial = showComponentColors && componentColor
       ? componentColorMaterial(componentColor)
       : null;
-    if (componentMaterial) return shouldDim ? DIM_MATERIAL : componentMaterial;
-    if (!bodyId) return shouldDim ? DIM_MATERIAL : BODY_MATERIAL;
+    if (componentMaterial) return componentMaterial;
+    if (!bodyId) return BODY_MATERIAL;
 
     const body = bodiesById[bodyId];
     const material = body?.material;
-    if (!material) return shouldDim ? DIM_MATERIAL : BODY_MATERIAL;
+    if (!material) return BODY_MATERIAL;
 
     const displayOpacity = body.opacity ?? 1;
     if (
-      !shouldDim &&
       material.id === 'aluminum' &&
       material.color.toLowerCase() === '#b0b8c0' &&
       material.opacity === 1 &&
@@ -729,8 +727,8 @@ export default function PrimitiveBodies() {
       return BODY_MATERIAL;
     }
 
-    const finalOpacity = material.opacity * displayOpacity * (shouldDim ? DIM_MATERIAL.opacity : 1);
-    const key = `${material.color}|${material.metalness}|${material.roughness}|${material.opacity}|${displayOpacity}|${shouldDim ? 'dim' : 'normal'}`;
+    const finalOpacity = material.opacity * displayOpacity;
+    const key = `${material.color}|${material.metalness}|${material.roughness}|${material.opacity}|${displayOpacity}`;
     const cached = materialCache.current.get(bodyId);
     if (cached && cached.key === key) return cached.mat;
     cached?.mat.dispose();
@@ -745,7 +743,7 @@ export default function PrimitiveBodies() {
     });
     materialCache.current.set(bodyId, { key, mat });
     return mat;
-  }, [activeComponentId, bodiesById, components, editingInPlace, showComponentColors]);
+  }, [bodiesById, components, showComponentColors]);
 
   // Mirrors ExtrudedBodies.edgeModificationSourceFeatureId: a fillet/chamfer
   // feature points back to its source via parentFeatureId or via the source
