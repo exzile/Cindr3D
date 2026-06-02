@@ -22,11 +22,17 @@ Completed sections are removed after shipping; see git history if detail is need
 # TOOL-PRESENCE PARITY IS COMPLETE. All SURF-CREATE items shipped 2026-06-02.
 # Verification gate: npx tsc --noEmit clean · npx vitest run green · manual QA.
 
-[~] SURF-4  Surface Fillet on OCC open-shell edges not verified.
-    The Fillet dialog shows a status-bar warning when no OCC-backed surface bodies
-    are present. Remaining: verify BRepFilletAPI_MakeFillet accepts open-shell edges
-    and add a two-surface blend-fillet mode if needed. Blocked until OCC surface
-    bodies are exercised in the live app.
+[~] SURF-4  Surface Fillet on OCC open-shell edges — QA only, no code gap.
+    The "blocked on live app" note was stale (written before SURF-1 shipped OCC surface
+    bodies). Current state:
+    - bodyForFeature() in edgeModApply.ts has no solid-only guard — any feature with a
+      brepBodyId routes through the fillet code, including surface bodies.
+    - BRepFilletAPI_MakeFillet works on shells, not just solids (OCC design).
+    - Surface bodies from Loft/Sweep/Revolve surface mode carry a brepBodyId post-SURF-1.
+    Remaining: browser QA only — open the Surface tab, create an OCC surface body (e.g.
+    Revolve a line in surface mode), open Fillet, pick an edge, verify the result looks
+    correct. If OCC fails on a specific shell topology, capture the console [occFillet]
+    lines. No code change expected unless the result is wrong in a reproducible case.
 
 [x] SURF-5  True G1/G2 face-tangency for Fill — complete (2026-06-02).
     FillEdgePicker now finds the adjacent face ptr at pick time via TopExp_Explorer_2.
