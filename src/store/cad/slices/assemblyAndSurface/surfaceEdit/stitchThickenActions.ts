@@ -65,9 +65,9 @@ export function createStitchThickenActions({ set, get }: CADSliceContext): Parti
       };
       get().addFeature(feature);
       if (!params.keepOriginal && params.sourceFeatureIds.length > 0) {
-        set({
-          features: features.map((f) => (params.sourceFeatureIds.includes(f.id) ? { ...f, visible: false } : f)),
-        });
+        set((state) => ({
+          features: state.features.map((f) => (params.sourceFeatureIds.includes(f.id) ? { ...f, visible: false } : f)),
+        }));
       }
       get().setStatusMessage(
         closedHoles

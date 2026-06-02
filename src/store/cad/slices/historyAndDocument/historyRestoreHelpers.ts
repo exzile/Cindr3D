@@ -10,6 +10,7 @@ import type {
 } from '../../../../types/cad';
 import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
 import { detachTessellationFromMesh } from '../../../../engine/occ/picking';
+import { bodyIdGeometryCache } from '../../../meshRegistry';
 import type { DesignConfiguration } from '../../state/coreState';
 import { useComponentStore } from '../../../componentStore';
 
@@ -102,6 +103,10 @@ export const restoreComponentStoreSnapshot = (
   const currentBodies = useComponentStore.getState().bodies;
   const snapshotBodyIds = new Set(Object.keys(snapshot.bodies));
   for (const [id, body] of Object.entries(currentBodies)) {
+    if (!snapshotBodyIds.has(id)) {
+      bodyIdGeometryCache.get(id)?.dispose();
+      bodyIdGeometryCache.delete(id);
+    }
     if (!snapshotBodyIds.has(id) && body.mesh) {
       if (body.mesh instanceof THREE.Mesh) {
         body.mesh.geometry?.dispose();

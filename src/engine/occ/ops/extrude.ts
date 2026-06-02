@@ -368,6 +368,53 @@ export function occExtrudeFaceShapeWithInstance(
   };
 }
 
+/**
+ * Surface extrude: prism the profile WIRE (open curve) along the sketch normal.
+ * Produces an open shell BRepBody (no end caps) suitable for surface workflows.
+ * Falls back gracefully: if the wire build fails, returns null.
+ */
+export function occExtrudeSurfaceWithInstance(
+  oc: OcctRaw,
+  profile: SketchProfile,
+  distance: number,
+  frame: OccPlaneFrame,
+  options: Pick<OccExtrudeOptions, 'id' | 'sourceFeatureId'> = {},
+): BRepBody | null {
+  const occ = oc as OccExtrudeApi;
+  const wires = sketchProfileToWires(oc, profile, frame);
+  if (!wires) return null;
+
+  const dir = frame.normal.clone();
+  const extDir = new occ.gp_Vec_4(dir.x * distance, dir.y * distance, dir.z * distance);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const prism = new occ.BRepPrimAPI_MakePrism_1(wires.outerWire as any, extDir, true, true);
+  let resultShape: unknown;
+  try {
+    prism.Build();
+    resultShape = prism.Shape();
+  } catch (err) {
+    prism.delete();
+    extDir.delete();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (wires.outerWire as any).delete();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const hw of wires.holeWires) (hw as any).delete();
+    throw err;
+  } finally {
+    extDir.delete();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (wires.outerWire as any).delete();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    for (const hw of wires.holeWires) (hw as any).delete();
+  }
+
+  return makeBRepBodyFromOccShape(oc, resultShape, {
+    id: options.id,
+    sourceFeatureId: options.sourceFeatureId,
+    ownedResources: [prism],
+  });
+}
+
 /** Convenience: extrude a simple rectangular profile (no holes). */
 export function occExtrudeRect(
   oc: OcctRaw,

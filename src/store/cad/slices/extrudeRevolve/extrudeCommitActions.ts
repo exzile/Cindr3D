@@ -21,6 +21,13 @@ import {
   buildSingleProfileOccBooleanExtrudeMesh,
 } from './extrudeCommitOccBoolean';
 import { buildOccNewBodyExtrudeMesh } from './extrudeCommitOccNewBody';
+import { getOccSync } from '../../../../engine/occ/loader';
+import { occExtrudeSurfaceWithInstance } from '../../../../engine/occ/ops/extrude';
+import type { SketchProfile } from '../../../../engine/occ/ops/sketchToWire';
+import { createOccPlaneFrameFromSketch } from '../../../../engine/occ/plane';
+import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
+import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
+import { OCC_PROFILE_POINT_COUNT } from '../../../../utils/occConstants';
 
 export function createExtrudeCommitActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -129,9 +136,36 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
 
       // Generate stored meshes for surface/thin extrudes. Standard solids are
       // produced by the OCC path below and must store a registered OCC mesh.
+      // featureId is generated early so the OCC surface mesh can be registered under it.
+      const featureId = crypto.randomUUID();
       let featureMesh: THREE.Mesh | undefined;
       if (resolvedBodyKind === 'surface') {
-        featureMesh = GeometryEngine.extrudeSketchSurface(sketchForOp, absDistance) ?? undefined;
+        // Try OCC wire-prism first to get a brepBodyId-backed surface.
+        const occ = getOccSync();
+        if (occ) {
+          try {
+            const profileShapes = GeometryEngine.sketchToProfileShapesFlat(sketchForOp);
+            const firstShape = profileShapes[0];
+            if (firstShape) {
+              const sketchProfile: SketchProfile = {
+                outer: firstShape.getPoints(OCC_PROFILE_POINT_COUNT),
+                holes: firstShape.holes.map((h) => h.getPoints(OCC_PROFILE_POINT_COUNT)).filter((pts) => pts.length >= 3),
+              };
+              const frame = createOccPlaneFrameFromSketch(sketchForOp);
+              const surfaceBody = occExtrudeSurfaceWithInstance(occ.oc, sketchProfile, absDistance, frame, {
+                sourceFeatureId: featureId,
+              });
+              if (surfaceBody) {
+                featureMesh = createRegisteredOccMesh(occ.oc, surfaceBody, BODY_MATERIAL, featureId);
+              }
+            }
+          } catch (err) {
+            console.warn('[extrudeCommit] OCC surface path failed, using THREE fallback:', err);
+          }
+        }
+        if (!featureMesh) {
+          featureMesh = GeometryEngine.extrudeSketchSurface(sketchForOp, absDistance) ?? undefined;
+        }
       } else if (extrudeThinEnabled) {
         const thinSide: 'inside' | 'outside' | 'center' = extrudeThinSide === 'side1' ? 'inside' : extrudeThinSide === 'side2' ? 'outside' : 'center';
         featureMesh = GeometryEngine.extrudeThinSketch(sketchForOp, absDistance, extrudeThinThickness, thinSide) ?? undefined;
@@ -172,7 +206,7 @@ export function createExtrudeCommitActions({ set, get }: CADSliceContext): Parti
         extrudeTaperAngle2,
         sketches,
       });
-      const featureId = crypto.randomUUID();
+      // featureId already declared above (early, for OCC surface mesh registration).
       let occFailureMessage: string | null = null;
 
       const occNewBodyResult = await buildOccNewBodyExtrudeMesh({

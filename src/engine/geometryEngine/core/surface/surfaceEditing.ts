@@ -9,6 +9,7 @@ export function offsetSurface(mesh: THREE.Mesh, distance: number): THREE.BufferG
   const positions = geometry.attributes.position as THREE.BufferAttribute;
   const normals = geometry.attributes.normal as THREE.BufferAttribute;
 
+  // Move each vertex along its normal by `distance`.
   for (let i = 0; i < positions.count; i++) {
     positions.setXYZ(
       i,
@@ -18,6 +19,34 @@ export function offsetSurface(mesh: THREE.Mesh, distance: number): THREE.BufferG
     );
   }
   positions.needsUpdate = true;
+
+  // Remove degenerate triangles (zero-area) that result from concave regions
+  // self-intersecting during inward offsets. This prevents visual artefacts
+  // without requiring a full mesh boolean.
+  const indexAttr = geometry.index;
+  if (indexAttr) {
+    const MIN_AREA_SQ = 1e-10;
+    const keepIndices: number[] = [];
+    const _a = new THREE.Vector3();
+    const _b = new THREE.Vector3();
+    const _c = new THREE.Vector3();
+    const _ab = new THREE.Vector3();
+    const _ac = new THREE.Vector3();
+    for (let t = 0; t < indexAttr.count; t += 3) {
+      const ia = indexAttr.getX(t);
+      const ib = indexAttr.getX(t + 1);
+      const ic = indexAttr.getX(t + 2);
+      _a.set(positions.getX(ia), positions.getY(ia), positions.getZ(ia));
+      _b.set(positions.getX(ib), positions.getY(ib), positions.getZ(ib));
+      _c.set(positions.getX(ic), positions.getY(ic), positions.getZ(ic));
+      _ab.subVectors(_b, _a);
+      _ac.subVectors(_c, _a);
+      if (_ab.cross(_ac).lengthSq() >= MIN_AREA_SQ) {
+        keepIndices.push(ia, ib, ic);
+      }
+    }
+    geometry.setIndex(keepIndices);
+  }
 
   if (distance < 0) reverseNormalsOp(geometry);
   else geometry.computeVertexNormals();

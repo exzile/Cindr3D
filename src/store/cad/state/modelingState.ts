@@ -225,6 +225,10 @@ export interface CADModelingState {
   setRuledSketchAId: (id: string | null) => void;
   ruledSketchBId: string | null;
   setRuledSketchBId: (id: string | null) => void;
+  ruledAlignmentMode: "direction" | "tangent" | "normal";
+  setRuledAlignmentMode: (mode: "direction" | "tangent" | "normal") => void;
+  ruledAlignmentDistance: number;
+  setRuledAlignmentDistance: (distance: number) => void;
   startRuledSurfaceTool: () => void;
   cancelRuledSurfaceTool: () => void;
   commitRuledSurface: () => void;

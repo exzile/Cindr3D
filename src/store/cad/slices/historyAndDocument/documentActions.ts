@@ -433,6 +433,8 @@ const createDocumentTransientReset = (): Partial<CADState> => ({
   patchSelectedSketchId: null,
   ruledSketchAId: null,
   ruledSketchBId: null,
+  ruledAlignmentMode: 'direction',
+  ruledAlignmentDistance: 0,
   ribSelectedSketchId: null,
 
   filletEdgeIds: [],

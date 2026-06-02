@@ -103,10 +103,31 @@ export function loftSketches(profileSketches: Sketch[], surface = false): THREE.
 }
 
 export function patchSketch(sketch: Sketch): THREE.Mesh | null {
+  const { t1, t2 } = getSketchAxesUtil(sketch);
+  const origin = sketch.planeOrigin;
   const shape = sketchToShape(sketch);
   if (!shape) return null;
-  const geometry = new THREE.ShapeGeometry(shape);
-  geometry.rotateX(-Math.PI / 2);
+
+  // Triangulate in UV (sketch-plane) space then project each vertex to world
+  // space via the sketch axes t1/t2. This makes Patch work on XZ, YZ, and
+  // custom planes, not just XY.
+  const uvGeometry = new THREE.ShapeGeometry(shape);
+  const uvPositions = uvGeometry.attributes.position as THREE.BufferAttribute;
+  const worldPositions = new Float32Array(uvPositions.count * 3);
+  for (let i = 0; i < uvPositions.count; i++) {
+    const u = uvPositions.getX(i);
+    const v = uvPositions.getY(i);
+    worldPositions[i * 3]     = origin.x + t1.x * u + t2.x * v;
+    worldPositions[i * 3 + 1] = origin.y + t1.y * u + t2.y * v;
+    worldPositions[i * 3 + 2] = origin.z + t1.z * u + t2.z * v;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(worldPositions, 3));
+  if (uvGeometry.index) geometry.setIndex(uvGeometry.index.clone());
+  uvGeometry.dispose();
+  geometry.computeVertexNormals();
+
   const mesh = new THREE.Mesh(geometry, SURFACE_MATERIAL);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
