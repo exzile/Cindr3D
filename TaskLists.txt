@@ -28,14 +28,13 @@ Completed sections are removed after shipping; see git history if detail is need
     and add a two-surface blend-fillet mode if needed. Blocked until OCC surface
     bodies are exercised in the live app.
 
-[~] SURF-5  True G1/G2 face-tangency for Fill — partially complete.
-    2026-06-02: commitFill now resolves owned TopoDS_Edge VIEWs from body.edgeIds
-    and passes them to MakeFilling.Add_2 with G0/G1/G2 order. This gives correct
-    continuity-order constraints — significantly better than pure G0.
-    Remaining gap: MakeFilling.Add_3(edge, face, order, bound) with adjacent face
-    reference for full face-tangency solve. Requires extending the fillSurface OCC
-    type definition with the Add_3 overload and storing the adjacent face handle
-    at edge-pick time in FillEdgePicker.
+[x] SURF-5  True G1/G2 face-tangency for Fill — complete (2026-06-02).
+    FillEdgePicker now finds the adjacent face ptr at pick time via TopExp_Explorer_2.
+    commitFill resolves both the TopoDS_Edge VIEW (from body.edgeIds) and the
+    TopoDS_Face VIEW (from body.faceIds + adjacentFacePtr). MakeFilling.Add_3
+    (edge, face, order, isBound) is called for G1/G2 edges; Add_2 fallback for G0.
+    fillSurface.ts extended with Add_3 type. analysisState fillBoundaryEdgeData
+    extended with adjacentFacePtr.
 
 # Note: Fill commit uses a hardcoded 4-point fallback quad when no edges are
 # picked (surfaceCreationActions.ts). Surface Merge matches meshes by a fragile
