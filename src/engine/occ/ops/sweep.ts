@@ -166,6 +166,14 @@ function buildTwistedSweepShape(
 
   const twistRad = (twistDeg * Math.PI) / 180;
   const outer = profile.outer;
+  // Twisted sweep stations a polyline outer wire per path sample and lofts via
+  // ThruSections.  Inner contours (holes) cannot be represented as a single wire
+  // in this approach — return null when holes are present so the caller falls back
+  // to the standard MakePipe path which handles profiles with holes correctly.
+  if (profile.holes && profile.holes.length > 0) {
+    console.warn('[occSweep] twisted sweep does not support profiles with holes; falling back to standard path');
+    return null;
+  }
   const stationWires: unknown[] = [];
 
   try {

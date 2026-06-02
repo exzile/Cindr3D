@@ -118,14 +118,13 @@ function arcFromCenterRadius(
   const gB = gpPnt(oc, b);
   try {
     const circ = new occ.gp_Circ_2(ax2, radius);
-    ax2.delete();
     const edgeMk = new occ.BRepBuilderAPI_MakeEdge_10(circ, gA, gB);
     circ.delete();
     if (!edgeMk.IsDone()) { edgeMk.delete(); return null; }
     const edge = edgeMk.Edge();
     edgeMk.delete();
     return edge;
-  } catch { return null; } finally { gA.delete(); gB.delete(); }
+  } catch { return null; } finally { ax2.delete(); gA.delete(); gB.delete(); }
 }
 
 // ── Circle edge (full) ───────────────────────────────────────────────────────

@@ -104,7 +104,10 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
             try {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               const oc = occ.oc as any;
-              const shapeView = occDeref(occ.oc, edgeHandle, oc.TopoDS.Edge);
+              // Always deref as TopoDS_Shape, then cast to the target type via
+              // TopoDS.Edge_1 — occDeref with a type ctor other than TopoDS_Shape
+              // uses wrapPointer which may throw in builds that don't expose the ctor.
+              const shapeView = occDeref(occ.oc, edgeHandle, oc.TopoDS_Shape);
               const edgeView = oc.TopoDS.Edge_1(shapeView); // VIEW — do not delete
 
               // Resolve adjacent face for true G1/G2 tangency (Add_3 overload)

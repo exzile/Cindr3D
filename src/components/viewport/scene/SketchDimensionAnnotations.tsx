@@ -97,6 +97,11 @@ export default function SketchDimensionAnnotations() {
         origin.z + t1.z * textPos2D.x + t2.z * textPos2D.y,
       );
     }
+    // When the annotation count shrinks, hide the stale preallocated entries
+    // beyond the active range so their old draw-ranges are not rendered.
+    for (let i = annData.length; i < annotations.length; i++) {
+      writePairsToSegments(annotations[i].segments, [], origin, t1, t2);
+    }
   });
 
 

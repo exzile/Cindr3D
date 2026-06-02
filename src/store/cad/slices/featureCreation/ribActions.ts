@@ -73,6 +73,13 @@ export function createRibActions({ set, get }: CADSliceContext): Partial<CADStat
         ribMesh = GeometryEngine.extrudeThinSketch(sketch, Math.abs(signedHeight), ribThickness, 'center') ?? undefined;
       }
 
+      // Both paths failed (e.g. sketch has no line entities and no closed contour).
+      // Abort rather than creating an orphan feature with no geometry.
+      if (!ribMesh) {
+        set({ statusMessage: 'Rib: the selected sketch has no line entities to form a rib profile. Draw one or more line segments first.' });
+        return;
+      }
+
       const feature: Feature = {
         id: featureId,
         name: `Rib ${features.filter((f) => f.type === 'rib').length + 1}`,

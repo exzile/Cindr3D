@@ -51,14 +51,14 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
     set({
       revolveFaceBoundary: flat,
       revolveFaceNormal: [normal.x, normal.y, normal.z],
-      statusMessage: 'Face selected - set axis and angle, then click OK',
+      statusMessage: 'Face selected - set axis and angle, then click OK',
     });
   },
   startRevolveTool: () => {
     set({
       activeTool: 'revolve',
       ...REVOLVE_DEFAULTS,
-      statusMessage: 'Revolve - pick a sketch profile or use Face mode',
+      statusMessage: 'Revolve - pick a sketch profile or use Face mode',
     });
   },
   cancelRevolveTool: () => {
@@ -246,7 +246,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
       return;
     }
     // For symmetric, each side gets angle/2; for two-sides, side1=revolveAngle, side2=revolveAngle2.
-    // The stored angle is always the primary (or full) angle - the renderer uses revolveDirection.
+    // The stored angle is always the primary (or full) angle - the renderer uses revolveDirection.
     const sketchRevolveAngles = resolveRevolveAngles(revolveDirection, effectiveRevolveAngle, revolveAngle2);
     const primaryAngle = sketchRevolveAngles.primaryAngleDeg;
     if (Math.abs(primaryAngle) < 0.5) {
@@ -260,7 +260,7 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
     if (revolveAxis === 'centerline') {
       const clEntity = sketch.entities.find((e) => e.type === 'centerline' && e.points.length >= 2);
       if (!clEntity) {
-        set({ statusMessage: 'Spun Profile: no centerline found in sketch - add a centerline entity first' });
+        set({ statusMessage: 'Spun Profile: no centerline found in sketch - add a centerline entity first' });
         return;
       }
       const p0 = clEntity.points[0];

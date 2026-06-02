@@ -80,7 +80,9 @@ function SweepPreview() {
 
   const mesh = useMemo(() => {
     if (activeTool !== 'sweep' || !profileId || !pathId || profileId === pathId) return null;
-    const profile = sketches.find((s) => s.id === profileId);
+    // profileId may be "sketchId::profileIndex" — strip the suffix for sketch lookup.
+    const profileSketchId = profileId.includes('::') ? profileId.split('::')[0] : profileId;
+    const profile = sketches.find((s) => s.id === profileSketchId);
     const path    = sketches.find((s) => s.id === pathId);
     if (!profile || !path) return null;
     const m = GeometryEngine.sweepSketchInternal(profile, path, bodyKind === 'surface');

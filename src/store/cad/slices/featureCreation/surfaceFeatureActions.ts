@@ -6,7 +6,7 @@ import type { CADState } from '../../state';
 import { getOccSync } from '../../../../engine/occ/loader';
 import { occFillSurfaceWithInstance, type FillContinuity } from '../../../../engine/occ/ops/fillSurface';
 import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
-import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
+import { BODY_MATERIAL, SURFACE_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
 import { errorMessage } from '../../../../utils/errorHandling';
 import { addToast } from '../../../toastStore';
 import { useComponentStore } from '../../../componentStore';
@@ -50,7 +50,9 @@ export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Part
       const occ = getOccSync();
       if (occ && boundaryLoop.length >= 3) {
         try {
-          const edgeConstraints = [{ continuity: patchContinuity as FillContinuity }];
+          // One constraint entry per boundary point so fillSurface applies the
+          // requested continuity to every edge of the closed boundary, not only the first.
+          const edgeConstraints = boundaryLoop.map(() => ({ continuity: patchContinuity as FillContinuity }));
           const body = occFillSurfaceWithInstance(occ.oc, boundaryLoop, {
             sourceFeatureId: featureId,
             edgeConstraints,
@@ -144,8 +146,8 @@ export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Part
             ? new THREE.Vector3(0, 1, 0)
             : new THREE.Vector3(0, 0, 1);
         const geom = GeometryEngine.offsetCurveToSurface(pts, ruledExtendDistance, axisDir);
-        const extMesh = new THREE.Mesh(geom, new THREE.MeshPhysicalMaterial({ color: 0x8899aa, side: THREE.DoubleSide }));
-        extMesh.material.userData['shared'] = false;
+        // Use the shared SURFACE_MATERIAL singleton — never allocate a new material per feature.
+        const extMesh = new THREE.Mesh(geom, SURFACE_MATERIAL);
         const n = features.filter((f) => f.type === 'loft' && f.bodyKind === 'surface').length + 1;
         const extFeatureId = crypto.randomUUID();
         const feature: Feature = {

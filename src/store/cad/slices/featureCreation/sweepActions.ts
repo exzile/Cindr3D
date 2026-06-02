@@ -122,8 +122,11 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
           const pathEntities = sweepChainSelection ? pathSketch.entities : pathSketch.entities.slice(0, 1);
           const builtPathWire = sketchEntitiesToWire(occ.oc, pathEntities, pathFrame);
           if (!builtPathWire) throw new Error('failed to build path wire');
+          // Reversed() allocates a new owned shape — track it separately so we can
+          // delete it after the sweep op; builtPathWire itself is always deleted below.
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const pathWire: unknown = sweepIsDirectionFlipped ? (builtPathWire as any).Reversed() : builtPathWire;
+          const reversedWire: { delete(): void } | null = sweepIsDirectionFlipped ? (builtPathWire as any).Reversed() : null;
+          const pathWire: unknown = reversedWire ?? builtPathWire;
           let guideWire: unknown | undefined;
           if (sweepGuideRailId) {
             const guideSketch = sketches.find((s) => s.id === sweepGuideRailId);
@@ -143,6 +146,7 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
             surface: isSurface,
           });
           builtPathWire.delete();
+          reversedWire?.delete();
           if (guideWire) (guideWire as { delete(): void }).delete();
           mesh = createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, fid);
         } catch (err) {

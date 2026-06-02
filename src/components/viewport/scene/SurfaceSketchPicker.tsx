@@ -64,19 +64,23 @@ function dispatchPick(sketchId: string, target: string) {
   const s = useCADStore.getState();
   // Clear the explicit active input after a pick so auto-advance resumes.
   if (target.startsWith('sweep-')) s.setSweepActiveInput(null);
+  // Sweep stores "sketchId::profileIndex" and splits it in commitSweep — pass raw.
   if (target === 'sweep-profile') { s.setSweepProfileSketchId(sketchId); return; }
   if (target === 'sweep-path') { s.setSweepPathSketchId(sketchId); return; }
   if (target === 'sweep-guide') { s.setSweepGuideRailId(sketchId); return; }
+  // All other targets expect a plain sketch ID — strip the "::profileIndex" suffix
+  // that profile-pickers append when there are multiple regions on one sketch.
+  const plainId = sketchId.includes('::') ? sketchId.split('::')[0] : sketchId;
   if (target.startsWith('loft-profile-')) {
     const idx = Number(target.split('-')[2]);
     const ids = [...s.loftProfileSketchIds];
-    if (idx >= ids.length) ids.push(sketchId); else ids[idx] = sketchId;
+    if (idx >= ids.length) ids.push(plainId); else ids[idx] = plainId;
     s.setLoftProfileSketchIds(ids);
     return;
   }
-  if (target === 'patch-profile') { s.setPatchSelectedSketchId(sketchId); return; }
-  if (target === 'ruled-a') { s.setRuledSketchAId(sketchId); return; }
-  if (target === 'ruled-b') { s.setRuledSketchBId(sketchId); return; }
+  if (target === 'patch-profile') { s.setPatchSelectedSketchId(plainId); return; }
+  if (target === 'ruled-a') { s.setRuledSketchAId(plainId); return; }
+  if (target === 'ruled-b') { s.setRuledSketchBId(plainId); return; }
 }
 
 /** Tessellated world-space points for a sketch's curve (reuses the renderer's tessellation). */
