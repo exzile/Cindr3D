@@ -1,4 +1,5 @@
 import { deviationColor, divergingColor, type HeightMapStats } from '../utils';
+import { getBedQuality } from './quality';
 
 /** Color scale legend shown beneath the 2D heatmap. */
 export function ColorScaleLegend({
@@ -29,16 +30,7 @@ export function ColorScaleLegend({
   );
 }
 
-/** RMS → quality bucket used by the stats panel. */
-// eslint-disable-next-line react-refresh/only-export-components
-export function getBedQuality(rms: number): { label: string; color: string } {
-  if (rms < 0.05) return { label: 'Excellent', color: '#22c55e' };
-  if (rms < 0.1)  return { label: 'Good',      color: '#4ade80' };
-  if (rms < 0.2)  return { label: 'Fair',      color: '#f59e0b' };
-  return                 { label: 'Poor',      color: '#ef4444' };
-}
-
-/** Stats panel — kept for backwards compat; sidebar uses inline rows. */
+/** Stats panel - kept for backwards compat; sidebar uses inline rows. */
 export function StatsPanel({ stats }: { stats: HeightMapStats }) {
   const minColor = stats.min < 0 ? '#60a5fa' : '#34d399';
   const maxColor = stats.max > 0 ? '#f87171' : '#34d399';

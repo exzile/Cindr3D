@@ -5,13 +5,14 @@ export function safeImageUrl(input: string): string {
   const value = input.trim();
   if (!value) return '';
 
-  // Explicit denylist — block javascript:/vbscript: before any other check.
+  // Explicit denylist: block javascript:/vbscript: before any other check.
   // Strip control characters and whitespace that browsers normalize before parsing.
-  // eslint-disable-next-line no-control-regex -- intentional: strips \x00-\x1f used in javascript: evasion
-  const normalized = value.toLowerCase().replace(/[\s\x00-\x1f]+/g, '');
+  const normalized = Array.from(value.toLowerCase())
+    .filter((char) => char.charCodeAt(0) > 0x20)
+    .join('');
   if (normalized.startsWith('javascript:') || normalized.startsWith('vbscript:')) return '';
 
-  // data: URIs — validate MIME prefix and base64 payload, then reconstruct.
+  // data: URIs: validate MIME prefix and base64 payload, then reconstruct.
   const prefixMatch = value.match(SAFE_DATA_IMAGE_PREFIX);
   if (prefixMatch) {
     const base64 = value.slice(prefixMatch[0].length);
