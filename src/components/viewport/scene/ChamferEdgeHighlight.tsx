@@ -22,6 +22,7 @@ export default function ChamferEdgeHighlight() {
       removeEdge={removeChamferEdge}
       selectedColor={0xaa44ff}
       invalidEdgeIds={invalidPreview?.edgeIds}
+      allowCurvedEdges
     />
   );
 }

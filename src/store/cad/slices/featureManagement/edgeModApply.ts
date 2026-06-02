@@ -411,7 +411,16 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       const used = new Set<number>();
       for (const edgeId of selection.edgeIds) {
         const anchor = computeEdgeAnchor(occ.oc, resolvedBody, edgeId);
-        if (!anchor) return null;
+        if (!anchor) {
+          // Anchor unavailable (edge removed from resolvedBody by a prior op).
+          // Fall back: if the candidate carries the same positional ID, use it.
+          // This handles the case where the body is identical (no rebuild happened)
+          // and computeEdgeAnchor fails only because the edge is a seam/degenerate.
+          if (!candidate.edgeIds.has(edgeId) || used.has(edgeId)) return null;
+          remapped.push(edgeId);
+          used.add(edgeId);
+          continue;
+        }
         const nextEdgeId = findEdgeByAnchor(occ.oc, candidate, anchor);
         if (nextEdgeId === null || used.has(nextEdgeId)) return null;
         remapped.push(nextEdgeId);
