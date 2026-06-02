@@ -19,6 +19,7 @@ import { errorMessage } from '../../../../utils/errorHandling';
 import { OCC_PROFILE_POINT_COUNT } from '../../../../utils/occConstants';
 import { toolBooleanOp } from './featureCreationShared';
 import { addToast } from '../../../toastStore';
+import { useComponentStore } from '../../../componentStore';
 
 export function createSweepActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -199,6 +200,23 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
         sweepBodyKind: 'solid',
         statusMessage: `${isSurface ? 'Surface ' : ''}Sweep created (${units})`,
       });
+
+      // Register a browser body so the swept solid/surface shows under "Bodies"
+      // (a new-body / new-component sweep; boolean ops merge into the target body).
+      if (sweepOperation === 'new-body' || sweepOperation === 'new-component') {
+        const cs = useComponentStore.getState();
+        let componentId = profileSketch.componentId ?? cs.activeComponentId ?? cs.rootComponentId;
+        if (sweepOperation === 'new-component') {
+          const parentId = cs.activeComponentId ?? cs.rootComponentId;
+          componentId = cs.addComponent(parentId, `Component ${Object.keys(cs.components ?? {}).length + 1}`);
+        }
+        const bodyCount = Object.keys(cs.bodies).length + 1;
+        const bodyId = cs.addBody(componentId, `${isSurface ? 'Surface' : 'Body'} ${bodyCount}`);
+        if (bodyId) {
+          cs.addFeatureToBody(bodyId, fid);
+          cs.setBodyMesh(bodyId, mesh);
+        }
+      }
     },
   };
 }
