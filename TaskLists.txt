@@ -68,28 +68,26 @@ Completed sections are removed after shipping; see git history if detail is need
 # [x] SURF-CREATE-14  Revolve isProjectAxis checkbox removed from panel.
 # [x] SURF-CREATE-15  Surface Revolve: THREE fallback + status warning on OCC failure.
 #
+# ── Completed 2026-06-02 (continued) ──────────────────────────────────────────
+# [x] SURF-CREATE-3  Live previews added for Sweep/Loft/Patch/Ruled Surface.
+#     SurfaceCreatePreviews.tsx — useMemo ghost meshes, singleton material, dispose
+#     in useEffect cleanup. Registered in Viewport.tsx alongside RevolveTool.
+# [x] SURF-CREATE-5  Ruled Surface now has Two Curves / Extend Edge mode toggle.
+#     Extend Edge: one sketch + distance + axis → offsetCurveToSurface extrusion.
+# [x] SURF-CREATE-7  Revolve to-object extent: face picker in RevolveTool stores
+#     centroid; commitRevolve projects centroid onto axis plane, computes sweep
+#     angle via atan2. Approximate — works for planar targets.
+#
 # ── Open ───────────────────────────────────────────────────────────────────────
 # [ ] SURF-CREATE-2  Selection model: sketch-name dropdowns instead of in-canvas
 #     selection-input chips (Fusion style). Structural — biggest remaining UX gap.
 #     Add a reusable in-viewport selection chip (mirror FillEdgePicker pattern) so
 #     profiles/paths/rails are picked by click with hover highlight.
 #
-# [ ] SURF-CREATE-3  No live in-canvas preview for Sweep / Loft / Patch / Ruled.
-#     Add preview meshes (dispose in cleanup; per R3F rules) that rebuild on param
-#     change behind a fingerprint guard. Extrude/Revolve/Primitives already do this.
-#
 # [ ] SURF-CREATE-4  Loft single-rail only. Fusion's centerLineOrRails is a collection
 #     (multiple rails + centerline mode). Also missing per-end takeoff weight.
-#     Add multi-rail list + optional centerline toggle; requires MakePipeShell path.
-#
-# [ ] SURF-CREATE-5  Ruled Surface semantic mismatch. Our panel bridges two curves
-#     (A+B lerp); Fusion's RuledSurfaceFeatureInput extends ONE edge-set with
-#     distance/angle/ruledSurfaceType/alternateFace/cornerType. Add the single-
-#     edge-set extend mode; keep 2-curve bridge as an additional mode.
-#
-# [ ] SURF-CREATE-7  Revolve missing "to object" extent. RevolveFeatureInput has
-#     setOneSideToExtent/setTwoSideToExtent (revolve to a face/plane). RevolvePanel
-#     only offers angle-based one-side/symmetric/two-sides.
+#     Add multi-rail list + optional centerline toggle; requires MakePipeShell path
+#     (ThruSections has no rail support — needs a different OCC approach).
 #
 # [skip] SURF-CREATE-10  Boundary Fill (BRepCells cell-from-tools) — absent. Add only
 #     if Boundary Fill parity is explicitly pursued.

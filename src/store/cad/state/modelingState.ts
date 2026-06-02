@@ -206,6 +206,9 @@ export interface CADModelingState {
   loftTangentEdgesMerged: boolean;
   loftStartCondition: "free" | "tangent";
   loftEndCondition: "free" | "tangent";
+  loftRailSketchIds: string[];
+  setLoftRailSketchIds: (ids: string[]) => void;
+  /** @deprecated kept for serialization compat — use loftRailSketchIds */
   loftRailSketchId: string | null;
   loftOperation: "new-body" | "join" | "cut" | "intersect" | "new-component";
   setLoftClosed: (v: boolean) => void;

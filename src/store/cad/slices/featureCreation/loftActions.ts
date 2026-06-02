@@ -10,6 +10,7 @@ import {
 import { createOccPlaneFrameFromSketch } from '../../../../engine/occ/plane';
 import { getOccSync } from '../../../../engine/occ/loader';
 import { occLoftWithInstance } from '../../../../engine/occ/ops/loft';
+import { sketchEntitiesToWire } from '../../../../engine/occ/sketchEntityToWire';
 import type { SketchProfile } from '../../../../engine/occ/ops/sketchToWire';
 import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
 import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
@@ -27,12 +28,14 @@ export function createLoftActions({ set, get }: CADSliceContext): Partial<CADSta
     loftStartCondition: 'free' as 'free' | 'tangent',
     loftEndCondition: 'free' as 'free' | 'tangent',
     loftRailSketchId: null,
+    loftRailSketchIds: [] as string[],
+    setLoftRailSketchIds: (ids: string[]) => set({ loftRailSketchIds: ids, loftRailSketchId: ids[0] ?? null }),
     loftOperation: 'new-body' as 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component',
     setLoftClosed: (v) => set({ loftClosed: v }),
     setLoftTangentEdgesMerged: (v) => set({ loftTangentEdgesMerged: v }),
     setLoftStartCondition: (v) => set({ loftStartCondition: v }),
     setLoftEndCondition: (v) => set({ loftEndCondition: v }),
-    setLoftRailSketchId: (v) => set({ loftRailSketchId: v }),
+    setLoftRailSketchId: (v) => set({ loftRailSketchId: v, loftRailSketchIds: v ? [v] : [] }),
     setLoftOperation: (v: 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component') => set({ loftOperation: v }),
     startLoftTool: () => {
       const extrudable = get().sketches.filter((s) => s.entities.length > 0);
@@ -42,9 +45,9 @@ export function createLoftActions({ set, get }: CADSliceContext): Partial<CADSta
       }
       set({ activeTool: 'loft', loftProfileSketchIds: ['', ''], statusMessage: 'Loft - select 2+ profile sketches in the panel, then OK' });
     },
-    cancelLoftTool: () => set({ activeTool: 'select', loftProfileSketchIds: [], loftClosed: false, loftTangentEdgesMerged: false, loftStartCondition: 'free', loftEndCondition: 'free', loftRailSketchId: null, loftOperation: 'new-body', statusMessage: 'Loft cancelled' }),
+    cancelLoftTool: () => set({ activeTool: 'select', loftProfileSketchIds: [], loftClosed: false, loftTangentEdgesMerged: false, loftStartCondition: 'free', loftEndCondition: 'free', loftRailSketchId: null, loftRailSketchIds: [], loftOperation: 'new-body', statusMessage: 'Loft cancelled' }),
     commitLoft: async () => {
-      const { loftProfileSketchIds, loftBodyKind, loftOperation, loftClosed, loftStartCondition, loftEndCondition, sketches, features, units } = get();
+      const { loftProfileSketchIds, loftBodyKind, loftOperation, loftClosed, loftStartCondition, loftEndCondition, loftRailSketchIds, sketches, features, units } = get();
       const validIds = loftProfileSketchIds.filter(Boolean);
       if (validIds.length < 2) {
         set({ statusMessage: 'Select at least 2 profile sketches' });
@@ -85,6 +88,18 @@ export function createLoftActions({ set, get }: CADSliceContext): Partial<CADSta
             const frames = profileSketches
               .filter((_, i) => sections[i] !== null)
               .map(createOccPlaneFrameFromSketch);
+            // Build rail wires if rail sketches are specified
+            const railWires: unknown[] = [];
+            const validRailIds = loftRailSketchIds.filter(Boolean);
+            for (const railId of validRailIds) {
+              const railSketch = sketches.find((s) => s.id === railId);
+              if (railSketch) {
+                const railFrame = createOccPlaneFrameFromSketch(railSketch);
+                const wire = sketchEntitiesToWire(occ.oc, railSketch.entities, railFrame);
+                if (wire) railWires.push(wire);
+              }
+            }
+
             const isSmooth = loftStartCondition !== 'free' || loftEndCondition !== 'free';
             const body = occLoftWithInstance(
               occ.oc,
@@ -96,8 +111,12 @@ export function createLoftActions({ set, get }: CADSliceContext): Partial<CADSta
                 ruled: !isSmooth,
                 smooth: isSmooth,
                 surface: isSurface,
+                railWires: railWires.length > 0 ? railWires : undefined,
               },
             );
+
+            // Dispose rail wires
+            for (const w of railWires) (w as { delete(): void }).delete();
             if (!body) {
               if (isSurface) {
                 mesh = GeometryEngine.loftSketches(profileSketches, true) ?? undefined;
@@ -125,7 +144,7 @@ export function createLoftActions({ set, get }: CADSliceContext): Partial<CADSta
         name: `${loftBodyKind === 'surface' ? 'Surface ' : ''}Loft ${features.filter((f) => f.type === 'loft').length + 1}`,
         type: 'loft',
         sketchId: validIds[0],
-        params: { loftProfileIds: validIds.join(','), operation: loftOperation, closed: loftClosed, startCondition: loftStartCondition, endCondition: loftEndCondition },
+        params: { loftProfileIds: validIds.join(','), railSketchIds: loftRailSketchIds.filter(Boolean).join(','), operation: loftOperation, closed: loftClosed, startCondition: loftStartCondition, endCondition: loftEndCondition },
         visible: true,
         suppressed: false,
         timestamp: Date.now(),
