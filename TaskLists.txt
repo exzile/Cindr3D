@@ -10,11 +10,12 @@ Completed sections are removed after shipping; see git history if detail is need
 # PERF: Viewport performance sweep
 # ══════════════════════════════════════════════════════════════════════════════
 
-[~] SketchDimensionAnnotations memo still depends on full activeSketch — rebuilds on
-    every entity position change during constraint solving. Requires separating dimension
-    structure from position updates (useFrame-based geometry mutation), which is a larger
-    refactor. Low priority — solver is event-driven, not frame-driven, so rebuild
-    frequency is bounded by input events.
+[x] SketchDimensionAnnotations PERF refactor complete (2026-06-02).
+    Memo now depends on [activeSketch?.id, activeSketch?.dimensions] — doesn't rebuild
+    when only entity positions change during constraint-solving drag. Position updates
+    move to useFrame via writePairsToSegments() which writes into pre-allocated
+    Float32Array (no GPU buffer allocation). All computation extracted to
+    sketchDimensions/dimensionPairComputer.ts (pure function, no THREE allocs).
 
 # ══════════════════════════════════════════════════════════════════════════════
 # SURF: Surface workspace functional quality gaps
