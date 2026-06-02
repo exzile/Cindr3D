@@ -32,12 +32,14 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
     fillBoundaryEdgeData: [],
     openFillDialog: () =>
       set({ activeDialog: 'fill', showFillDialog: true, fillBoundaryEdgeIds: [], fillBoundaryEdgeData: [] }),
-    addFillBoundaryEdge: (id, a, b) =>
+    addFillBoundaryEdge: (id, a, b, adjacentFacePtr) =>
       set((s) => {
         if (s.fillBoundaryEdgeIds.includes(id)) return s;
         return {
           fillBoundaryEdgeIds: [...s.fillBoundaryEdgeIds, id],
-          fillBoundaryEdgeData: a && b ? [...s.fillBoundaryEdgeData, { id, a, b }] : s.fillBoundaryEdgeData,
+          fillBoundaryEdgeData: a && b
+            ? [...s.fillBoundaryEdgeData, { id, a, b, ...(adjacentFacePtr !== undefined ? { adjacentFacePtr } : {}) }]
+            : s.fillBoundaryEdgeData,
         };
       }),
     closeFillDialog: () =>
@@ -106,7 +108,21 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
               const oc = occ.oc as any;
               const shapeView = occDeref(occ.oc, edgeHandle, oc.TopoDS.Edge);
               const edgeView = oc.TopoDS.Edge_1(shapeView); // VIEW — do not delete
-              return { continuity, occEdge: edgeView };
+
+              // Resolve adjacent face for true G1/G2 tangency (Add_3 overload)
+              let occAdjacentFace: unknown | undefined;
+              const { adjacentFacePtr } = edgeData;
+              if (adjacentFacePtr !== undefined) {
+                const faceHandle = brepBody?.faceIds.get(adjacentFacePtr);
+                if (faceHandle) {
+                  try {
+                    const faceShapeView = occDeref(occ.oc, faceHandle, oc.TopoDS.Face);
+                    occAdjacentFace = oc.TopoDS.Face_1(faceShapeView); // VIEW
+                  } catch { /* fall through to edge-only constraint */ }
+                }
+              }
+
+              return { continuity, occEdge: edgeView, occAdjacentFace };
             } catch {
               return { continuity };
             }
