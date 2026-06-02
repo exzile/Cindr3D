@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import * as THREE from 'three';
+import { setConsoleFunction } from 'three';
 import { occConsole } from './engine/occ/occConsole';
 import {
   computeBoundsTree,
@@ -30,6 +31,19 @@ console.log = (...args: Parameters<typeof console.log>) => {
   if (occConsole.suppress) return;
   _origConsoleLog(...args);
 };
+
+// ─── THREE.js deprecation suppression ────────────────────────────────────────
+// THREE.js r183 deprecated THREE.Clock in favour of THREE.Timer, but
+// @react-three/fiber 9.6.1 (latest as of 2026-06) still creates a Clock
+// internally on every render loop, flooding the console at ~60 warnings/second.
+// THREE exposes setConsoleFunction() as the official hook to intercept all log/
+// warn/error calls from the THREE namespace.  We redirect warn to the native
+// console.warn but silently drop the Clock deprecation notice.
+// Remove once @react-three/fiber migrates to THREE.Timer.
+setConsoleFunction((type, message, ...rest) => {
+  if (type === 'warn' && typeof message === 'string' && message.startsWith('THREE.Clock:')) return;
+  (console[type as 'warn' | 'log' | 'error'] ?? console.log)(message, ...rest);
+});
 
 // ─── three-mesh-bvh: accelerate all Three.js raycasting globally ─────────────
 // Patching the prototype once here makes every Mesh in the scene use BVH-backed

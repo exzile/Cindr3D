@@ -3,6 +3,11 @@ import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
 import { addToast } from '../../../toastStore';
+import { useComponentStore } from '../../../componentStore';
+import { getOccSync } from '../../../../engine/occ/loader';
+import { occRibWithInstance } from '../../../../engine/occ/ops/rib';
+import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
+import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
 
 export function createRibActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -36,10 +41,40 @@ export function createRibActions({ set, get }: CADSliceContext): Partial<CADStat
         return;
       }
       get().pushUndo();
-      const signedHeight = ribDirection === 'flip' ? -ribHeight : ribHeight;
-      const ribMesh = GeometryEngine.extrudeThinSketch(sketch, Math.abs(signedHeight), ribThickness, 'center') ?? undefined;
+
+      const featureId = crypto.randomUUID();
+
+      // ── OCC path ────────────────────────────────────────────────────────────
+      // Produces a real BRep solid: filletable, join/cut-able, edge-selectable.
+      // Falls back to the THREE mesh path if OCC is not loaded yet.
+      let ribMesh: Feature['mesh'] | undefined;
+      const occ = getOccSync();
+      if (occ) {
+        try {
+          const occBody = occRibWithInstance(
+            occ.oc,
+            sketch,
+            ribHeight,
+            ribThickness,
+            ribDirection as 'normal' | 'flip' | 'symmetric',
+            { id: featureId, sourceFeatureId: featureId },
+          );
+          if (occBody) {
+            ribMesh = createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, featureId);
+          }
+        } catch (err) {
+          console.warn('[commitRib] OCC failed, falling back to THREE mesh:', err);
+        }
+      }
+
+      // ── THREE fallback ──────────────────────────────────────────────────────
+      if (!ribMesh) {
+        const signedHeight = ribDirection === 'flip' ? -ribHeight : ribHeight;
+        ribMesh = GeometryEngine.extrudeThinSketch(sketch, Math.abs(signedHeight), ribThickness, 'center') ?? undefined;
+      }
+
       const feature: Feature = {
-        id: crypto.randomUUID(),
+        id: featureId,
         name: `Rib ${features.filter((f) => f.type === 'rib').length + 1}`,
         type: 'rib',
         sketchId: ribSelectedSketchId,
@@ -55,6 +90,16 @@ export function createRibActions({ set, get }: CADSliceContext): Partial<CADStat
         ribSelectedSketchId: null,
         statusMessage: `Rib created: ${ribThickness}mm thick, ${ribHeight}${units} tall`,
       });
+
+      // Register a browser body so the rib shows under "Bodies"
+      const cs = useComponentStore.getState();
+      const componentId = sketch.componentId ?? cs.activeComponentId ?? cs.rootComponentId;
+      const bodyCount = Object.keys(cs.bodies).length + 1;
+      const bodyId = cs.addBody(componentId, `Body ${bodyCount}`);
+      if (bodyId) {
+        cs.addFeatureToBody(bodyId, feature.id);
+        if (ribMesh) cs.setBodyMesh(bodyId, ribMesh);
+      }
     },
   };
 }

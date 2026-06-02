@@ -36,6 +36,31 @@ import { getSelectableEdges } from "../../../../engine/occ/ops/selectableEdges";
 type SourceFeature = CADState['features'][number];
 
 /**
+ * Returns true when the OCC body contains at least one TopAbs_SOLID shape.
+ * Surface bodies (open shells, sweep surfaces) return false and cannot be
+ * filleted or chamfered. Returns true on any error — we never gate on
+ * uncertainty (fail-open so the OCC path can produce its own diagnostic).
+ */
+function isOccBodySolid(occInst: NonNullable<ReturnType<typeof getOccSync>>, body: BRepBody): boolean {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const oc = occInst.oc as any;
+    const rawShape = occDeref(oc, body.shape, oc.TopoDS_Shape);
+    const solidEnum = oc.TopAbs_ShapeEnum?.TopAbs_SOLID;
+    if (solidEnum === undefined) return true; // enum not bound in this WASM build
+    const map = new oc.TopTools_IndexedMapOfShape_1();
+    try {
+      oc.TopExp.MapShapes_1(rawShape, solidEnum, map);
+      return map.Extent() > 0;
+    } finally {
+      map.delete();
+    }
+  } catch {
+    return true; // any error — don't block the operation
+  }
+}
+
+/**
  * Primitives apply their position / rotation at the React mesh level (params
  * x/y/z + rx/ry/rz in degrees) — the OCC tessellation is in local body space,
  * centered at origin. When a fillet / chamfer creates a new BRep body, the
@@ -532,6 +557,9 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       for (let i = 0; i < limit; i++) {
         const f = allFeatures[i];
         if (f.type !== 'fillet' || f.suppressed || f.id === featureId) continue;
+        // Exclude previously-failed fillets from the combined build — they failed
+        // once and including their edge set would cause the new build to fail too.
+        if (f.healthState === 'error') continue;
         const mode = f.params.mode as string | undefined;
         if (mode === 'full-round' || mode === 'rule-fillet') continue;
         const sibStoredIds = storedEdgeIds(f.params.edgeIds);
@@ -580,6 +608,9 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
       for (let i = replayStartIndex; i < limit; i++) {
         const f = allFeatures[i];
         if (f.type === 'sketch' || f.suppressed || f.id === featureId) continue;
+        // Skip previously-errored fillets — replaying them would trigger another
+        // failing OCC Build() and poison the chain. Keep running body unchanged.
+        if (f.type === 'fillet' && f.healthState === 'error') continue;
         if (f.type !== 'fillet') {
           if (ownsRunning) running.dispose();
           return null;
@@ -677,6 +708,18 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
           occ.oc, srcBody, effectiveFilletEdgeSets,
           { sourceFeatureId: featureId, continuity, tangencyWeight, isRollingBallCorner },
         );
+
+        // Dry-run (validity probe): the primary attempt is sufficient to determine
+        // whether OCC can solve this fillet at the current value. All the fallback
+        // strategies below are commit-path optimisations that should not run during
+        // a live-preview probe — each involves a full synchronous OCC Build() call
+        // that blocks the main thread for multiple seconds on complex geometry.
+        if (dryRun && !result) {
+          return reportError(
+            `${tool} cannot be solved at this value.` +
+            edgeModSizeHint(tool, radius, distance, 'likely'),
+          );
+        }
 
         // Vertex-neighbor fallback (OCC-13.3): if a filleted edge shares a vertex with
         // a non-filleted edge, OCC cannot close the corner blend in a combined pass.
@@ -885,6 +928,15 @@ export function createOccEdgeModificationHelpers({ set, get }: CADSliceContext) 
         ...chamferOpts,
         sourceFeatureId: featureId,
       });
+
+      // Dry-run short-circuit: the degeneracy-heal loop below runs 6 extra Build()
+      // calls — none needed for a validity probe; one failure is sufficient.
+      if (dryRun && !result) {
+        return reportError(
+          `${tool} cannot be solved at this value.` +
+          edgeModSizeHint(tool, radius, distance, 'likely'),
+        );
+      }
 
       // Degeneracy heal: right at OCC's valid-chamfer ceiling an EXACT distance
       // (e.g. d=1.0 against neighbouring r=1 fillets) can fail to build OR build a

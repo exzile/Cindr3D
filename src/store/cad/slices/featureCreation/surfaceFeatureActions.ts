@@ -9,6 +9,7 @@ import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
 import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
 import { errorMessage } from '../../../../utils/errorHandling';
 import { addToast } from '../../../toastStore';
+import { useComponentStore } from '../../../componentStore';
 
 export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
@@ -80,6 +81,16 @@ export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Part
         patchContinuity: 'G0',
         statusMessage: `Patch surface created (${units})`,
       });
+
+      // Register a browser body so the patch shows under "Bodies"
+      const cs = useComponentStore.getState();
+      const componentId = sketch.componentId ?? cs.activeComponentId ?? cs.rootComponentId;
+      const bodyCount = Object.keys(cs.bodies).length + 1;
+      const bodyId = cs.addBody(componentId, `Surface ${bodyCount}`);
+      if (bodyId) {
+        cs.addFeatureToBody(bodyId, featureId);
+        if (mesh) cs.setBodyMesh(bodyId, mesh);
+      }
     },
     ruledMode: 'two-curves' as 'two-curves' | 'extend-edge',
     setRuledMode: (m: 'two-curves' | 'extend-edge') => set({ ruledMode: m }),
@@ -136,8 +147,9 @@ export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Part
         const extMesh = new THREE.Mesh(geom, new THREE.MeshPhysicalMaterial({ color: 0x8899aa, side: THREE.DoubleSide }));
         extMesh.material.userData['shared'] = false;
         const n = features.filter((f) => f.type === 'loft' && f.bodyKind === 'surface').length + 1;
+        const extFeatureId = crypto.randomUUID();
         const feature: Feature = {
-          id: crypto.randomUUID(),
+          id: extFeatureId,
           name: `Ruled Surface ${n}`,
           type: 'loft',
           sketchId: ruledSketchAId,
@@ -149,6 +161,16 @@ export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Part
           bodyKind: 'surface',
         };
         set({ features: [...features, feature], activeTool: 'select', ruledSketchAId: null, statusMessage: `Ruled Surface (extend) created (${units})` });
+
+        // Register a browser body so the ruled surface shows under "Bodies"
+        const csExt = useComponentStore.getState();
+        const extCompId = sketchA.componentId ?? csExt.activeComponentId ?? csExt.rootComponentId;
+        const extBodyCount = Object.keys(csExt.bodies).length + 1;
+        const extBodyId = csExt.addBody(extCompId, `Surface ${extBodyCount}`);
+        if (extBodyId) {
+          csExt.addFeatureToBody(extBodyId, extFeatureId);
+          csExt.setBodyMesh(extBodyId, extMesh);
+        }
         return;
       }
 
@@ -164,8 +186,9 @@ export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Part
         return;
       }
       const mesh = GeometryEngine.ruledSurface(sketchA, sketchB, ruledAlignmentMode, ruledAlignmentDistance);
+      const ruledFeatureId = crypto.randomUUID();
       const feature: Feature = {
-        id: crypto.randomUUID(),
+        id: ruledFeatureId,
         name: `Ruled Surface ${features.filter((f) => f.type === 'loft' && f.bodyKind === 'surface').length + 1}`,
         type: 'loft',
         sketchId: ruledSketchAId,
@@ -183,6 +206,16 @@ export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Part
         ruledSketchBId: null,
         statusMessage: `Ruled Surface created (${units})`,
       });
+
+      // Register a browser body so the ruled surface shows under "Bodies"
+      const cs = useComponentStore.getState();
+      const componentId = sketchA.componentId ?? cs.activeComponentId ?? cs.rootComponentId;
+      const bodyCount = Object.keys(cs.bodies).length + 1;
+      const bodyId = cs.addBody(componentId, `Surface ${bodyCount}`);
+      if (bodyId) {
+        cs.addFeatureToBody(bodyId, ruledFeatureId);
+        if (mesh) cs.setBodyMesh(bodyId, mesh);
+      }
     },
   };
 }
