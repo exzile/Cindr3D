@@ -1,7 +1,9 @@
 /**
- * Pure dimension-pair computation extracted from SketchDimensionAnnotations.
- * Returns Vec2 pairs and a 2D text position for each dimension — no THREE
- * allocations, no GPU work. Callers convert to world coords and write buffers.
+ * Dimension-pair computation extracted from SketchDimensionAnnotations.
+ * Returns Vec2 pairs and a 2D text position for each dimension. This does NO
+ * GPU work and allocates no GPU buffers (the caller writes into preallocated
+ * Float32Arrays). It does allocate short-lived THREE.Vector3 scratch objects
+ * for the 2D projection math — these are CPU-only and collected immediately.
  */
 import type { Sketch, SketchEntity, SketchDimension } from '../../../../types/cad';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';

@@ -41,10 +41,25 @@ export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Part
       const featureId = crypto.randomUUID();
       const n = features.filter((f) => f.type === 'extrude' && f.bodyKind === 'surface' && f.params.patchSketchId !== undefined).length + 1;
 
-      // Build boundary loop from sketch entities
-      const boundaryLoop = sketch.entities.flatMap((e) =>
-        e.points.map((p) => new THREE.Vector3(p.x, p.y, p.z)),
-      );
+      // Build the boundary loop from the tessellated profile shape, not from raw
+      // entity control points. Raw points are wrong for closed primitives — a circle
+      // stores [center, rim] so flatMapping points yields the centre instead of the
+      // boundary. sketchToShape().getPoints() walks the curves and emits true
+      // boundary samples; lift each 2D sketch-plane point to 3D world space.
+      const profileShape = GeometryEngine.sketchToShape(sketch);
+      let boundaryLoop: THREE.Vector3[];
+      if (profileShape) {
+        const { t1, t2 } = GeometryEngine.getSketchAxes(sketch);
+        const origin = (sketch.planeOrigin ?? new THREE.Vector3(0, 0, 0)) as THREE.Vector3;
+        boundaryLoop = profileShape.getPoints(64).map((p) =>
+          origin.clone().addScaledVector(t1, p.x).addScaledVector(t2, p.y),
+        );
+      } else {
+        // Fallback for sketches that don't form a closed profile: use raw line points.
+        boundaryLoop = sketch.entities.flatMap((e) =>
+          e.points.map((p) => new THREE.Vector3(p.x, p.y, p.z)),
+        );
+      }
 
       let mesh: THREE.Mesh | undefined;
       const occ = getOccSync();

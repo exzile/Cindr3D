@@ -164,7 +164,10 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
         id: fid,
         name: `${isSurface ? 'Surface ' : ''}Sweep ${features.filter((f) => f.type === 'sweep').length + 1}`,
         type: 'sweep',
-        sketchId: sweepProfileSketchId,
+        // Store the plain sketch id (not the "sketchId::profileIndex" composite) so
+        // downstream tooling that does sketches.find(s.id === feature.sketchId) resolves
+        // correctly. The selected region is preserved separately in params.profileIndex.
+        sketchId: profileSketchId,
         params: {
           pathSketchId: sweepPathSketchId,
           profileIndex,
