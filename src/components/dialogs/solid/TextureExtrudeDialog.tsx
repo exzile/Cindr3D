@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { DialogShell } from '../common/DialogShell';
 import { safeImageUrl } from '../../../utils/safeImageUrl';
 
@@ -20,11 +20,12 @@ export default function TextureExtrudeDialog({ open, onClose, onConfirm }: Props
   const [strength, setStrength] = useState(5);
   const [channel, setChannel] = useState<'r' | 'g' | 'b' | 'luminance'>('luminance');
   const [subdivisions, setSubdivisions] = useState(1);
+  // Must be before early return — hooks cannot come after conditional returns.
+  const previewUrl = useMemo(() => safeImageUrl(imageUrl), [imageUrl]);
 
   if (!open) return null;
 
   const hasUrl = imageUrl.trim().length > 0;
-  const previewUrl = safeImageUrl(imageUrl);
 
   const handleApply = () => {
     if (!previewUrl) return;

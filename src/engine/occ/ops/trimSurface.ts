@@ -227,13 +227,13 @@ export function occTrimSurfaceWithInstance(
     if (pieces.length === 0) return null;
 
     // Classify each face: inside = closer to trimmer centre; outside = farther.
-    // Sort distances and split at the true midpoint so that for the common two-piece
-    // case exactly one face is kept per side.
+    // Use the true median of sorted distances so that for both 2-piece and 3+
+    // piece results exactly the closer half is kept per side.
     const dists = pieces.map((p) => p.centroid.distanceTo(trimmerCentre));
     const sorted = dists.slice().sort((a, b) => a - b);
-    const midpoint = (sorted[0] + sorted[sorted.length - 1]) / 2;
+    const threshold = sorted[Math.floor((sorted.length - 1) / 2)];
     const keptFaces = pieces.filter((_, i) =>
-      keepSide === 'inside' ? dists[i] <= midpoint : dists[i] > midpoint,
+      keepSide === 'inside' ? dists[i] <= threshold : dists[i] > threshold,
     );
     if (keptFaces.length === 0) return null;
 

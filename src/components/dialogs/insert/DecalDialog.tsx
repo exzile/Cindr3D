@@ -4,7 +4,7 @@
  * No mesh deformation — purely visual.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { DialogShell } from '../common/DialogShell';
 import { isSafeRasterImageFile, safeImageUrl } from '../../../utils/safeImageUrl';
 
@@ -49,7 +49,7 @@ export function DecalDialog({ open, onOk, onClose, faceId }: Props) {
     reader.readAsDataURL(file); // data: URL — consumed by THREE.TextureLoader
   };
 
-  const safeUrl = safeImageUrl(imageUrl);
+  const safeUrl = useMemo(() => safeImageUrl(imageUrl), [imageUrl]);
   const isValidUrl = imageUrl.trim().length > 0 && Boolean(safeUrl);
   const canOk = faceId !== null && isValidUrl;
 

@@ -577,7 +577,11 @@ export function PrimitivePreview() {
 
   if (!preview || !geo) return null;
   const position = [preview.params.x ?? 0, preview.params.y ?? 0, preview.params.z ?? 0] as [number, number, number];
-  const primitiveCenter = new THREE.Vector3(position[0], position[1], position[2]);
+  const primitiveCenter = useMemo(
+    () => new THREE.Vector3(position[0], position[1], position[2]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [position[0], position[1], position[2]],
+  );
   const boxLength = preview.params.width ?? 20;   // X
   const boxWidth = preview.params.depth ?? 20;    // Z
   const boxHeight = preview.params.height ?? 20;  // Y
