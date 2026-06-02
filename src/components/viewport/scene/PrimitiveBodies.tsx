@@ -235,8 +235,8 @@ function PrimitiveDimensionHandle({ kind, center, value, onChange }: PrimitiveDi
   }, [value]);
 
   const axis = useMemo(() => {
-    if (kind === 'box-height') return new THREE.Vector3(0, 0, 1);
-    if (kind === 'cylinder-height' || kind === 'box-width') return new THREE.Vector3(0, 1, 0);
+    if (kind === 'box-height' || kind === 'cylinder-height') return new THREE.Vector3(0, 1, 0);
+    if (kind === 'box-width') return new THREE.Vector3(0, 0, 1);
     return new THREE.Vector3(1, 0, 0);
   }, [kind]);
 
@@ -578,16 +578,16 @@ export function PrimitivePreview() {
   if (!preview || !geo) return null;
   const position = [preview.params.x ?? 0, preview.params.y ?? 0, preview.params.z ?? 0] as [number, number, number];
   const primitiveCenter = new THREE.Vector3(position[0], position[1], position[2]);
-  const boxLength = preview.params.width ?? 20;
-  const boxWidth = preview.params.height ?? 20;
-  const boxHeight = preview.params.depth ?? 20;
+  const boxLength = preview.params.width ?? 20;   // X
+  const boxWidth = preview.params.depth ?? 20;    // Z
+  const boxHeight = preview.params.height ?? 20;  // Y
   const cylinderRadius = preview.params.radius ?? 10;
   const cylinderHeight = preview.params.height ?? 20;
   const updateBoxPreview = (next: { width?: number; height?: number; depth?: number }) => {
     if (preview.kind !== 'box') return;
     const nextWidth = next.width ?? boxLength;
-    const nextHeight = next.height ?? boxWidth;
-    const nextDepth = next.depth ?? boxHeight;
+    const nextHeight = next.height ?? boxHeight;
+    const nextDepth = next.depth ?? boxWidth;
     setPrimitivePreview({
       kind: 'box',
       params: {
@@ -635,13 +635,13 @@ export function PrimitivePreview() {
             kind="box-width"
             center={primitiveCenter}
             value={boxWidth}
-            onChange={(next) => updateBoxPreview({ height: next })}
+            onChange={(next) => updateBoxPreview({ depth: next })}
           />
           <PrimitiveDimensionHandle
             kind="box-height"
             center={primitiveCenter}
             value={boxHeight}
-            onChange={(next) => updateBoxPreview({ depth: next })}
+            onChange={(next) => updateBoxPreview({ height: next })}
           />
         </>
       )}

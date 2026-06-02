@@ -227,24 +227,27 @@ export function occTrimSurfaceWithInstance(
     if (pieces.length === 0) return null;
 
     // Classify each face: inside = closer to trimmer centre; outside = farther.
-    // Sort by distance to trimmer centre. For 'inside' keep closer faces; for
-    // 'outside' keep farther faces. Split at the median distance.
+    // Sort distances and split at the true midpoint so that for the common two-piece
+    // case exactly one face is kept per side.
     const dists = pieces.map((p) => p.centroid.distanceTo(trimmerCentre));
-    const median = dists.slice().sort((a, b) => a - b)[Math.floor(dists.length / 2)];
+    const sorted = dists.slice().sort((a, b) => a - b);
+    const midpoint = (sorted[0] + sorted[sorted.length - 1]) / 2;
     const keptFaces = pieces.filter((_, i) =>
-      keepSide === 'inside' ? dists[i] <= median : dists[i] > median,
+      keepSide === 'inside' ? dists[i] <= midpoint : dists[i] > midpoint,
     );
     if (keptFaces.length === 0) return null;
 
     // ── Step 7: Sew kept faces into a shell → BRepBody ───────────────────────
     const compound = new occ.TopoDS_Compound();
-    ownedResources.push(compound);
+    // Do NOT push compound into ownedResources — makeBRepBodyFromOccShape transfers
+    // ownership of the shape, so the finally-block delete would cause a double-free.
     const cBuilder = new occ.BRep_Builder();
     ownedResources.push(cBuilder);
     // Use MakeCompound if available (more portable than MakeShell for open surfaces)
     try {
       (cBuilder as unknown as { MakeCompound(c: unknown): void }).MakeCompound(compound);
     } catch {
+      try { compound.delete(); } catch { /* ok */ }
       return null;
     }
     for (const p of keptFaces) {

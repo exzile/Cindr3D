@@ -24,6 +24,12 @@ const _tmpFoot = new THREE.Vector3();
 const _tmpCenter = new THREE.Vector3();
 const _tmpTp = new THREE.Vector3();
 const _tmpOc = new THREE.Vector3();
+// A4c line-line intersection scratch (separate from above to avoid clobbering in nested loops)
+const _llA0 = new THREE.Vector3();
+const _llAd = new THREE.Vector3();
+const _llB0 = new THREE.Vector3();
+const _llBd = new THREE.Vector3();
+const _llW0 = new THREE.Vector3();
 
 export default function SketchInteraction() {
   const { camera, gl, raycaster, scene, size: viewportSize } = useThree();
@@ -497,41 +503,37 @@ export default function SketchInteraction() {
         }
       }
 
-      // A4c: line-line intersections
-      // Use 4 dedicated scratch vectors (A0/Ad/B0/Bd) since inner/outer loops overlap.
-      const _A0 = new THREE.Vector3(), _Ad = new THREE.Vector3();
-      const _B0 = new THREE.Vector3(), _Bd = new THREE.Vector3();
-      const _w0 = new THREE.Vector3();
+      // A4c: line-line intersections — uses module-level scratch vectors _llA0/Ad/B0/Bd/W0.
       for (let i = 0; i < nearLines.length; i++) {
         const a = nearLines[i];
-        _A0.set(a.points[0].x, a.points[0].y, a.points[0].z);
-        _Ad.set(
+        _llA0.set(a.points[0].x, a.points[0].y, a.points[0].z);
+        _llAd.set(
           a.points[a.points.length - 1].x - a.points[0].x,
           a.points[a.points.length - 1].y - a.points[0].y,
           a.points[a.points.length - 1].z - a.points[0].z,
         );
-        const aLen = _Ad.length();
+        const aLen = _llAd.length();
         if (aLen < 1e-6) continue;
-        _Ad.divideScalar(aLen);
+        _llAd.divideScalar(aLen);
 
         for (let j = i + 1; j < nearLines.length; j++) {
           const b = nearLines[j];
-          _B0.set(b.points[0].x, b.points[0].y, b.points[0].z);
-          _Bd.set(
+          _llB0.set(b.points[0].x, b.points[0].y, b.points[0].z);
+          _llBd.set(
             b.points[b.points.length - 1].x - b.points[0].x,
             b.points[b.points.length - 1].y - b.points[0].y,
             b.points[b.points.length - 1].z - b.points[0].z,
           );
-          const bLen = _Bd.length();
+          const bLen = _llBd.length();
           if (bLen < 1e-6) continue;
-          _Bd.divideScalar(bLen);
+          _llBd.divideScalar(bLen);
 
-          _w0.subVectors(_A0, _B0);
-          const a11 = _Ad.dot(_Ad);
-          const a12 = -_Ad.dot(_Bd);
-          const a22 = _Bd.dot(_Bd);
-          const b1 = -_Ad.dot(_w0);
-          const b2 = _Bd.dot(_w0);
+          _llW0.subVectors(_llA0, _llB0);
+          const a11 = _llAd.dot(_llAd);
+          const a12 = -_llAd.dot(_llBd);
+          const a22 = _llBd.dot(_llBd);
+          const b1 = -_llAd.dot(_llW0);
+          const b2 = _llBd.dot(_llW0);
           const det = a11 * a22 - a12 * a12;
           if (Math.abs(det) < 1e-8) continue;
           const t = (a22 * b1 - a12 * b2) / det;
@@ -539,8 +541,8 @@ export default function SketchInteraction() {
           if (t < -0.1 * aLen || t > 1.1 * aLen) continue;
           if (s < -0.1 * bLen || s > 1.1 * bLen) continue;
 
-          const P1 = _tmpP0.copy(_A0).addScaledVector(_Ad, t);
-          const P2 = _tmpP1.copy(_B0).addScaledVector(_Bd, s);
+          const P1 = _tmpP0.copy(_llA0).addScaledVector(_llAd, t);
+          const P2 = _tmpP1.copy(_llB0).addScaledVector(_llBd, s);
           if (P1.distanceTo(P2) > 0.5) continue;
 
           // P1 and P2 are in _tmpP0/_tmpP1; use _tmpFoot for the midpoint

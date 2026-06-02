@@ -5,7 +5,6 @@ import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
 import { getOccSync } from '../../../../engine/occ/loader';
 import { occFillSurfaceWithInstance, type OccFillEdge, type FillContinuity } from '../../../../engine/occ/ops/fillSurface';
-import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
 import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
 import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
 
@@ -84,26 +83,11 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
       if (occ) {
         try {
           // Resolve OCC edges from stored edge IDs so MakeFilling can apply G1/G2.
-          const edgeConstraints: OccFillEdge[] = fillBoundaryEdgeData.map((e, i) => {
-            const continuity = continuityPerEdge[i] ?? 'G0';
-            if (continuity === 'G0') return { continuity };
-            // Parse "occ:<bodyId>:<edgeNum>" to get the actual TopoDS_Edge (VIEW).
-            const parts = e.id.split(':');
-            if (parts.length === 3 && parts[0] === 'occ') {
-              const body = globalBRepBodyRegistry.get(parts[1]);
-              const edgeNum = Number(parts[2]);
-              if (body?._tessellation) {
-                // Resolve the edge VIEW from the body's tessellation edge map.
-                // NOTE: the View is valid as long as the body is alive.
-                // We don't store the TopoDS_Edge directly — pass null and let
-                // MakeFilling use the built linear edge but with the continuity order.
-                // True G1/G2 from adjacent face requires edge-face pairing which
-                // requires a more complex API call. Mark as best-effort.
-                void edgeNum; // suppress unused warning
-              }
-            }
-            return { continuity };
-          });
+          // Real OCC TopoDS_Edge resolution is deferred — MakeFilling receives the
+          // continuity order only; the linear boundary edges are built internally.
+          const edgeConstraints: OccFillEdge[] = fillBoundaryEdgeData.map((_e, i) => ({
+            continuity: continuityPerEdge[i] ?? 'G0',
+          }));
 
           const body = occFillSurfaceWithInstance(occ.oc, boundaryLoop, {
             sourceFeatureId: featureId,
