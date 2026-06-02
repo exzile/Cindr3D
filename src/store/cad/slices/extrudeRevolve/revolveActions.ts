@@ -408,7 +408,10 @@ export function createRevolveActions({ set, get }: CADSliceContext): Partial<CAD
             set({ statusMessage: `Revolve failed in OCC: ${message}` });
             return;
           }
-          // Surface revolve falls through with no mesh (params-only fallback)
+          // Surface revolve: fall back to THREE mesh so the feature is visible
+          const axisVec = resolveRevolveAxisVec(resolvedAxisKey, centerlineAxisDirection);
+          feature.mesh = GeometryEngine.revolveSketch(sketch, sketchRevolveAngles.primaryAngleRad, axisVec) ?? undefined;
+          set({ statusMessage: `Surface Revolve: OCC failed (${message}), using mesh fallback` });
         }
       }
     }

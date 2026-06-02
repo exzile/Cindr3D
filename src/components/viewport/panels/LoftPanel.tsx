@@ -10,17 +10,12 @@ export default function LoftPanel() {
   const bodyKind = useCADStore((s) => s.loftBodyKind);
   const setBodyKind = useCADStore((s) => s.setLoftBodyKind);
 
-  // D72 upgrades
   const closed = useCADStore((s) => s.loftClosed);
   const setClosed = useCADStore((s) => s.setLoftClosed);
-  const tangentEdgesMerged = useCADStore((s) => s.loftTangentEdgesMerged);
-  const setTangentEdgesMerged = useCADStore((s) => s.setLoftTangentEdgesMerged);
   const startCond = useCADStore((s) => s.loftStartCondition);
   const setStartCond = useCADStore((s) => s.setLoftStartCondition);
   const endCond = useCADStore((s) => s.loftEndCondition);
   const setEndCond = useCADStore((s) => s.setLoftEndCondition);
-  const railId = useCADStore((s) => s.loftRailSketchId);
-  const setRailId = useCADStore((s) => s.setLoftRailSketchId);
   const loftOperation = useCADStore((s) => s.loftOperation);
   const setLoftOperation = useCADStore((s) => s.setLoftOperation);
 
@@ -40,7 +35,7 @@ export default function LoftPanel() {
     setProfileIds(next);
   };
 
-  type EndCond = 'free' | 'tangent' | 'curvature';
+  type EndCond = 'free' | 'tangent';
 
   return (
     <div className="extrude-panel">
@@ -80,22 +75,11 @@ export default function LoftPanel() {
         </div>
 
         <div className="sketch-palette-row">
-          <span className="sketch-palette-label">Rail Sketch</span>
-          <select className="measure-select" value={railId ?? ''}
-            onChange={(e) => setRailId(e.target.value || null)}>
-            <option value="">— none —</option>
-            {available.filter((s) => !profileIds.includes(s.id))
-              .map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        </div>
-
-        <div className="sketch-palette-row">
           <span className="sketch-palette-label">Start</span>
           <select className="measure-select" value={startCond}
             onChange={(e) => setStartCond(e.target.value as EndCond)}>
             <option value="free">Free</option>
             <option value="tangent">Tangent (G1)</option>
-            <option value="curvature">Curvature (G2)</option>
           </select>
         </div>
 
@@ -105,7 +89,6 @@ export default function LoftPanel() {
             onChange={(e) => setEndCond(e.target.value as EndCond)}>
             <option value="free">Free</option>
             <option value="tangent">Tangent (G1)</option>
-            <option value="curvature">Curvature (G2)</option>
           </select>
         </div>
 
@@ -113,12 +96,6 @@ export default function LoftPanel() {
           <label className="loft-checkbox-label">
             <input type="checkbox" checked={closed} onChange={(e) => setClosed(e.target.checked)} />
             <span className="sketch-palette-label">Closed Loft</span>
-          </label>
-        </div>
-        <div className="sketch-palette-row">
-          <label className="loft-checkbox-label">
-            <input type="checkbox" checked={tangentEdgesMerged} onChange={(e) => setTangentEdgesMerged(e.target.checked)} />
-            <span className="sketch-palette-label">Merge Tangent Edges</span>
           </label>
         </div>
 

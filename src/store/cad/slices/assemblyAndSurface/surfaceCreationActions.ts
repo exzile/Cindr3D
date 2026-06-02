@@ -134,8 +134,8 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
       let geom: THREE.BufferGeometry;
       const sketch = params.sketchId ? sketches.find((s) => s.id === params.sketchId) : null;
       if (sketch && sketch.entities.length > 0) {
-        const entity = sketch.entities[0];
-        const pts = entity.points.map((p) => new THREE.Vector3(p.x, p.y, p.z));
+        // Collect all entity points across all entities in order
+        const pts = sketch.entities.flatMap((e) => e.points.map((p) => new THREE.Vector3(p.x, p.y, p.z)));
         const normal = sketch.planeNormal.clone().normalize();
         const dir = params.direction === 'flip' ? normal.clone().negate() : normal;
         geom = GeometryEngine.offsetCurveToSurface(pts, params.distance, dir);

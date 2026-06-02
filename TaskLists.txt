@@ -1,342 +1,99 @@
 ## DesignCAD - Active Implementation Task List
 ## Status key: [~] partial  [ ] open  [>] in progress  [skip] intentional no-op / deferred spike
-## Last updated: 2026-06-01
-## Branch: MirrorOpt
+## Last updated: 2026-06-02
 
 Purpose:
 Keep this file focused on active work. Open task sections retain their detailed instructions.
-Completed sections (SKETCH-1/2 parity, PRIM primitive-dialog parity) were removed 2026-06-01
-after all their items shipped; see git history if their detail is needed.
-
-## Current P0 Notes
-
-[x] Sketch extrude profile selection acts like Fusion 360 for nested regions.
-    All 5 requirements fully implemented and verified (2026-06-01):
-    - Area-based smallest-wins raycaster picks inner regions correctly.
-    - Each atomic region (via computeAtomicRegions/Clipper2) is a separate mesh.
-    - toggleSelection() handles click-to-toggle without Shift.
-    - profileIndex/profileIndices persisted in feature.params → exact profile replay.
-    - .dznd serialization preserves Feature.params through save/load cycle.
-
-[~] Fillet/chamfer edge selection and reliability remains a priority.
-    - [x] Orange selectable lines appear on all eligible solid edges (was already working).
-    - [x] Round/circular edges now highlight as one merged arc in BOTH fillet AND chamfer
-          (ChamferEdgeHighlight now passes allowCurvedEdges — it was missing this prop).
-    - [x] Hover cursor + selected color: fully implemented, verified.
-    - [x] Edge anchor staleness: remapSelectionEdgeIdsToBody now falls back to positional
-          match when computeEdgeAnchor returns null, preventing round rim fillet failures.
-    - Watch for stale OCC body ids, partial purple selections, unchanged output, or missing faces.
-
-[~] Continue viewport performance sweep for large sketches and many bodies.
-    - [x] SketchConstraintOverlay: now uses group visible={cameraIdle} instead of
-          conditional mount, so constraint glyphs stay in scene during camera pan
-          (previously unmounted/remounted 2x per pan, causing GC churn on 50+ constraints).
-    - [x] SketchPointHandles: handles JSX array now wrapped in useMemo so JSX objects
-          are not recreated when component re-renders for unrelated reasons.
-    - [x] Snap computation: findSnapCandidate() now reuses 8 module-level scratch
-          Vector3s instead of allocating ~600 new objects per mousemove (50 entities).
-          Eliminates GC pressure from per-entity endpoint/midpoint/perpendicular allocs.
-    - [~] SketchDimensionAnnotations: annotations memo still depends on full activeSketch
-          — rebuilds on every entity position change during constraint solving. Requires
-          separating dimension structure from position updates (useFrame-based geometry
-          mutation) which is a larger refactor. Low priority — solver is event-driven,
-          not frame-driven, so rebuild frequency is bounded by input events.
-
-# DEP-1: npm dependency maintenance for Dev1 (2026-06-01)
-# npm outdated/audit was reviewed after creating Dev1 from latest master.
-# Production audit: 0 vulnerabilities. Full audit: 2 moderate dev/transitive issues.
-#
-# [x] DEP-1.1 npm audit fix cleared brace-expansion and ws advisories. Prod: 0 vulns.
-# [x] DEP-1.2 Runtime batch applied: react 19.2.7, react-dom 19.2.7, lucide-react 1.17.0,
-#           fflate 0.8.3. (zustand was already current.)
-# [x] DEP-1.3 Tooling batch applied: @vitest/ui 4.1.8, @types/node 25.9.1,
-#           @types/react 19.2.16, @vitejs/plugin-react 6.0.2, globals 17.6.0,
-#           jsdom 29.1.1, typescript-eslint latest, eslint-plugin-react-hooks 7.1.1,
-#           @types/opentype.js 1.3.10. (typescript, vite, vitest were already current.)
-#
-# [~] DEP-1.4 Review separately before upgrading (major / viewport-sensitive):
-#           - [x] opentype.js 2.x — callback API unchanged; no source changes needed (applied)
-#           - [x] puppeteer 25.x — dev-only; no source changes needed (applied)
-#           - [x] three 0.184.x — zero TS errors, all tests pass (applied)
-#           - [x] @types/three 0.184.x — paired with three upgrade (applied)
-#           - [x] three-bvh-csg 0.0.18 — no API breaks in our usage (applied)
-#           - [ ] eslint / @eslint/js 10.x — new rules fire on valid patterns:
-#                 react-hooks/no-direct-setState-in-effect, no-useless-assignment.
-#                 Fix the real code issues flagged by these rules, then adopt eslint 10.
-#
-# [x] DEP-1.5 opencascade.js NOT downgraded (2.0.0-beta.fdece36 > registry 1.1.1).
-# [x] DEP-1.6 Verification gate passed: npm audit --omit=dev: 0 vulns; tests 1471 pass.
-
-# REMAINING - manual interactive-3D QA only
-# These require a human picking edges in the live 3D viewport with the real WASM kernel.
-# [ ] QA-1  Live red-flash pulse: pick the bottom edge near a fillet, dial chamfer past
-#           its limit, and confirm the edge flashes red plus a toast appears.
-# [ ] QA-3  Rolling-ball corner output vs Fusion: confirm OCC's automatic corner output
-#           remains acceptable for the current fillet parity target.
+Completed sections are removed after shipping; see git history if detail is needed.
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SKETCH-2-IMPL: remaining manual QA (implementation all shipped)
+# PERF: Viewport performance sweep
 # ══════════════════════════════════════════════════════════════════════════════
-# The SKETCH-1 (missing tools) and SKETCH-2 (tool correctness) implementation work
-# is complete and removed. Only these live-viewport QA checks remain open. Run
-# `npm run dev`, draw in a sketch on XY and on an XZ/offset plane.
-#
-# [ ] C1.c  Draw a 3-point arc whose middle click is below the chord -> arc bulges
-#           down (matches the cursor), not up. (tangentHandlers.ts:194-223)
-# [ ] C2.c  Chain a tangent arc off the end of a line -> smooth (G1), no kink.
-#           (tangentHandlers.ts:282-360; dragged variant sketchEventHelpers.ts:108-117)
-# [ ] C3.c  2-tangent + 3-tangent circle on an XZ/offset sketch -> center lands on
-#           the actual plane (compare to the same construction on XY shifted).
-# [ ] B5.c  Symmetric tool: two points + a vertical centerline -> points become
-#           mirror images. (useSketchConstraintTool.ts:19-30; solver expects [axis,a,b])
+
+[~] SketchDimensionAnnotations memo still depends on full activeSketch — rebuilds on
+    every entity position change during constraint solving. Requires separating dimension
+    structure from position updates (useFrame-based geometry mutation), which is a larger
+    refactor. Low priority — solver is event-driven, not frame-driven, so rebuild
+    frequency is bounded by input events.
 
 # ══════════════════════════════════════════════════════════════════════════════
-# BROWSER QA — OCC-21/22 + 21.4e geometry (NEEDS A HUMAN IN THE LIVE 3D APP)
+# SURF: Surface workspace functional quality gaps
 # ══════════════════════════════════════════════════════════════════════════════
-# All logic/math below is tsc-clean + unit-tested (full suite green), but the
-# actual OCC kernel geometry was NOT exercisable in the headless test harness.
-# These steps verify the on-screen result. Run `npm run dev`, open the Design
-# workspace. All tools live in the ribbon DESIGN tab → "MODIFY" dropdown unless
-# noted. Each body op needs an OCC SOLID first (Create → Box / Cylinder primitive,
-# or a sketch + Extrude). Watch the status-bar message (bottom) and the timeline.
-#
-# Convention below:  ▶ steps   ✓ expected pass   ✗ failure signature
-#
-# ── QA-21.4e-A  Silhouette Split — CYLINDER (the headline new feature) ─────────
-#   ▶ Create → Cylinder primitive (e.g. r=10, h=30, axis = Z).
-#   ▶ MODIFY → "Silhouette Split". In the dialog set Split Type = "Silhouette",
-#     Body = the cylinder, View Direction = "Along X axis". Confirm.
-#   ✓ The cylinder's curved face is now divided into two halves by two straight
-#     vertical seam lines on the ±Y sides (the outline as seen looking down X).
-#     Volume/shape unchanged; status: "Silhouette Split: outline imprinted on …".
-#     The two new face halves should be independently hover-highlightable.
-#   ✗ "no cylindrical/conical silhouette …" (math rejected the view — try a view
-#     NOT parallel to the axis) OR no visible seam / unchanged face (BRepFeat
-#     imprint failed — capture console warnings beginning "[occSilhouetteSplit]").
-#   ▶ Repeat with View Direction = "Along Z axis" (parallel to the cylinder axis).
-#   ✓ Expected NO-OP with status "no cylindrical/conical silhouette for this view
-#     direction" — a view down the axis has a circular outline, not rulings.
-#
-# ── QA-21.4e-B  Silhouette Split — CONE ────────────────────────────────────────
-#   ▶ Make a cone: sketch a circle, Revolve a triangle, or a Coil/loft — any body
-#     with a conical face. (If no cone primitive exists, a Draft on a cylinder
-#     face or a revolved profile yields one.)
-#   ▶ MODIFY → "Silhouette Split", Split Type = "Silhouette", View = side axis (X/Y).
-#   ✓ The conical face gets two SLANT seam lines (following the cone's taper, not
-#     vertical) where the outline sits — i.e. the seams converge toward the apex.
-#   ✗ As above. Note: for a steep cone viewed near-axially the math may return 0
-#     rulings by design (status no-op) — pick a more side-on axis.
-#   NOTE for both A/B: this realizes Fusion "FacesOnly". 'solid-body'/'shelled-body'
-#     and sphere/torus/freeform are intentionally deferred (status no-op + warn).
-#
-# ── QA-21.2  Split Face (WAS SILENTLY BROKEN before the TKFeat loader fix) ──────
-#   This is the regression check for the TKFeat fix — it returned null on every
-#   call until 2026-05-31.
-#   ▶ Create → Box. Create a construction plane that cuts through the top face
-#     (e.g. an offset XZ plane through the middle).
-#   ▶ MODIFY → "Split Face". Pick the box's top face, choose the construction
-#     plane as the splitting tool. Confirm.
-#   ✓ The top face is split into two faces along the plane intersection line;
-#     body volume unchanged; status "Split Face applied".
-#   ✗ "Split Face: OCC operation failed …" → re-confirm TKFeat is loading (Network
-#     tab should fetch module.TKFeat.wasm at startup; console "[occSplitFace]").
-#
-# ── QA-21.1  Direct Edit (offset-face / extrude / taper) ────────────────────────
-#   ▶ Create → Box. MODIFY → "Direct Edit". Pick a face.
-#   ▶ Mode = Offset Face, distance = +5, confirm.  ✓ that face pushes out 5mm
-#     (volume grows); status "Direct Edit (offset-face) applied".
-#   ▶ Repeat, Mode = Extrude, distance = -3.  ✓ face pulls in (cut), same as a
-#     negative offset.
-#   ▶ Repeat, Mode = Taper, angle = 10°.  ✓ the picked planar face tilts by 10°.
-#   ✗ "Direct Edit … OCC operation failed" or no change → console "[occOffsetFaces]"
-#     / "[occDraft]"; for taper, a non-planar face is rejected by design.
-#
-# ── QA-21.3  Replace Face ───────────────────────────────────────────────────────
-#   ▶ Create → Box. MODIFY → "Replace Face". Pick a source face (e.g. the top),
-#     then a target face/plane that is tilted relative to it. Tangent Chain = on.
-#   ✓ The source face is replaced so the body is now bounded by the target plane
-#     (the top becomes slanted); status "Replace Face applied".
-#   ✗ "source and target faces must be on the same body" (pick both on one body) /
-#     "target face is not planar" (only planar targets supported) / OCC failure.
-#
-# ── QA-21.4a/b/c  Split Body (plane offset + face/surface tool + N pieces) ──────
-#   ▶ Create → Box. MODIFY → "Split Body".
-#   ▶ (a) Pick a principal plane, set a non-zero Plane Offset, confirm.
-#     ✓ body splits into two bodies offset from the origin (not stuck at 0).
-#   ▶ (b) Choose a face/surface body as the splitting tool (body-picker).
-#     ✓ body divides into ALL resulting solids (≥2), each a separate timeline body.
-#   ✗ only ever 2 halves at the origin → offset/tool not threaded; check console.
-#
-# ── QA-22.1  Move/Copy Body (non-primitive: extrude/imported/OCC) ───────────────
-#   ▶ Sketch + Extrude a body. MODIFY → "Move/Copy Body".
-#   ▶ Set dx=10, copy = OFF, confirm.  ✓ the body actually translates +10 X (before
-#     the fix a non-primitive body did NOT move).
-#   ▶ Re-open, dx=10, copy = ON, confirm.  ✓ a SECOND body appears 10mm over; the
-#     original stays. Both remain filletable (OCC body re-registered at new pose).
-#   ✗ body doesn't move / copy not created → console; confirm it is an OCC body.
-#
-# ── QA-22.2  Align (OCC body lands AND the BRep follows) ────────────────────────
-#   ▶ Sketch + Extrude a box (OCC body). MODIFY → "Align".
-#   ▶ Pick a source point/face on the body, then a target point/face elsewhere;
-#     moveType = translate (or align with rotation). Confirm.
-#   ✓ The body moves to the target.  THEN immediately Fillet/Chamfer an edge of the
-#     moved body:  ✓ the fillet appears at the ALIGNED pose (not back at the old
-#     location). This is the key 22.2 check — the OCC BRep moved with the mesh.
-#   ✗ body snaps back to the original pose on the next op, or fillet appears at the
-#     old location → the BRep wasn't transformed; capture console.
-#
-# ── QA-22.3  Merge Faces (now reachable — menu entry added 2026-05-31) ──────────
-#   ▶ Make a body with adjacent COPLANAR faces (e.g. two boxes Combine-joined so
-#     the shared top is split into two coplanar faces, or a split-face result).
-#   ▶ MODIFY → "Merge Faces". Pick the body. Confirm.
-#   ✓ Adjacent coplanar/tangent faces merge into single faces (fewer faces when
-#     hovering); identical solid/volume.
-#   ✗ no change → ShapeUpgrade_UnifySameDomain found nothing to merge (try a body
-#     that genuinely has redundant coplanar faces) or console warning.
-#
-# ── QA-21.5  Texture Extrude (deferred — confirm graceful message) ─────────────
-#   ▶ MODIFY → "Texture Extrude", pick a face, confirm.
-#   ✓ Status "Texture Extrude: not yet implemented — UV-tiled pattern extrude is
-#     planned for a future release" and NO phantom feature is added. (Intentional.)
-#
-# WHEN DONE: tick each ✓ here; for any ✗ paste the bottom status text + any
-# console lines starting with "[occ…]" and I'll fix the kernel path.
+# TOOL-PRESENCE PARITY IS COMPLETE. Gaps below are functional quality only.
+# Verification gate: npx tsc --noEmit clean · npx vitest run green · manual QA.
+# Per CLAUDE.md: gitnexus_impact before editing; OCC VIEW-delete rules; tagShared()
+# singletons; dispose every new THREE.BufferGeometry in cleanup.
+
+[~] SURF-4  Surface Fillet on OCC open-shell edges not verified.
+    The Fillet dialog now shows a status-bar warning when no OCC-backed surface bodies
+    are present (warning added 2026-06-01). Remaining: after SURF-1 OCC surface bodies
+    exist, verify the OCC fillet (BRepFilletAPI_MakeFillet) accepts open-shell edges;
+    add a two-surface blend-fillet mode if the single-body path doesn't cover it.
+    Fusion fillets surface edges AND builds a fillet/blend surface bridging two separate
+    surfaces. Implementation blocked until OCC surface bodies are used in the live app.
+
+[~] SURF-5  True G1/G2 face-tangency for Fill boundaries deferred.
+    Fill edge picking is wired (FillEdgePicker component, addFillBoundaryEdge, G0/G1/G2
+    per edge passed to occFillSurfaceWithInstance / MakeFilling). Remaining: passing the
+    actual TopoDS_Edge VIEW to MakeFilling.Add_2 with adjacent face reference for true
+    tangency/curvature solve — requires storing the edge handle at pick time. Currently
+    the continuity order is passed but the edge VIEW resolution is not yet done.
+    NOTE: Loft G1 uses SetSmoothing(true) — G2 is not separately achievable via
+    BRepOffsetAPI_ThruSections (no G2 API); G2 option has been removed from the panel.
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SURF: Surface workspace parity vs Fusion 360 (audited 2026-06-01)
+# SURF-CREATE: Surface CREATE-tool parity vs Fusion 360 (audited 2026-06-02)
 # ══════════════════════════════════════════════════════════════════════════════
-# Audit scope: the Surface ribbon tab (RibbonSurfaceTab.tsx) — CREATE + MODIFY —
-# against Fusion 360's Surface workspace, cross-referenced with the SDK Features/
-# headers and the live commit actions / geometry-engine implementations.
-#
-# TOOL-PRESENCE PARITY IS COMPLETE. Every Fusion Surface tool is present and wired,
-# and we additionally ship Surface Primitives, Surface Split, Merge, Delete Face,
-# and Thicken as extensions. Fillet and Reverse Normal route through the shared
-# dialogs in ActiveDialog.tsx (cases 'fillet' / 'reverse-normal'), not a surface-
-# specific action. So nothing is MISSING at the button/dialog level.
-#
-# The gaps are FUNCTIONAL QUALITY: most surface bodies are THREE meshes (not OCC
-# BReps), and several "create" ops are placeholder triangulations rather than real
-# surface solves. The work below upgrades each from "looks right in simple cases"
-# to "Fusion-equivalent BRep surface". Priority order: SURF-1 is foundational (most
-# others depend on real OCC surface bodies existing first).
-#
-# Fusion SDK reference: …\CPP\include\Fusion\Features\ (Extrude/Revolve/Sweep/Loft/
-# Patch/Offset/Ruled/Boundary-Fill + Stitch/Thicken). FeatureOperation enum:
-# NewBody/Join/Cut/Intersect/NewComponent. Surface continuity: G0/G1(tangent)/
-# G2(curvature) per boundary, with weight, on Patch/Loft/Fill/Extend.
+# Audit scope: the Surface ribbon CREATE panel (RibbonSurfaceTab.tsx createMenuItems)
+# against Fusion 360's Surface > CREATE panel, cross-referenced with the SDK feature
+# headers and the live panels + commit actions.
 #
 # Verification gate per item: npx tsc --noEmit clean · npx vitest run green · manual
-# QA in the live Surface tab (localhost:5173). Per CLAUDE.md: gitnexus_impact before
-# editing a symbol; OCC VIEW-delete rules; tagShared() singleton materials; dispose
-# every new THREE.BufferGeometry in cleanup.
+# QA in the live Surface tab. Per CLAUDE.md: gitnexus_impact before editing a symbol;
+# OCC VIEW-delete rules; plane-aware getSketchAxes() math; tagShared() singletons;
+# dispose every new THREE.BufferGeometry in cleanup.
 #
-# Implemented 2026-06-01 (MirrorOpt branch):
-#   SURF-1  OCC open-surface bodies: all four create ops now have OCC paths.
-#           Loft (isSolid:false in ThruSections), Sweep (wire-profile not face),
-#           Revolve (wire-profile not face), Extrude (occExtrudeSurfaceWithInstance —
-#           wire prism, no cap). All fall back to THREE mesh on OCC failure.
-#   SURF-8  commitUntrim now finds the source mesh and calls GeometryEngine.untrimSurface
-#           instead of creating a params-only feature. Hides source on commit.
-#   SURF-10 Move/Copy and Align added to the Surface MODIFY ribbon.
-#   SURF-4  Opening the Surface Fillet dialog now checks for OCC-backed surface bodies
-#           and shows a status-bar warning if none are present.
-#   SURF-6  ruledSurface() extended with alignmentMode (direction/tangent/normal) and
-#           a distance offset; state slots ruledAlignmentMode/ruledAlignmentDistance
-#           wired through commitRuledSurface.
+# ── Completed 2026-06-02 ───────────────────────────────────────────────────────
+# [x] SURF-CREATE-1   Patch continuity + OCC path: G0/G1/G2 dropdown in PatchPanel;
+#     commitPatch routes through occFillSurfaceWithInstance with fallback to THREE.
+# [x] SURF-CREATE-6   Sweep Flip Direction: state + checkbox wired via pathWire.Reversed().
+# [x] SURF-CREATE-8   Fill/OffsetCurve/Primitives migrated from DialogShell to tool-panel.
+# [x] SURF-CREATE-9   Offset Curve multi-entity: flatMaps all entities (was entities[0]).
+# [x] SURF-CREATE-11  Sweep dead controls: Scaling/Distance/Twist removed; orientation
+#     options corrected (perp/frenet/horiz/vert); 'parallel'/'default' cast bugs fixed.
+# [x] SURF-CREATE-12  Loft dead controls: Rail row removed; G2 removed (only Free/G1);
+#     closed loft wired in loft.ts (re-adds first section); G1 maps to SetSmoothing(true).
+# [x] SURF-CREATE-13  Patch routes through OCC (MakeFilling); THREE fallback kept.
+#     Ruled still THREE-mesh only — BRep for Ruled is a separate task.
+# [x] SURF-CREATE-14  Revolve isProjectAxis checkbox removed from panel.
+# [x] SURF-CREATE-15  Surface Revolve: THREE fallback + status warning on OCC failure.
 #
-# ── P0: foundational ───────────────────────────────────────────────────────────
-# [x] SURF-1  Real OCC open-surface bodies for Extrude/Revolve/Sweep/Loft.
-#     Today bodyKind='surface' falls back to GeometryEngine THREE meshes (see
-#     feature-occ-status memory; sweepActions.ts:127, loftActions.ts:97). A surface
-#     body therefore carries NO brepBodyId, so it cannot be filleted, stitched into
-#     a watertight solid, offset robustly, or round-tripped to STEP — i.e. it is not
-#     a real Fusion surface. Add an OCC open-surface path: build the swept/lofted/
-#     revolved face WITHOUT capping (BRepBuilderAPI_MakeShell / sewn faces, no
-#     solid maker) and attach a brepBodyId. Reuse occSweep/occLoft/occRevolve
-#     instances but suppress the closing cap when operation targets a surface.
-#     This unblocks SURF-3/4/9. HIGH effort, HIGH value.
+# ── Open ───────────────────────────────────────────────────────────────────────
+# [ ] SURF-CREATE-2  Selection model: sketch-name dropdowns instead of in-canvas
+#     selection-input chips (Fusion style). Structural — biggest remaining UX gap.
+#     Add a reusable in-viewport selection chip (mirror FillEdgePicker pattern) so
+#     profiles/paths/rails are picked by click with hover highlight.
 #
-# ── P1: placeholder create-ops that produce wrong geometry ─────────────────────
-# [x] SURF-2  Patch fills only PLANAR boundaries. commitPatch → GeometryEngine
-#     .patchSketch → THREE.ShapeGeometry (profileSweeps.ts:105-114), a flat 2D
-#     triangulation. A non-planar closed boundary collapses to a flat/garbage face.
-#     Fusion Patch fills ANY closed boundary loop with a smooth surface and exposes
-#     edge continuity (G0/G1/G2 to adjacent faces). Replace with an OCC n-sided
-#     filling (BRepOffsetAPI_MakeFilling) over the boundary edges + optional guide
-#     curves and continuity constraints.
+# [ ] SURF-CREATE-3  No live in-canvas preview for Sweep / Loft / Patch / Ruled.
+#     Add preview meshes (dispose in cleanup; per R3F rules) that rebuild on param
+#     change behind a fingerprint guard. Extrude/Revolve/Primitives already do this.
 #
-# [x] SURF-3  Fill (Boundary Surface) is a centroid-fan PLACEHOLDER.
-#     GeometryEngine.fillSurface (surfaceBasics.ts:3-39) builds a triangle fan from
-#     a centroid and fakes G1/G2 as a lerp-toward-centroid blend factor — there is
-#     no real tangency or curvature solve, and it falls back to a hardcoded 4-point
-#     plane when no edges are selected (surfaceCreationActions.ts:68). Replace with
-#     BRepOffsetAPI_MakeFilling honoring real per-boundary continuity (G0/G1/G2),
-#     curvature weights, and guide/interior point constraints, matching FillDialog's
-#     advertised options. Depends on SURF-1 (needs OCC boundary edges).
+# [ ] SURF-CREATE-4  Loft single-rail only. Fusion's centerLineOrRails is a collection
+#     (multiple rails + centerline mode). Also missing per-end takeoff weight.
+#     Add multi-rail list + optional centerline toggle; requires MakePipeShell path.
 #
-# [~] SURF-4  Surface Fillet does not apply to surface bodies. The Fillet button
-#     routes to the OCC FilletDialog (ActiveDialog.tsx:393) which requires a
-#     brepBodyId; THREE surface bodies have none, so picking a surface edge is a
-#     silent no-op. Fusion fillets surface edges AND builds a fillet/blend surface
-#     bridging two separate surfaces. After SURF-1, verify the OCC fillet accepts
-#     open-shell edges; add a two-surface blend-fillet mode if the single-body
-#     path doesn't cover it. Until SURF-1, surface fillet should at least warn
-#     instead of silently doing nothing.
+# [ ] SURF-CREATE-5  Ruled Surface semantic mismatch. Our panel bridges two curves
+#     (A+B lerp); Fusion's RuledSurfaceFeatureInput extends ONE edge-set with
+#     distance/angle/ruledSurfaceType/alternateFace/cornerType. Add the single-
+#     edge-set extend mode; keep 2-curve bridge as an additional mode.
 #
-# ── P2: parity of options on tools that already work ───────────────────────────
-# [~] SURF-5  Continuity options (tangent G1 / curvature G2) across Loft, Patch,
-#     (2026-06-01 progress) Fill edge picking is now wired up: FillEdgePicker component
-#     mounts when 'fill' dialog is open, uses EdgeOpEdgeHighlight to let users pick
-#     OCC edges as boundary loops (calls addFillBoundaryEdge with endpoint coords).
-#     occFillSurfaceWithInstance accepts OccFillEdge[] constraints with G0/G1/G2 per edge.
-#     commitFill resolves edge IDs and passes continuity to MakeFilling.
-#     True G1/G2 face-tangency (passing actual TopoDS_Edge VIEW to MakeFilling.Add_2
-#     with adjacent face reference) requires storing the edge handle at pick time —
-#     currently continuity order is passed but the edge VIEW resolution is deferred.
-#     Loft G1/G2: fully functional via SetSmoothing(true) — see LoftPanel start/end cond.
-# ORIGINAL:
-#     Fill, Extend. Fusion exposes per-end/per-boundary G0/G1/G2 with a weight; our
-#     loft has mode strings (closed/ruled/smooth) and extend has perpendicular/
-#     natural/tangent, but none solve true tangency or curvature against the
-#     adjacent face. Add the continuity controls to the dialogs and implement them
-#     in the OCC ops (loft: BRepOffsetAPI_ThruSections with continuity; fill/patch:
-#     MakeFilling constraints). Pairs with SURF-2/SURF-3.
+# [ ] SURF-CREATE-7  Revolve missing "to object" extent. RevolveFeatureInput has
+#     setOneSideToExtent/setTwoSideToExtent (revolve to a face/plane). RevolvePanel
+#     only offers angle-based one-side/symmetric/two-sides.
 #
-# [x] SURF-6  Ruled Surface alignment modes. GeometryEngine.ruledSurface
-#     (profileSweeps.ts:116-151) is a single 64-sample lerp between two curves.
-#     Fusion's Ruled offers alignment by Direction / Tangent / Normal plus a
-#     distance/draft option. Add the alignment mode + distance to RuledSurfacePanel
-#     and build via OCC (BRepFill ruled / BRepOffsetAPI) so the rulings follow the
-#     chosen reference instead of a naive straight lerp.
+# [skip] SURF-CREATE-10  Boundary Fill (BRepCells cell-from-tools) — absent. Add only
+#     if Boundary Fill parity is explicitly pursued.
 #
-# [x] SURF-7  Trim / Surface Split accept only a PLANE cutting tool. trimSurface
-#     and splitSurface (surfaceTrimSplit.ts:83-180) do a single-plane centroid-side
-#     test. Fusion trims/splits a surface with ANY tool: another surface, a
-#     projected sketch curve, or a body edge — and lets you keep either side.
-#     Add curve- and surface-cutting-tool support (intersect tool with target,
-#     classify regions) and a keep-side selector in SurfaceTrimDialog /
-#     SurfaceSplitDialog. Depends on SURF-1 for robust surface-surface intersection.
-#
-# [x] SURF-8  Untrim does not commit a mesh to the feature. The UntrimDialog stores
-#     params but the audit found no resulting body assigned in state (the geometry
-#     fn surfaceTrimSplit.ts:182-274 exists and works). Wire commitUntrim to assign
-#     the regenerated surface mesh/body so Untrim actually restores the underlying
-#     surface in the viewport and timeline. Add a regression test.
-#
-# [x] SURF-9  Offset Surface is a naive per-vertex normal offset
-#     (surfaceEditing.ts:4-26) — no self-intersection handling, no variable offset,
-#     and it cannot generate the offset as a true BRep. After SURF-1, route through
-#     OCC BRepOffset_MakeOffset (or BRepOffsetAPI_MakeOffsetShape) so concave/convex
-#     regions and overlaps are handled like Fusion's Offset.
-#
-# ── P3: convenience parity (low effort) ────────────────────────────────────────
-# [x] SURF-10  Add Move/Copy and Align to the Surface MODIFY ribbon. Fusion's
-#     surface MODIFY panel includes Move/Copy and Align; the dialogs already exist
-#     ('move-body', 'align-dialog' in ActiveDialog.tsx) but RibbonSurfaceTab.tsx
-#     does not surface them. Add both buttons to modifyMenuItems.
-#
-# [skip] SURF-11  Freeform / NURBS control-point surface. In Fusion this lives in the
-#     separate FORM (T-Spline) workspace, not the Surface tab, and we already have a
-#     Form tab. Out of scope for Surface parity — tracked here only so the audit is
-#     complete. Revisit under a FORM-workspace task if T-Spline parity is pursued.
+# Note: Fill commit uses a hardcoded 4-point fallback quad when no edges are picked
+# (surfaceCreationActions.ts). Surface Merge matches meshes by a fragile userData.faceId
+# lookup — fold these fixes in when those areas are next touched.

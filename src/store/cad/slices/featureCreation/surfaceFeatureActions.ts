@@ -1,12 +1,20 @@
 import type { Feature, Tool } from '../../../../types/cad';
+import * as THREE from 'three';
 import { GeometryEngine } from '../../../../engine/GeometryEngine';
 import type { CADSliceContext } from '../../sliceContext';
 import type { CADState } from '../../state';
+import { getOccSync } from '../../../../engine/occ/loader';
+import { occFillSurfaceWithInstance, type FillContinuity } from '../../../../engine/occ/ops/fillSurface';
+import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
+import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
+import { errorMessage } from '../../../../utils/errorHandling';
 
 export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
     patchSelectedSketchId: null,
     setPatchSelectedSketchId: (id) => set({ patchSelectedSketchId: id }),
+    patchContinuity: 'G0' as 'G0' | 'G1' | 'G2',
+    setPatchContinuity: (v) => set({ patchContinuity: v }),
     startPatchTool: () => {
       const sketches = get().sketches.filter((s) => s.entities.length > 0);
       if (sketches.length === 0) {
@@ -15,9 +23,9 @@ export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Part
       }
       set({ activeTool: 'patch' as Tool, patchSelectedSketchId: null, statusMessage: 'Patch - select a closed profile sketch in the panel' });
     },
-    cancelPatchTool: () => set({ activeTool: 'select', patchSelectedSketchId: null, statusMessage: 'Patch cancelled' }),
+    cancelPatchTool: () => set({ activeTool: 'select', patchSelectedSketchId: null, patchContinuity: 'G0', statusMessage: 'Patch cancelled' }),
     commitPatch: () => {
-      const { patchSelectedSketchId, sketches, features, units } = get();
+      const { patchSelectedSketchId, patchContinuity, sketches, features, units } = get();
       if (!patchSelectedSketchId) {
         set({ statusMessage: 'No profile selected for Patch' });
         return;
@@ -27,23 +35,47 @@ export function createSurfaceFeatureActions({ set, get }: CADSliceContext): Part
         set({ statusMessage: 'Selected sketch not found' });
         return;
       }
-      const mesh = GeometryEngine.patchSketch(sketch);
+      const featureId = crypto.randomUUID();
+      const n = features.filter((f) => f.type === 'extrude' && f.bodyKind === 'surface' && f.params.patchSketchId !== undefined).length + 1;
+
+      // Build boundary loop from sketch entities
+      const boundaryLoop = sketch.entities.flatMap((e) =>
+        e.points.map((p) => new THREE.Vector3(p.x, p.y, p.z)),
+      );
+
+      let mesh: THREE.Mesh | undefined;
+      const occ = getOccSync();
+      if (occ && boundaryLoop.length >= 3) {
+        try {
+          const edgeConstraints = [{ continuity: patchContinuity as FillContinuity }];
+          const body = occFillSurfaceWithInstance(occ.oc, boundaryLoop, {
+            sourceFeatureId: featureId,
+            edgeConstraints,
+          });
+          if (body) mesh = createRegisteredOccMesh(occ.oc, body, BODY_MATERIAL, featureId);
+        } catch (err) {
+          console.warn(`[commitPatch] OCC fill failed (${errorMessage(err, 'unknown')}), using THREE fallback`);
+        }
+      }
+      if (!mesh) mesh = GeometryEngine.patchSketch(sketch) ?? undefined;
+
       const feature: Feature = {
-        id: crypto.randomUUID(),
-        name: `Patch ${features.filter((f) => f.type === 'extrude' && f.bodyKind === 'surface' && f.params.patchSketchId !== undefined).length + 1}`,
+        id: featureId,
+        name: `Patch ${n}`,
         type: 'extrude',
         sketchId: patchSelectedSketchId,
-        params: { patchSketchId: patchSelectedSketchId },
+        params: { patchSketchId: patchSelectedSketchId, continuity: patchContinuity },
         visible: true,
         suppressed: false,
         timestamp: Date.now(),
-        mesh: mesh ?? undefined,
+        mesh,
         bodyKind: 'surface',
       };
       set({
         features: [...features, feature],
         activeTool: 'select',
         patchSelectedSketchId: null,
+        patchContinuity: 'G0',
         statusMessage: `Patch surface created (${units})`,
       });
     },

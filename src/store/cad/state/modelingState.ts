@@ -162,19 +162,20 @@ export interface CADModelingState {
   sweepBodyKind: "solid" | "surface";
   setSweepBodyKind: (k: "solid" | "surface") => void;
   // D71 sweep upgrades
-  sweepOrientation: "perpendicular" | "parallel" | "default";
-  sweepProfileScaling: "none" | "scale-to-path" | "scale-to-rail"; // SDK-4
+  sweepOrientation: "perpendicular" | "frenet" | "horizontal" | "vertical";
+  sweepProfileScaling: "none" | "scale-to-path" | "scale-to-rail";
   sweepTwistAngle: number;
   sweepTaperAngle: number;
   sweepGuideRailId: string | null;
+  sweepIsDirectionFlipped: boolean;
   sweepOperation: "new-body" | "join" | "cut" | "intersect" | "new-component";
   sweepDistance: "entire" | "distance";
-  // SDK-5: path parametric start/end (0–1 fraction of path length)
   sweepDistanceOne: number;
   sweepDistanceTwo: number;
+  setSweepIsDirectionFlipped: (v: boolean) => void;
   setSweepDistanceOne: (v: number) => void;
   setSweepDistanceTwo: (v: number) => void;
-  setSweepOrientation: (v: "perpendicular" | "parallel" | "default") => void;
+  setSweepOrientation: (v: "perpendicular" | "frenet" | "horizontal" | "vertical") => void;
   setSweepProfileScaling: (
     v: "none" | "scale-to-path" | "scale-to-rail",
   ) => void; // SDK-4
@@ -196,9 +197,9 @@ export interface CADModelingState {
   setLoftBodyKind: (k: "solid" | "surface") => void;
   // D72 loft upgrades
   loftClosed: boolean;
-  loftTangentEdgesMerged: boolean; // SDK-8
-  loftStartCondition: "free" | "tangent" | "curvature";
-  loftEndCondition: "free" | "tangent" | "curvature";
+  loftTangentEdgesMerged: boolean;
+  loftStartCondition: "free" | "tangent";
+  loftEndCondition: "free" | "tangent";
   loftRailSketchId: string | null;
   loftOperation: "new-body" | "join" | "cut" | "intersect" | "new-component";
   setLoftClosed: (v: boolean) => void;
@@ -215,6 +216,8 @@ export interface CADModelingState {
 
   // Patch tool (D106)
   patchSelectedSketchId: string | null;
+  patchContinuity: 'G0' | 'G1' | 'G2';
+  setPatchContinuity: (v: 'G0' | 'G1' | 'G2') => void;
   setPatchSelectedSketchId: (id: string | null) => void;
   startPatchTool: () => void;
   cancelPatchTool: () => void;

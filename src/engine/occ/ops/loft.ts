@@ -95,6 +95,19 @@ export function occLoftWithInstance(
     for (const hw of wires.holeWires) (hw as any).delete();
   }
 
+  // Close the loft by re-adding the first section as the last.
+  if (options.closed && builtWires.length >= 2) {
+    const firstWires = sketchProfileToWires(oc, sections[0], frames[0]);
+    if (firstWires) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      loftMaker.AddWire(firstWires.outerWire as any);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      builtWires.push(firstWires.outerWire as any);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const hw of firstWires.holeWires) (hw as any).delete();
+    }
+  }
+
   try {
     runEdgeOpBuild(oc, loftMaker);
     if (!loftMaker.IsDone()) {

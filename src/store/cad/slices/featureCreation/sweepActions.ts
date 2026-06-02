@@ -27,15 +27,17 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
     setSweepPathSketchId: (id) => set({ sweepPathSketchId: id }),
     sweepBodyKind: 'solid',
     setSweepBodyKind: (k) => set({ sweepBodyKind: k }),
-    sweepOrientation: 'perpendicular' as 'perpendicular' | 'parallel' | 'default',
+    sweepOrientation: 'perpendicular' as 'perpendicular' | 'frenet' | 'horizontal' | 'vertical',
     sweepProfileScaling: 'none' as 'none' | 'scale-to-path' | 'scale-to-rail',
     sweepTwistAngle: 0,
     sweepTaperAngle: 0,
     sweepGuideRailId: null,
+    sweepIsDirectionFlipped: false,
     sweepOperation: 'new-body' as 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component',
     sweepDistance: 'entire' as 'entire' | 'distance',
     sweepDistanceOne: 0,
     sweepDistanceTwo: 1,
+    setSweepIsDirectionFlipped: (v) => set({ sweepIsDirectionFlipped: v }),
     setSweepOrientation: (v) => set({ sweepOrientation: v }),
     setSweepProfileScaling: (v) => set({ sweepProfileScaling: v }),
     setSweepTwistAngle: (v) => set({ sweepTwistAngle: v }),
@@ -53,9 +55,9 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
       }
       set({ activeTool: 'sweep', sweepProfileSketchId: null, sweepPathSketchId: null, statusMessage: 'Sweep - pick a profile sketch, then a path sketch in the panel' });
     },
-    cancelSweepTool: () => set({ activeTool: 'select', sweepProfileSketchId: null, sweepPathSketchId: null, sweepOrientation: 'perpendicular', sweepTwistAngle: 0, sweepTaperAngle: 0, sweepGuideRailId: null, sweepDistance: 'entire', sweepDistanceOne: 0, sweepDistanceTwo: 1, statusMessage: 'Sweep cancelled' }),
+    cancelSweepTool: () => set({ activeTool: 'select', sweepProfileSketchId: null, sweepPathSketchId: null, sweepOrientation: 'perpendicular', sweepTwistAngle: 0, sweepTaperAngle: 0, sweepGuideRailId: null, sweepIsDirectionFlipped: false, sweepDistance: 'entire', sweepDistanceOne: 0, sweepDistanceTwo: 1, statusMessage: 'Sweep cancelled' }),
     commitSweep: async () => {
-      const { sweepProfileSketchId, sweepPathSketchId, sweepBodyKind, sweepDistance, sweepDistanceOne, sweepDistanceTwo, sweepOrientation, sweepProfileScaling, sweepTwistAngle, sweepTaperAngle, sweepGuideRailId, sweepOperation, sketches, features, units } = get();
+      const { sweepProfileSketchId, sweepPathSketchId, sweepBodyKind, sweepDistance, sweepDistanceOne, sweepDistanceTwo, sweepOrientation, sweepProfileScaling, sweepTwistAngle, sweepTaperAngle, sweepGuideRailId, sweepIsDirectionFlipped, sweepOperation, sketches, features, units } = get();
       if (!sweepProfileSketchId || !sweepPathSketchId) {
         set({ statusMessage: 'Select both a profile sketch and a path sketch' });
         return;
@@ -69,10 +71,9 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
       const featureId = crypto.randomUUID();
 
       let mesh: THREE.Mesh | null = null;
-      if (sweepBodyKind === 'solid' && Math.abs(sweepTwistAngle ?? 0) >= 0.001) {
-        set({ statusMessage: 'Solid sweep twist requires OCC twist support before it can be committed' });
-        return;
-      }
+      void sweepProfileScaling; // not yet wired to OCC — UI removed
+      void sweepTwistAngle;     // not yet wired to OCC — UI removed
+      void sweepDistance; void sweepDistanceOne; void sweepDistanceTwo; // partial path not yet wired
       if (sweepBodyKind === 'solid' || sweepBodyKind === 'surface') {
         const occ = getOccSync();
         const isSurface = sweepBodyKind === 'surface';
@@ -94,8 +95,11 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
               };
               const profileFrame = createOccPlaneFrameFromSketch(profileSketch);
               const pathFrame = createOccPlaneFrameFromSketch(pathSketch);
-              const pathWire = sketchEntitiesToWire(occ.oc, pathSketch.entities, pathFrame);
-              if (pathWire) {
+              const builtPathWire = sketchEntitiesToWire(occ.oc, pathSketch.entities, pathFrame);
+              if (builtPathWire) {
+                // Flip direction by reversing the path wire when requested
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const pathWire: unknown = sweepIsDirectionFlipped ? (builtPathWire as any).Reversed() : builtPathWire;
                 let guideWire: unknown | undefined;
                 if (sweepGuideRailId) {
                   const guideSketch = get().sketches.find((s) => s.id === sweepGuideRailId);
@@ -107,12 +111,12 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
                 const occBody = occSweepFromPathWireWithInstance(occ.oc, sketchProfile, profileFrame, pathWire, {
                   id: featureId,
                   sourceFeatureId: featureId,
-                  orientation: sweepOrientation === 'default' ? 'perpendicular' : (sweepOrientation as 'perpendicular' | 'frenet' | 'horizontal' | 'vertical'),
+                  orientation: sweepOrientation as 'perpendicular' | 'frenet' | 'horizontal' | 'vertical',
                   guideWire,
                   taperAngle: Math.abs(sweepTaperAngle) > 0.001 ? sweepTaperAngle : undefined,
                   surface: isSurface,
                 });
-                pathWire.delete();
+                builtPathWire.delete();
                 if (guideWire) (guideWire as { delete(): void }).delete();
                 mesh = createRegisteredOccMesh(occ.oc, occBody, BODY_MATERIAL, featureId);
               }
@@ -146,13 +150,10 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
         params: {
           pathSketchId: sweepPathSketchId,
           orientation: sweepOrientation,
-          profileScaling: sweepProfileScaling,
-          twistAngle: sweepTwistAngle,
           taperAngle: sweepTaperAngle,
           guideRailId: sweepGuideRailId,
+          isDirectionFlipped: sweepIsDirectionFlipped,
           operation: sweepOperation,
-          distance: sweepDistance,
-          ...(sweepDistance === 'distance' ? { distanceOne: sweepDistanceOne, distanceTwo: sweepDistanceTwo } : {}),
         },
         visible: true,
         suppressed: false,
@@ -173,6 +174,7 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
         activeTool: 'select',
         sweepProfileSketchId: null,
         sweepPathSketchId: null,
+        sweepIsDirectionFlipped: false,
         sweepBodyKind: 'solid',
         statusMessage: `${sweepBodyKind === 'surface' ? 'Surface ' : ''}Sweep created${r.note} (${units})`,
       });

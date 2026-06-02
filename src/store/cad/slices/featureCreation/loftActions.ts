@@ -24,8 +24,8 @@ export function createLoftActions({ set, get }: CADSliceContext): Partial<CADSta
     setLoftBodyKind: (k) => set({ loftBodyKind: k }),
     loftClosed: false,
     loftTangentEdgesMerged: false,
-    loftStartCondition: 'free' as const,
-    loftEndCondition: 'free' as const,
+    loftStartCondition: 'free' as 'free' | 'tangent',
+    loftEndCondition: 'free' as 'free' | 'tangent',
     loftRailSketchId: null,
     loftOperation: 'new-body' as 'new-body' | 'join' | 'cut' | 'intersect' | 'new-component',
     setLoftClosed: (v) => set({ loftClosed: v }),
@@ -44,7 +44,7 @@ export function createLoftActions({ set, get }: CADSliceContext): Partial<CADSta
     },
     cancelLoftTool: () => set({ activeTool: 'select', loftProfileSketchIds: [], loftClosed: false, loftTangentEdgesMerged: false, loftStartCondition: 'free', loftEndCondition: 'free', loftRailSketchId: null, loftOperation: 'new-body', statusMessage: 'Loft cancelled' }),
     commitLoft: async () => {
-      const { loftProfileSketchIds, loftBodyKind, loftOperation, sketches, features, units } = get();
+      const { loftProfileSketchIds, loftBodyKind, loftOperation, loftClosed, loftStartCondition, loftEndCondition, sketches, features, units } = get();
       const validIds = loftProfileSketchIds.filter(Boolean);
       if (validIds.length < 2) {
         set({ statusMessage: 'Select at least 2 profile sketches' });
@@ -85,15 +85,16 @@ export function createLoftActions({ set, get }: CADSliceContext): Partial<CADSta
             const frames = profileSketches
               .filter((_, i) => sections[i] !== null)
               .map(createOccPlaneFrameFromSketch);
+            const isSmooth = loftStartCondition !== 'free' || loftEndCondition !== 'free';
             const body = occLoftWithInstance(
               occ.oc,
               validSections,
               frames,
               {
                 sourceFeatureId: featureId,
-                closed: get().loftClosed,
-                ruled: get().loftStartCondition === 'free' && get().loftEndCondition === 'free',
-                smooth: get().loftStartCondition !== 'free' || get().loftEndCondition !== 'free',
+                closed: loftClosed,
+                ruled: !isSmooth,
+                smooth: isSmooth,
                 surface: isSurface,
               },
             );
@@ -124,7 +125,7 @@ export function createLoftActions({ set, get }: CADSliceContext): Partial<CADSta
         name: `${loftBodyKind === 'surface' ? 'Surface ' : ''}Loft ${features.filter((f) => f.type === 'loft').length + 1}`,
         type: 'loft',
         sketchId: validIds[0],
-        params: { loftProfileIds: validIds.join(','), operation: loftOperation },
+        params: { loftProfileIds: validIds.join(','), operation: loftOperation, closed: loftClosed, startCondition: loftStartCondition, endCondition: loftEndCondition },
         visible: true,
         suppressed: false,
         timestamp: Date.now(),
