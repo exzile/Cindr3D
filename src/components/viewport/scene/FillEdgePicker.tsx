@@ -36,7 +36,7 @@ export default function FillEdgePicker() {
     let b: [number, number, number] | undefined;
 
     const parts = edgeId.split(':');
-    if (parts.length === 3 && parts[0] === 'occ') {
+    if (parts.length >= 3 && parts[0] === 'occ') {
       const bodyId = parts[1];
       const edgeNum = Number(parts[2]);
       const body = globalBRepBodyRegistry.get(bodyId);

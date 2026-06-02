@@ -111,7 +111,7 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
         params: {
           featureKind: 'fill',
           boundaryEdgeCount: params.boundaryEdgeCount,
-          continuityPerEdge: params.continuityPerEdge.map((s: 'G0' | 'G1' | 'G2') => ({ G0: 0, G1: 1, G2: 2 }[s] ?? 0)),
+          continuityPerEdge: params.continuityPerEdge,
           operation: params.operation,
         },
         mesh,

@@ -141,7 +141,9 @@ export function occTrimSurfaceWithInstance(
     // ── Step 3: Find the first face of the source to split ───────────────────
     // BRepFeat_SplitShape.Add() needs (wire, face). For simple surfaces
     // (single face or few faces), we try each source face.
-    const srcFaces: unknown[] = [];
+    // Current() returns an OWNED copy — store it directly rather than creating
+    // a TopoDS.Face_1 VIEW, which would be orphaned when the owned copy is deleted.
+    const srcFaces: Array<{ delete(): void }> = [];
     const faceExp = new occ.TopExp_Explorer_2(
       srcShape,
       occ.TopAbs_ShapeEnum.TopAbs_FACE,
@@ -149,9 +151,9 @@ export function occTrimSurfaceWithInstance(
     );
     try {
       while (faceExp.More()) {
-        const f = faceExp.Current();
-        srcFaces.push(occ.TopoDS.Face_1(f)); // VIEW
-        f.delete();
+        const f = faceExp.Current(); // owned copy
+        ownedResources.push(f); // register so outer finally cleans up on any exit
+        srcFaces.push(f);
         faceExp.Next();
       }
     } finally {
@@ -167,6 +169,7 @@ export function occTrimSurfaceWithInstance(
     for (const face of srcFaces) {
       try { splitter.Add(wire, face); } catch { /* face may not be intersected */ }
     }
+    // Owned copies are in ownedResources — outer finally releases them.
     runEdgeOpBuild(oc, splitter);
     if (!splitter.IsDone()) return null;
 
@@ -174,6 +177,7 @@ export function occTrimSurfaceWithInstance(
 
     // ── Step 5: Compute the trimmer's centre for side classification ──────────
     // Use the bounding box centroid of the trimmer as the "inside" reference.
+    // Falls back to surface centroid when BRepBndLib is unavailable.
     const trimmerCentre = new THREE.Vector3();
     try {
       const bndBox = new occ.Bnd_Box();
@@ -188,14 +192,27 @@ export function occTrimSurfaceWithInstance(
           (cMin.Z() + cMax.Z()) / 2,
         );
         cMin.delete(); cMax.delete();
+      } else {
+        // BRepBndLib unavailable — use surface centroid as fallback.
+        const props = new occ.GProp_GProps();
+        try {
+          occ.BRepGProp?.SurfaceProperties(trimShape, props);
+          const c = props.CentreOfMass();
+          trimmerCentre.set(c.X(), c.Y(), c.Z());
+          c.delete();
+        } finally {
+          props.delete();
+        }
       }
       bndBox.delete();
-    } catch { /* BRepBndLib may not be available */ }
+    } catch { /* accept (0,0,0) — BRepGProp may also be unavailable */ }
 
     // ── Step 6: Collect result shells/faces, classify by side ─────────────────
     // Gather all faces of the split result and group them into two halves
     // by testing their centroid against the trimmer centre.
-    interface FacePiece { face: unknown; centroid: THREE.Vector3 }
+    // Current() returns OWNED copies — store them directly so the face references
+    // stay valid until after cBuilder.Add(compound, p.face) in Step 7.
+    interface FacePiece { face: { delete(): void }; centroid: THREE.Vector3 }
     const pieces: FacePiece[] = [];
 
     const resultExp = new occ.TopExp_Explorer_2(
@@ -205,8 +222,8 @@ export function occTrimSurfaceWithInstance(
     );
     try {
       while (resultExp.More()) {
-        const rawFace = resultExp.Current(); // owned
-        const face = occ.TopoDS.Face_1(rawFace); // VIEW
+        const face = resultExp.Current(); // owned
+        ownedResources.push(face); // register for cleanup on all exit paths
         let cx = 0, cy = 0, cz = 0;
         try {
           const props = new occ.GProp_GProps();
@@ -217,7 +234,6 @@ export function occTrimSurfaceWithInstance(
           props.delete();
         } catch { /* use origin as fallback */ }
         pieces.push({ face, centroid: new THREE.Vector3(cx, cy, cz) });
-        rawFace.delete();
         resultExp.Next();
       }
     } finally {
@@ -253,6 +269,8 @@ export function occTrimSurfaceWithInstance(
     for (const p of keptFaces) {
       try { cBuilder.Add(compound, p.face); } catch { /* skip */ }
     }
+    // Owned face wrappers are in ownedResources — outer finally releases them.
+    // OCCT's internal Handle ref-count keeps the BRep data alive inside compound.
 
     return makeBRepBodyFromOccShape(oc, compound, {
       id: options.id,
