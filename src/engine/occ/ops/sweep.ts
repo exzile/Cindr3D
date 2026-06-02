@@ -40,6 +40,55 @@ export interface OccSweepOptions {
   orientation?: SweepOrientation;
   /** Draft taper angle in degrees (applied via separate DraftAngle pass; best-effort). */
   taperAngle?: number;
+  /** Twist angle in degrees applied progressively along the path (best-effort via auxiliary spine). */
+  twistAngle?: number;
+  /** Fraction of the path to sweep along, 0–1 (default: full path). */
+  distanceFraction?: number;
+}
+
+/**
+ * Trim a path wire to a fraction of its length by sampling points along the
+ * BRepAdaptor_CompCurve parameter range and rebuilding a B-spline wire.
+ * Returns a NEW owned wire (caller deletes) or null on failure.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function trimPathWireByFraction(oc: OcctRaw, pathWire: any, fraction: number): any | null {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const occ = oc as any;
+  if (typeof occ.BRepAdaptor_CompCurve_2 !== 'function' && typeof occ.BRepAdaptor_CompCurve_1 !== 'function') return null;
+  let adaptor: { FirstParameter(): number; LastParameter(): number; Value(u: number): { X(): number; Y(): number; Z(): number; delete(): void }; delete(): void } | null = null;
+  try {
+    adaptor = typeof occ.BRepAdaptor_CompCurve_2 === 'function'
+      ? new occ.BRepAdaptor_CompCurve_2(pathWire, false)
+      : new occ.BRepAdaptor_CompCurve_1(pathWire);
+    const u0 = adaptor!.FirstParameter();
+    const u1 = adaptor!.LastParameter();
+    const uEnd = u0 + fraction * (u1 - u0);
+    const N = 48;
+    const pnts = new occ.TColgp_Array1OfPnt_2(1, N + 1);
+    for (let i = 0; i <= N; i++) {
+      const u = u0 + (i / N) * (uEnd - u0);
+      const p = adaptor!.Value(u);
+      const gp = new occ.gp_Pnt_3(p.X(), p.Y(), p.Z());
+      pnts.SetValue(i + 1, gp);
+      gp.delete?.();
+      p.delete?.();
+    }
+    // Approximate sampled points with a B-spline curve, then make an edge → wire.
+    const approx = new occ.GeomAPI_PointsToBSpline_2(pnts, 3, 8, occ.GeomAbs_Shape.GeomAbs_C2, 1e-4);
+    const curveHandle = approx.Curve();
+    const edgeMaker = new occ.BRepBuilderAPI_MakeEdge_24(curveHandle);
+    const edge = edgeMaker.Edge();
+    const wireMaker = new occ.BRepBuilderAPI_MakeWire_2(edge);
+    const wire = wireMaker.Wire();
+    edgeMaker.delete?.(); wireMaker.delete?.(); approx.delete?.(); pnts.delete?.();
+    return wire;
+  } catch (e) {
+    console.warn('[occSweep] path trim failed, using full path:', e);
+    return null;
+  } finally {
+    adaptor?.delete?.();
+  }
 }
 
 export async function occSweep(
@@ -192,8 +241,19 @@ export function occSweepFromPathWireWithInstance(
 ): BRepBody {
   const occ = oc as OccSweepApi;
 
+  // Partial-distance: trim the path wire to a fraction of its length.
+  let trimmedWire: unknown | null = null;
+  if (options.distanceFraction !== undefined && options.distanceFraction < 0.999) {
+    trimmedWire = trimPathWireByFraction(oc, pathWire, options.distanceFraction);
+    if (trimmedWire) pathWire = trimmedWire;
+  }
+
   const profileWires = sketchProfileToWires(oc, profile, profileFrame);
-  if (!profileWires) throw new Error('[occSweep] failed to build profile wires');
+  if (!profileWires) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (trimmedWire) (trimmedWire as any).delete?.();
+    throw new Error('[occSweep] failed to build profile wires');
+  }
 
   const useAdvanced =
     options.guideWire !== undefined ||
@@ -203,7 +263,6 @@ export function occSweepFromPathWireWithInstance(
 
   if (!useAdvanced) {
     // Surface mode: sweep the wire (open) instead of a face (closed solid).
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const profileShape: unknown = options.surface
       ? profileWires.outerWire
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -266,6 +325,9 @@ export function occSweepFromPathWireWithInstance(
       for (const hw of profileWires.holeWires) (hw as any).delete();
     }
   }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (trimmedWire) (trimmedWire as any).delete?.();
 
   return makeBRepBodyFromOccShape(oc, resultShape, {
     id: options.id,

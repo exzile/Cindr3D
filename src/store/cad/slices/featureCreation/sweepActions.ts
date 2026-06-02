@@ -22,6 +22,10 @@ import { addToast } from '../../../toastStore';
 
 export function createSweepActions({ set, get }: CADSliceContext): Partial<CADState> {
   return {
+    sweepType: 'single-path' as 'single-path' | 'guide-rail',
+    setSweepType: (t) => set({ sweepType: t, ...(t === 'single-path' ? { sweepGuideRailId: null } : {}) }),
+    sweepChainSelection: true,
+    setSweepChainSelection: (v) => set({ sweepChainSelection: v }),
     sweepProfileSketchId: null,
     setSweepProfileSketchId: (id) => set({ sweepProfileSketchId: id }),
     sweepPathSketchId: null,
@@ -57,9 +61,9 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
       }
       set({ activeTool: 'sweep', sweepProfileSketchId: null, sweepPathSketchId: null, statusMessage: 'Sweep - pick a profile sketch, then a path sketch in the panel' });
     },
-    cancelSweepTool: () => set({ activeTool: 'select', sweepProfileSketchId: null, sweepPathSketchId: null, sweepOrientation: 'perpendicular', sweepTwistAngle: 0, sweepTaperAngle: 0, sweepGuideRailId: null, sweepIsDirectionFlipped: false, sweepDistance: 'entire', sweepDistanceOne: 0, sweepDistanceTwo: 1, statusMessage: 'Sweep cancelled' }),
+    cancelSweepTool: () => set({ activeTool: 'select', sweepType: 'single-path', sweepChainSelection: true, sweepProfileSketchId: null, sweepPathSketchId: null, sweepOrientation: 'perpendicular', sweepTwistAngle: 0, sweepTaperAngle: 0, sweepGuideRailId: null, sweepIsDirectionFlipped: false, sweepDistance: 'entire', sweepDistanceOne: 0, sweepDistanceTwo: 1, statusMessage: 'Sweep cancelled' }),
     commitSweep: async () => {
-      const { sweepProfileSketchId, sweepPathSketchId, sweepBodyKind, sweepDistance, sweepDistanceOne, sweepDistanceTwo, sweepOrientation, sweepProfileScaling, sweepTwistAngle, sweepTaperAngle, sweepGuideRailId, sweepIsDirectionFlipped, sweepOperation, sketches, features, units } = get();
+      const { sweepProfileSketchId, sweepPathSketchId, sweepBodyKind, sweepDistanceTwo, sweepOrientation, sweepTwistAngle, sweepTaperAngle, sweepGuideRailId, sweepIsDirectionFlipped, sweepChainSelection, sweepOperation, sketches, features, units } = get();
       if (!sweepProfileSketchId || !sweepPathSketchId) {
         set({ statusMessage: 'Select both a profile sketch and a path sketch' });
         return;
@@ -73,9 +77,12 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
       const featureId = crypto.randomUUID();
 
       let mesh: THREE.Mesh | null = null;
-      void sweepProfileScaling; // not yet wired to OCC — UI removed
-      void sweepTwistAngle;     // not yet wired to OCC — UI removed
-      void sweepDistance; void sweepDistanceOne; void sweepDistanceTwo; // partial path not yet wired
+      const distanceFraction = Math.max(0.01, Math.min(1, sweepDistanceTwo));
+      // Twist via OCC auxiliary-spine is not yet implemented — inform the user
+      // instead of silently ignoring the value (avoids a dead control).
+      if (Math.abs(sweepTwistAngle) > 0.001) {
+        addToast('info', 'Twist not yet applied', 'Sweep twist is coming soon — swept without twist');
+      }
       if (sweepBodyKind === 'solid' || sweepBodyKind === 'surface') {
         const occ = getOccSync();
         const isSurface = sweepBodyKind === 'surface';
@@ -97,7 +104,10 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
               };
               const profileFrame = createOccPlaneFrameFromSketch(profileSketch);
               const pathFrame = createOccPlaneFrameFromSketch(pathSketch);
-              const builtPathWire = sketchEntitiesToWire(occ.oc, pathSketch.entities, pathFrame);
+              // Chain Selection on (Fusion default): use all connected path entities.
+              // Off: use only the first entity (single segment).
+              const pathEntities = sweepChainSelection ? pathSketch.entities : pathSketch.entities.slice(0, 1);
+              const builtPathWire = sketchEntitiesToWire(occ.oc, pathEntities, pathFrame);
               if (builtPathWire) {
                 // Flip direction by reversing the path wire when requested
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -116,6 +126,7 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
                   orientation: sweepOrientation as 'perpendicular' | 'frenet' | 'horizontal' | 'vertical',
                   guideWire,
                   taperAngle: Math.abs(sweepTaperAngle) > 0.001 ? sweepTaperAngle : undefined,
+                  distanceFraction: distanceFraction < 0.999 ? distanceFraction : undefined,
                   surface: isSurface,
                 });
                 builtPathWire.delete();
@@ -153,6 +164,9 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
           pathSketchId: sweepPathSketchId,
           orientation: sweepOrientation,
           taperAngle: sweepTaperAngle,
+          twistAngle: sweepTwistAngle,
+          distance: distanceFraction,
+          chainSelection: sweepChainSelection,
           guideRailId: sweepGuideRailId,
           isDirectionFlipped: sweepIsDirectionFlipped,
           operation: sweepOperation,
@@ -174,6 +188,8 @@ export function createSweepActions({ set, get }: CADSliceContext): Partial<CADSt
         features: r.features,
         designConfigurations: r.designConfigurations,
         activeTool: 'select',
+        sweepType: 'single-path',
+        sweepChainSelection: true,
         sweepProfileSketchId: null,
         sweepPathSketchId: null,
         sweepIsDirectionFlipped: false,

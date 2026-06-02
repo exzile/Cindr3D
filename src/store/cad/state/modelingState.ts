@@ -160,6 +160,10 @@ export interface CADModelingState {
   commitRevolve: () => void;
 
   // Sweep tool (D30)
+  sweepType: "single-path" | "guide-rail";
+  setSweepType: (t: "single-path" | "guide-rail") => void;
+  sweepChainSelection: boolean;
+  setSweepChainSelection: (v: boolean) => void;
   sweepProfileSketchId: string | null;
   setSweepProfileSketchId: (id: string | null) => void;
   sweepPathSketchId: string | null;
