@@ -7,6 +7,8 @@ import { getOccSync } from '../../../../engine/occ/loader';
 import { occFillSurfaceWithInstance, type OccFillEdge, type FillContinuity } from '../../../../engine/occ/ops/fillSurface';
 import { createRegisteredOccMesh } from '../../../../engine/occ/registeredMesh';
 import { BODY_MATERIAL } from '../../../../components/viewport/scene/bodyMaterial';
+import { globalBRepBodyRegistry } from '../../../../engine/occ/globalRegistry';
+import { occDeref } from '../../../../engine/occ/brepBody';
 
 const SURFACE_MATERIAL = new THREE.MeshPhysicalMaterial({
   color: 0x8899aa,
@@ -82,11 +84,32 @@ export function createSurfaceCreationActions({ set, get }: CADSliceContext): Par
       const occ = getOccSync();
       if (occ) {
         try {
-          // MakeFilling currently consumes continuity order only. True adjacent-face
-          // constraints need a future API that passes OCC edge/face pairs explicitly.
-          const edgeConstraints: OccFillEdge[] = fillBoundaryEdgeData.map((_, i) => {
+          // Resolve OCC edge VIEWs from owned body.edgeIds handles for G1/G2 constraints.
+          // The handle is long-lived (owned by BRepBody), so the VIEW is valid for the
+          // duration of occFillSurfaceWithInstance. Per WASM patterns: occDeref returns
+          // a Shape — cast via TopoDS.Edge_1 before passing to type-strict APIs.
+          const edgeConstraints: OccFillEdge[] = fillBoundaryEdgeData.map((edgeData, i) => {
             const continuity = continuityPerEdge[i] ?? 'G0';
-            return { continuity };
+            if (continuity === 'G0') return { continuity };
+
+            // Parse "occ:<bodyId>:<edgePtr>" format
+            const parts = edgeData.id.split(':');
+            if (parts.length < 3 || parts[0] !== 'occ') return { continuity };
+            const bodyId = parts[1];
+            const edgePtr = Number(parts[2]);
+            const brepBody = globalBRepBodyRegistry.get(bodyId);
+            const edgeHandle = brepBody?.edgeIds.get(edgePtr);
+            if (!edgeHandle) return { continuity };
+
+            try {
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const oc = occ.oc as any;
+              const shapeView = occDeref(occ.oc, edgeHandle, oc.TopoDS.Edge);
+              const edgeView = oc.TopoDS.Edge_1(shapeView); // VIEW — do not delete
+              return { continuity, occEdge: edgeView };
+            } catch {
+              return { continuity };
+            }
           });
 
           const body = occFillSurfaceWithInstance(occ.oc, boundaryLoop, {
