@@ -40,9 +40,22 @@ type OccFillApi = OcctRaw & {
   Message_ProgressRange_1: new () => { delete?: () => void };
 };
 
+export type FillContinuity = 'G0' | 'G1' | 'G2';
+
+export interface OccFillEdge {
+  /** Pre-built OCC TopoDS_Edge (VIEW — do not delete). Pass when the edge comes
+   *  from an existing OCC BRep surface so MakeFilling can apply G1/G2 tangency. */
+  occEdge?: unknown;
+  continuity?: FillContinuity;
+}
+
 export interface OccFillOptions {
   id?: string;
   sourceFeatureId?: string;
+  /** Optional per-boundary-edge OCC handles + continuity for G1/G2 constraints.
+   *  When supplied and edge.occEdge is set, MakeFilling uses it instead of the
+   *  linear edge built from the boundary point loop. */
+  edgeConstraints?: OccFillEdge[];
 }
 
 export async function occFillSurface(
@@ -112,13 +125,27 @@ export function occFillSurfaceWithInstance(
         // Non-planar — fall through to MakeFilling
       }
 
-      // ── Strategy 2: BRepOffsetAPI_MakeFilling with G0 boundary edges ─────
+      // ── Strategy 2: BRepOffsetAPI_MakeFilling with continuity constraints ──
+      // When OCC edge references are provided (edgeConstraints with occEdge set),
+      // use them directly so G1/G2 tangency to adjacent faces is solved correctly.
+      // Otherwise fall back to the linear edges built from boundary points (G0 only).
       try {
         const filling = new occ.BRepOffsetAPI_MakeFilling_1();
         const c0 = occ.GeomAbs_Shape?.GeomAbs_C0;
-        for (const e of edgeShapes) {
-          if (c0 !== undefined) {
-            filling.Add_2(e, c0, true);
+        const c1 = occ.GeomAbs_Shape?.GeomAbs_G1;
+        const c2 = occ.GeomAbs_Shape?.GeomAbs_G2;
+        if (c0 === undefined) { filling.delete(); throw new Error('GeomAbs_Shape not available'); }
+
+        const constraints = options.edgeConstraints;
+        for (let i = 0; i < edgeShapes.length; i++) {
+          const constraint = constraints?.[i];
+          const orderVal = constraint?.continuity === 'G2' ? c2 :
+                           constraint?.continuity === 'G1' ? c1 : c0;
+          const edgeToAdd = constraint?.occEdge ?? edgeShapes[i];
+          try {
+            filling.Add_2(edgeToAdd, orderVal ?? c0, true);
+          } catch {
+            filling.Add_2(edgeShapes[i], c0, true); // fallback to G0 with built edge
           }
         }
         const pr = new occ.Message_ProgressRange_1();

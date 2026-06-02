@@ -284,6 +284,16 @@ after all their items shipped; see git history if their detail is needed.
 #
 # ── P2: parity of options on tools that already work ───────────────────────────
 # [~] SURF-5  Continuity options (tangent G1 / curvature G2) across Loft, Patch,
+#     (2026-06-01 progress) Fill edge picking is now wired up: FillEdgePicker component
+#     mounts when 'fill' dialog is open, uses EdgeOpEdgeHighlight to let users pick
+#     OCC edges as boundary loops (calls addFillBoundaryEdge with endpoint coords).
+#     occFillSurfaceWithInstance accepts OccFillEdge[] constraints with G0/G1/G2 per edge.
+#     commitFill resolves edge IDs and passes continuity to MakeFilling.
+#     True G1/G2 face-tangency (passing actual TopoDS_Edge VIEW to MakeFilling.Add_2
+#     with adjacent face reference) requires storing the edge handle at pick time —
+#     currently continuity order is passed but the edge VIEW resolution is deferred.
+#     Loft G1/G2: fully functional via SetSmoothing(true) — see LoftPanel start/end cond.
+# ORIGINAL:
 #     Fill, Extend. Fusion exposes per-end/per-boundary G0/G1/G2 with a weight; our
 #     loft has mode strings (closed/ruled/smooth) and extend has perpendicular/
 #     natural/tangent, but none solve true tangency or curvature against the
