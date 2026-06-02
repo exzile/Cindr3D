@@ -8,6 +8,7 @@ import { configureSurfaceMesh } from './surfaceEditShared';
 import { getOccSync } from '../../../../../engine/occ/loader';
 import { globalBRepBodyRegistry } from '../../../../../engine/occ/globalRegistry';
 import { occOffsetSurfaceWithInstance } from '../../../../../engine/occ/ops/offsetSurface';
+import { occTrimSurfaceWithInstance } from '../../../../../engine/occ/ops/trimSurface';
 import { createRegisteredOccMesh } from '../../../../../engine/occ/registeredMesh';
 import { BODY_MATERIAL } from '../../../../../components/viewport/scene/bodyMaterial';
 
@@ -24,14 +25,39 @@ export function createSurfaceShapeActions({ set, get }: CADSliceContext): Partia
         return;
       }
       const n = features.filter((f) => f.params?.featureKind === 'surface-trim').length + 1;
-      const geom = GeometryEngine.trimSurface(srcMesh, trimMesh, params.keepSide);
+
+      // Try OCC-backed trim when both bodies have BRep geometry (handles curved trimmers).
+      const featureId = crypto.randomUUID();
+      let mesh: THREE.Mesh | undefined;
+      const srcBrepId = srcMesh.userData?.['brepBodyId'] as string | undefined;
+      const trimBrepId = trimMesh.userData?.['brepBodyId'] as string | undefined;
+      if (srcBrepId && trimBrepId) {
+        const occ = getOccSync();
+        const srcBody = occ ? globalBRepBodyRegistry.get(srcBrepId) : undefined;
+        const trimBody = occ ? globalBRepBodyRegistry.get(trimBrepId) : undefined;
+        if (occ && srcBody && trimBody) {
+          try {
+            const trimmedBody = occTrimSurfaceWithInstance(
+              occ.oc, srcBody, trimBody, params.keepSide as 'inside' | 'outside',
+              { sourceFeatureId: featureId },
+            );
+            if (trimmedBody) mesh = createRegisteredOccMesh(occ.oc, trimmedBody, BODY_MATERIAL, featureId);
+          } catch (err) {
+            console.warn('[commitSurfaceTrim] OCC trim failed, using THREE fallback:', err);
+          }
+        }
+      }
+      if (!mesh) {
+        const geom = GeometryEngine.trimSurface(srcMesh, trimMesh, params.keepSide);
+        mesh = configureSurfaceMesh(geom);
+      }
       get().pushUndo();
       const feature: Feature = {
-        id: crypto.randomUUID(),
+        id: featureId,
         name: `Surface Trim ${n}`,
         type: 'split-body',
         params: { featureKind: 'surface-trim', ...params },
-        mesh: configureSurfaceMesh(geom),
+        mesh,
         visible: true,
         suppressed: false,
         timestamp: Date.now(),

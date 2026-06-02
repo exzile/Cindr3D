@@ -298,7 +298,7 @@ after all their items shipped; see git history if their detail is needed.
 #     and build via OCC (BRepFill ruled / BRepOffsetAPI) so the rulings follow the
 #     chosen reference instead of a naive straight lerp.
 #
-# [~] SURF-7  Trim / Surface Split accept only a PLANE cutting tool. trimSurface
+# [x] SURF-7  Trim / Surface Split accept only a PLANE cutting tool. trimSurface
 #     and splitSurface (surfaceTrimSplit.ts:83-180) do a single-plane centroid-side
 #     test. Fusion trims/splits a surface with ANY tool: another surface, a
 #     projected sketch curve, or a body edge — and lets you keep either side.
