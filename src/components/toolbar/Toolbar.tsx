@@ -22,7 +22,6 @@ export default function Toolbar() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const meshInsertInputRef = useRef<HTMLInputElement>(null);
   const loadFileInputRef = useRef<HTMLInputElement>(null);
-  const [wsDropdownOpen, setWsDropdownOpen] = useState(false);
   const [designTab, setDesignTab] = useState<DesignTab>('solid');
 
   const activeSketch = useCADStore((s) => s.activeSketch);
@@ -185,7 +184,6 @@ export default function Toolbar() {
   }, [sketches.length, setStatusMessage, startRevolveTool]);
 
   const handleWorkspaceSwitch = useCallback((ws: Workspace) => {
-    setWsDropdownOpen(false);
     setWorkspaceMode(ws);
   }, [setWorkspaceMode]);
 
@@ -317,8 +315,6 @@ export default function Toolbar() {
 
       <WorkspaceTabBar
         workspace={workspace}
-        wsDropdownOpen={wsDropdownOpen}
-        setWsDropdownOpen={setWsDropdownOpen}
         onWorkspaceSwitch={handleWorkspaceSwitch}
         inSketch={inSketch}
         activeTab={activeTab}

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { ChevronDown, X } from 'lucide-react';
+import { DraftingCompass, Layers3, Printer, X, type LucideIcon } from 'lucide-react';
 import type { Workspace, RibbonTab, TabDef } from '../../types/toolbar.types';
 import { useLanguageStore } from '../../store/languageStore';
 import { translate, type TranslationKey } from '../../i18n';
@@ -18,8 +18,6 @@ const designTabs: TabDef[] = [
 
 interface WorkspaceTabBarProps {
   workspace: Workspace;
-  wsDropdownOpen: boolean;
-  setWsDropdownOpen: (open: boolean) => void;
   onWorkspaceSwitch: (ws: Workspace) => void;
   inSketch: boolean;
   activeTab: RibbonTab;
@@ -30,8 +28,6 @@ interface WorkspaceTabBarProps {
 
 export function WorkspaceTabBar({
   workspace,
-  wsDropdownOpen,
-  setWsDropdownOpen,
   onWorkspaceSwitch,
   inSketch,
   activeTab,
@@ -43,11 +39,11 @@ export function WorkspaceTabBar({
   const language = useLanguageStore((s) => s.language);
   const currentTabs = workspace === 'design' ? designTabs : [];
   const t = (key: TranslationKey) => translate(language, key);
-  const workspaceLabel = workspace === 'design'
-    ? t('app.workspace.design').toUpperCase()
-    : workspace === 'prepare'
-      ? t('app.workspace.prepare').toUpperCase()
-      : t('app.workspace.printer').toUpperCase();
+  const workspaces: Array<{ id: Workspace; label: TranslationKey; icon: LucideIcon }> = [
+    { id: 'design', label: 'app.workspace.design', icon: DraftingCompass },
+    { id: 'prepare', label: 'app.workspace.slicer', icon: Layers3 },
+    { id: 'printer', label: 'app.workspace.printer', icon: Printer },
+  ];
   const handleDesignTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>, tabId: RibbonTab) => {
     if (inSketch) return;
     const index = currentTabs.findIndex((tab) => tab.id === tabId);
@@ -74,123 +70,92 @@ export function WorkspaceTabBar({
     if (focusFrameRef.current !== null) cancelAnimationFrame(focusFrameRef.current);
   }, []);
 
-  const handleWorkspaceOptionKeyDown = (
+  const handleWorkspaceKeyDown = (
     event: React.KeyboardEvent<HTMLButtonElement>,
     ws: Workspace,
   ) => {
-    const workspaces: Workspace[] = ['design', 'prepare', 'printer'];
-    const index = workspaces.indexOf(ws);
+    const workspaceIds = workspaces.map((item) => item.id);
+    const index = workspaceIds.indexOf(ws);
     // eslint-disable-next-line no-useless-assignment
     let nextIndex = index;
-    if (event.key === 'ArrowDown') nextIndex = (index + 1) % workspaces.length;
-    else if (event.key === 'ArrowUp') nextIndex = (index - 1 + workspaces.length) % workspaces.length;
-    else if (event.key === 'Escape') {
-      event.preventDefault();
-      setWsDropdownOpen(false);
-      document.querySelector<HTMLButtonElement>('.ribbon-workspace-btn')?.focus();
-      return;
-    } else return;
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % workspaceIds.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + workspaceIds.length) % workspaceIds.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = workspaceIds.length - 1;
+    else return;
 
     event.preventDefault();
-    document.querySelector<HTMLButtonElement>(`[data-workspace-option="${workspaces[nextIndex]}"]`)?.focus();
+    const nextWorkspace = workspaceIds[nextIndex];
+    onWorkspaceSwitch(nextWorkspace);
+    if (focusFrameRef.current !== null) cancelAnimationFrame(focusFrameRef.current);
+    focusFrameRef.current = requestAnimationFrame(() => {
+      focusFrameRef.current = null;
+      document.querySelector<HTMLButtonElement>(`[data-workspace-tab="${nextWorkspace}"]`)?.focus();
+    });
   };
 
   return (
-    <div className="ribbon-tab-row">
-      {/* Workspace Dropdown */}
-      <div className="ribbon-workspace-selector" onMouseLeave={() => setWsDropdownOpen(false)}>
-        <button
-          className="ribbon-workspace-btn"
-          onClick={() => setWsDropdownOpen(!wsDropdownOpen)}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowDown' || event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              setWsDropdownOpen(true);
-              if (focusFrameRef.current !== null) cancelAnimationFrame(focusFrameRef.current);
-              focusFrameRef.current = requestAnimationFrame(() => {
-                focusFrameRef.current = null;
-                document.querySelector<HTMLButtonElement>(`[data-workspace-option="${workspace}"]`)?.focus();
-              });
-            }
-          }}
-          aria-haspopup="menu"
-          aria-expanded={wsDropdownOpen}
-        >
-          {workspaceLabel}
-          <ChevronDown size={11} className="ribbon-workspace-chevron" />
-        </button>
-        {wsDropdownOpen && (
-          <div className="ribbon-workspace-dropdown" role="menu" aria-label={t('app.workspace.selector')}>
+    <div className="ribbon-navigation">
+      <div className="ribbon-workspace-row" role="tablist" aria-label={t('app.workspace.selector')}>
+        {workspaces.map((item) => {
+          const Icon = item.icon;
+          return (
             <button
-              className={`ribbon-workspace-option ${workspace === 'design' ? 'active' : ''}`}
-              onClick={() => onWorkspaceSwitch('design')}
-              onKeyDown={(event) => handleWorkspaceOptionKeyDown(event, 'design')}
-              role="menuitemradio"
-              aria-checked={workspace === 'design'}
-              data-workspace-option="design"
+              key={item.id}
+              className={`ribbon-workspace-btn ${workspace === item.id ? 'active' : ''}`}
+              onClick={() => onWorkspaceSwitch(item.id)}
+              onKeyDown={(event) => handleWorkspaceKeyDown(event, item.id)}
+              role="tab"
+              aria-selected={workspace === item.id}
+              tabIndex={workspace === item.id ? 0 : -1}
+              data-workspace-tab={item.id}
+              data-workspace={item.id}
             >
-              {t('app.workspace.design')}
+              <Icon className="ribbon-workspace-icon" size={14} strokeWidth={2.2} aria-hidden="true" />
+              <span>{t(item.label)}</span>
             </button>
-            <button
-              className={`ribbon-workspace-option ${workspace === 'prepare' ? 'active' : ''}`}
-              onClick={() => onWorkspaceSwitch('prepare')}
-              onKeyDown={(event) => handleWorkspaceOptionKeyDown(event, 'prepare')}
-              role="menuitemradio"
-              aria-checked={workspace === 'prepare'}
-              data-workspace-option="prepare"
-            >
-              {t('app.workspace.preparePrint')}
-            </button>
-            <button
-              className={`ribbon-workspace-option ${workspace === 'printer' ? 'active' : ''}`}
-              onClick={() => onWorkspaceSwitch('printer')}
-              onKeyDown={(event) => handleWorkspaceOptionKeyDown(event, 'printer')}
-              role="menuitemradio"
-              aria-checked={workspace === 'printer'}
-              data-workspace-option="printer"
-            >
-              {t('app.workspace.printer')}
-            </button>
-          </div>
-        )}
+          );
+        })}
       </div>
-
-      <div className="ribbon-tab-divider-v" />
 
       {/* Tab names */}
-      <div className="ribbon-tabs" role="tablist" aria-label={t('app.workspace.designRibbonTabs')}>
-        {currentTabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={`ribbon-tab ${!inSketch && activeTab === tab.id ? 'active' : ''} ${inSketch ? 'sketch-passive' : ''}`}
-            style={{ '--tab-color': tab.color } as React.CSSProperties}
-            onClick={() => !inSketch && onTabClick(tab.id)}
-            onKeyDown={(event) => handleDesignTabKeyDown(event, tab.id)}
-            role="tab"
-            aria-selected={!inSketch && activeTab === tab.id}
-            tabIndex={!inSketch && activeTab === tab.id ? 0 : -1}
-            data-ribbon-tab={tab.id}
-          >
-            {t(tab.label as TranslationKey)}
-          </button>
-        ))}
-        {inSketch && (
-          <button
-            className="ribbon-tab active contextual sketch-contextual-tab"
-            style={{ '--tab-color': '#ff8c00' } as React.CSSProperties}
-          >
-            {t('app.ribbon.sketch')}
-          </button>
-        )}
-      </div>
+      {(currentTabs.length > 0 || inSketch || sketchPlaneSelecting) && (
+        <div className="ribbon-tab-row">
+          <div className="ribbon-tabs" role="tablist" aria-label={t('app.workspace.designRibbonTabs')}>
+            {currentTabs.map((tab) => (
+              <button
+                key={tab.id}
+                className={`ribbon-tab ${!inSketch && activeTab === tab.id ? 'active' : ''} ${inSketch ? 'sketch-passive' : ''}`}
+                style={{ '--tab-color': tab.color } as React.CSSProperties}
+                onClick={() => !inSketch && onTabClick(tab.id)}
+                onKeyDown={(event) => handleDesignTabKeyDown(event, tab.id)}
+                role="tab"
+                aria-selected={!inSketch && activeTab === tab.id}
+                tabIndex={!inSketch && activeTab === tab.id ? 0 : -1}
+                data-ribbon-tab={tab.id}
+              >
+                {t(tab.label as TranslationKey)}
+              </button>
+            ))}
+            {inSketch && (
+              <button
+                className="ribbon-tab active contextual sketch-contextual-tab"
+                style={{ '--tab-color': '#ff8c00' } as React.CSSProperties}
+              >
+                {t('app.ribbon.sketch')}
+              </button>
+            )}
+          </div>
 
-      {/* Plane selection indicator */}
-      {sketchPlaneSelecting && !inSketch && (
-        <div className="ribbon-sketch-indicator">
-          <span className="text-accent">Select a plane or planar face</span>
-          <button className="ribbon-cancel-btn" onClick={onCancelPlaneSelect} title="Cancel">
-            <X size={12} /> Cancel
-          </button>
+          {/* Plane selection indicator */}
+          {sketchPlaneSelecting && !inSketch && (
+            <div className="ribbon-sketch-indicator">
+              <span className="text-accent">Select a plane or planar face</span>
+              <button className="ribbon-cancel-btn" onClick={onCancelPlaneSelect} title="Cancel">
+                <X size={12} /> Cancel
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

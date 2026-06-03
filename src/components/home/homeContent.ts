@@ -80,7 +80,16 @@ export const workflows = [
   {
     title: 'Design',
     copy: 'Sketch parts, build OCC-backed parametric features, organize components, and export models from a browser-based CAD workspace.',
-    image: '/help/help-design-overview.png',
+    image: '/help/workspaces/design/overview.png',
+    screenshots: [
+      { src: '/help/workspaces/design/overview.png', label: 'Design overview' },
+      { src: '/help/workspaces/design/sketch-palette.png', label: 'Sketch palette' },
+      { src: '/help/workspaces/design/surface-selection.png', label: 'Surface selection' },
+      { src: '/help/workspaces/design/multi-view-layout.png', label: 'Multi-view layout' },
+      { src: '/help/workspaces/design/mesh-preview.png', label: 'Mesh preview' },
+      { src: '/help/workspaces/design/shaded-body.png', label: 'Shaded body' },
+      { src: '/help/workspaces/design/construction-planes.png', label: 'Construction planes' },
+    ],
     color: '#7c3aed',
     sections: [
       {
@@ -130,9 +139,18 @@ export const workflows = [
     ],
   },
   {
-    title: 'Prepare',
+    title: 'Slicer',
     copy: 'Arrange parts on the plate, tune print profiles, inspect sliced toolpaths, and generate labeled G-code for object cancellation.',
-    image: '/help/help-prepare-overview.png',
+    image: '/help/workspaces/slicer/overview.png',
+    screenshots: [
+      { src: '/help/workspaces/slicer/overview.png', label: 'Slicer overview' },
+      { src: '/help/workspaces/slicer/plate-model.png', label: 'Plate model' },
+      { src: '/help/workspaces/slicer/toolpath-preview.png', label: 'Toolpath preview' },
+      { src: '/help/workspaces/slicer/layer-preview.png', label: 'Layer preview' },
+      { src: '/help/workspaces/slicer/print-summary.png', label: 'Print summary' },
+      { src: '/help/workspaces/slicer/gcode-simulation.png', label: 'G-code simulation' },
+      { src: '/help/workspaces/slicer/object-menu.png', label: 'Object menu' },
+    ],
     color: '#0284c7',
     sections: [
       {
@@ -175,7 +193,16 @@ export const workflows = [
   {
     title: 'Print',
     copy: 'Connect printers, monitor jobs, manage files, queue work across a fleet, and control firmware-specific features from one panel.',
-    image: '/help/help-printer-fleet.png',
+    image: '/help/workspaces/print/dashboard.png',
+    screenshots: [
+      { src: '/help/workspaces/print/dashboard.png', label: 'Printer dashboard' },
+      { src: '/help/workspaces/print/camera-view.png', label: 'Camera view' },
+      { src: '/help/workspaces/print/status-cards.png', label: 'Status cards' },
+      { src: '/help/workspaces/print/file-manager.png', label: 'File manager' },
+      { src: '/help/workspaces/print/height-map.png', label: 'Height map' },
+      { src: '/help/workspaces/print/calibration-center.png', label: 'Calibration center' },
+      { src: '/help/workspaces/print/config-editor.png', label: 'Config editor' },
+    ],
     color: '#059669',
     sections: [
       {
@@ -232,7 +259,7 @@ export const workflows = [
 
 export const useSteps = [
   'Open the app and start in Design to sketch, import, or edit a part.',
-  'Move to Prepare to arrange the plate, tune print profiles, slice, and inspect the generated toolpath.',
+  'Move to Slicer to arrange the plate, tune print profiles, slice, and inspect the generated toolpath.',
   'Move to 3D Printer to connect hardware, queue jobs, monitor cameras, and manage print-farm work.',
   'Use the Help button inside the app for guided screenshots and firmware-specific setup notes.',
 ];
@@ -277,7 +304,7 @@ export const featureGroups = [
     ],
   },
   {
-    page: 'Prepare',
+    page: 'Slicer',
     section: 'Plate planning and calibration',
     icon: FlaskConical,
     summary: 'Smarter build-plate decisions, calibration presets, and better handoff to connected printers.',
@@ -290,7 +317,7 @@ export const featureGroups = [
     ],
   },
   {
-    page: 'Prepare',
+    page: 'Slicer',
     section: 'Slicing quality',
     icon: Layers3,
     summary: 'Modern slicer controls that close major Cura, Orca, and Bambu-style print-quality gaps.',
@@ -304,7 +331,7 @@ export const featureGroups = [
     ],
   },
   {
-    page: 'Prepare',
+    page: 'Slicer',
     section: 'Toolpath preview',
     icon: Code2,
     summary: 'Animated G-code viewer for inspecting toolpaths layer by layer before sending to a printer.',
@@ -598,34 +625,49 @@ export const latestReleaseHighlights = [
 
 export const nextReleaseFeatures = [
   {
-    icon: Crosshair,
-    label: 'Face-placement for primitives',
-    detail: 'Click any planar face in the viewport to place a cylinder, box, sphere, or torus normal to that face — matching Fusion\'s Placement → Face flow. Currently primitives default to the XY plane; the next milestone wires face-pick into the placement pipeline.',
+    icon: Layers3,
+    label: 'Modern stacked homepage',
+    detail: 'The homepage now uses full-screen stacked sections where each page docks under the top menu and the next section scrolls over it. Section height, sticky backings, rounded page cards, and scroll behavior were tuned so the experience feels closer to a modern product site.',
   },
   {
-    icon: Scan,
-    label: 'Full sketch DOF coloring',
-    detail: 'Under-constrained entities shown in blue, fully constrained in black, and over-constrained in red — with per-entity degree-of-freedom annotations so it is always clear which dimensions or constraints are still needed to fully define a sketch.',
+    icon: Gauge,
+    label: 'Scroll, nav, and footer fixes',
+    detail: 'Top navigation state now follows the docked section during both down-scroll and up-scroll. Page panels reserve space for the fixed footer, the hero stats strip clears the footer, and bottom content no longer disappears behind the fixed chrome.',
   },
   {
-    icon: ShieldCheck,
-    label: 'Sketch offset and break tools',
-    detail: 'Offset curves at a typed distance with preview, and break/trim entities at any intersection. Both are present in the solver and partially in the toolbar; the next release finishes the interactive workflows to match Fusion parity.',
+    icon: Zap,
+    label: 'Animated Cindr3D hero',
+    detail: 'The landing hero now uses a dotted ribbon canvas animation inspired by modern motion sites. The animation pauses on blur or hidden tabs, clamps elapsed frame deltas, respects reduced-motion preferences, and avoids the speed-up bug after returning to the browser.',
   },
   {
-    icon: Crosshair,
-    label: 'Pure OCC selectable-edge service',
-    detail: 'Complete the topology service so fillet and chamfer hover, selection, tangent propagation, and edge IDs come directly from OCC edge data instead of tessellation-derived fallback logic.',
+    icon: Images,
+    label: 'Connected workspace previews',
+    detail: 'The connected pages section now separates Design, Slicer, and Print into three responsive rows with real screenshots. Each row keeps text and preview columns, shows thumbnail galleries, and lets users click screenshots to swap the main preview.',
   },
   {
-    icon: Scan,
-    label: 'Camera-assisted calibration',
-    detail: 'Attach photos to calibration results, crop banded regions, align ruler overlays with live video, and use BYOK vision models for explainable first-layer, ringing, and stringing recommendations.',
+    icon: LayoutGrid,
+    label: 'Ribbon and page switching polish',
+    detail: 'The top file-bar ribbon no longer hides Design behind a dropdown. Design, Slicer, and Print sit inline with stronger icon-and-text buttons, selected glass styling, motion, and a secondary sub-ribbon for page-specific tools like solid, surface, and mesh.',
+  },
+  {
+    icon: FolderOpen,
+    label: 'Tabbed browser panel',
+    detail: 'The in-app browser area now includes a left-side Files tab beside the Model browser, with Files on the left and Model on the right. The panel is ready for showing recent files or folder-based project browsing without taking over the main viewport.',
+  },
+  {
+    icon: Rocket,
+    label: 'Release, FAQ, and final page refresh',
+    detail: 'The release section now presents the current release as the primary page, with FAQ content grouped below it instead of a separate scrolling page. The final getting-started section received a stronger visual treatment with deployment graphics and cleaner spacing.',
+  },
+  {
+    icon: Globe,
+    label: 'SEO and launch copy updates',
+    detail: 'Homepage metadata, Open Graph, Twitter cards, JSON-LD, and visible hero copy now mention free CAD, free 3D CAD, and free browser CAD naturally. Launch buttons consistently say Launch Cindr3D and point users directly into the app.',
   },
 ];
 export const PAGE_COLORS: Record<string, string> = {
   Design: '#7c3aed',
-  Prepare: '#0284c7',
+  Slicer: '#0284c7',
   '3D Printer': '#059669',
   Camera: '#d97706',
   Settings: '#475569',

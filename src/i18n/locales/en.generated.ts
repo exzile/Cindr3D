@@ -4444,7 +4444,7 @@ export const enGenerated = {
   "ui.v.max.w98zgy": "V / Max:",
   "ui.v.count.1gr7muo": "V Count",
   "ui.v.points.nzrch8": "V Points",
-  "ui.v0.5.2.release.1kp9ict": "v0.5.2 release",
+  "ui.v0.5.2.release.1kp9ict": "v0.5.3 release",
   "ui.v12.376kk0": "V12",
   "ui.value.3q6kj2": "Value",
   "ui.value.at.end.z.rpqpse": "Value at end Z",
