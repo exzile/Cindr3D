@@ -80,7 +80,10 @@ async function run() {
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : 0;
   const origin = `http://127.0.0.1:${port}`;
-  const browser = await puppeteer.launch({ headless: 'new' });
+  const browser = await puppeteer.launch({
+    args: process.env.CI ? ['--no-sandbox', '--disable-setuid-sandbox'] : [],
+    headless: 'new',
+  });
   const page = await browser.newPage();
   const failures = [];
 
