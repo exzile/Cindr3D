@@ -6,7 +6,7 @@ export function ReleaseRoadmapTabs() {
       <div className="rrtabs__head">
         <div className="home-section-heading" style={{ margin: 0 }}>
           <p>Now available</p>
-          <h2 id="release-title">v0.5.3 new release</h2>
+          <h2 id="release-title">v0.5.4 new release</h2>
         </div>
       </div>
 
