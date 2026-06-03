@@ -13,8 +13,31 @@ export function MoveObjectPanel({
 }: ObjectPanelProps) {
   const pos = obj.position as { x: number; y: number; z: number };
   const scale = obj.scale as { x?: number; y?: number; z?: number } | undefined;
+  const sclX = Math.abs(scale?.x ?? 1);
+  const sclY = Math.abs(scale?.y ?? 1);
   const sclZ = scale?.z ?? 1;
   const axisClass = ['slicer-overlay-axis--x', 'slicer-overlay-axis--y', 'slicer-overlay-axis--z'] as const;
+  const bbox = obj.boundingBox;
+
+  // Display the world left/front/bottom edge of the object so users see bed
+  // coordinates (e.g. X=30 means the object's left edge sits 30mm from the
+  // bed's left edge). Internally `position` is a translation offset applied
+  // on top of the raw geometry, so for a design-workspace body whose bbox
+  // spans [-60, -20] the internal pos.x is 90 even though the object is
+  // centered — that confuses users who see "X: 90" on a 100mm bed.
+  const worldX = pos.x + (bbox.min.x ?? 0) * sclX;
+  const worldY = pos.y + (bbox.min.y ?? 0) * sclY;
+  const worldZ = pos.z + (bbox.min.z ?? 0) * Math.abs(sclZ);
+
+  const worldPos = { x: worldX, y: worldY, z: worldZ };
+
+  const handleWorldChange = (axis: 'x' | 'y' | 'z', value: string) => {
+    if (locked) return;
+    const v = parseFloat(value) || 0;
+    if (axis === 'x') onUpdate({ position: { ...pos, x: v - (bbox.min.x ?? 0) * sclX } });
+    else if (axis === 'y') onUpdate({ position: { ...pos, y: v - (bbox.min.y ?? 0) * sclY } });
+    else onUpdate({ position: { ...pos, z: v - (bbox.min.z ?? 0) * Math.abs(sclZ) } });
+  };
 
   return (
     <div className="slicer-overlay-panel">
@@ -23,8 +46,8 @@ export function MoveObjectPanel({
         <div key={axis} className="slicer-overlay-row">
           <span className={`slicer-overlay-axis ${axisClass[index]}`}>{axis.toUpperCase()}</span>
           <NumberInput
-            val={pos[axis].toFixed(1)}
-            onChange={(value) => { if (!locked) onUpdate({ position: { ...pos, [axis]: parseFloat(value) || 0 } }); }}
+            val={worldPos[axis].toFixed(1)}
+            onChange={(value) => handleWorldChange(axis, value)}
             disabled={locked}
           />
           <span className="slicer-overlay-unit">mm</span>

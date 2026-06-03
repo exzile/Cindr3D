@@ -63,7 +63,7 @@ export default function App() {
       )}
       <DuetNotifications />
       <GCodeToast />
-      <AiAssistantPanel />
+      {import.meta.env.DEV && <AiAssistantPanel />}
       <OccLoadingModal />
     </div>
   );

@@ -3,7 +3,7 @@ import { AlignEndHorizontal, Box, Paintbrush, Ruler, X } from 'lucide-react';
 import * as THREE from 'three';
 import type { PaintedZSeamHint } from '../../../../types/slicer/profiles/print';
 import { useSlicerStore } from '../../../../store/slicerStore';
-import { normalizeRotationDegreesToRadians, normalizeScale } from '../../../../utils/slicerTransforms';
+import { normalizeRotationRadians, normalizeScale } from '../../../../utils/slicerTransforms';
 import './PickToolsOverlay.css';
 
 /**
@@ -151,7 +151,7 @@ function isPaintedZSeamHint(value: unknown): value is PaintedZSeamHint {
 function seamHintWorldPoint(obj: { position: { x: number; y: number; z?: number }; rotation?: unknown; scale?: unknown; mirrorX?: boolean; mirrorY?: boolean; mirrorZ?: boolean }, hint: PaintedZSeamHint): THREE.Vector3 {
   const point = new THREE.Vector3(hint.x, hint.y, hint.z ?? 0);
   if (hint.coordinateSpace !== 'object') return point;
-  const rot = normalizeRotationDegreesToRadians(obj.rotation);
+  const rot = normalizeRotationRadians(obj.rotation);
   const rawScale = normalizeScale(obj.scale);
   const scale = new THREE.Vector3(
     rawScale.x * (obj.mirrorX ? -1 : 1),

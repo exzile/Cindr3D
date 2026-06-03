@@ -203,7 +203,16 @@ export function sketchToProfileShapesFlat(sketch: Sketch): THREE.Shape[] {
   if (atomic.length === 0) return rawShapes;
 
   const shapeSignature = (shape: THREE.Shape) => {
-    const points = shape.getPoints(48);
+    const raw = shape.getPoints(48);
+    // Drop a duplicated closing vertex before averaging the centroid. A raw shape
+    // (built with an explicit closing lineTo) repeats its first point, while the
+    // Clipper2 atomic twin of the same region does not — leaving it in would shift
+    // the centroid by ~one-vertex worth and make sameShape() fail to match a raw
+    // shape to its atomic equivalent, so the atom gets appended as a phantom
+    // duplicate profile. (Area via the shoelace sum is already dup-invariant.)
+    const points = (raw.length > 1 && raw[0].distanceTo(raw[raw.length - 1]) < 1e-6)
+      ? raw.slice(0, -1)
+      : raw;
     let area = 0;
     let cx = 0;
     let cy = 0;
@@ -349,9 +358,18 @@ export function sketchToProfileShapesFlat(sketch: Sketch): THREE.Shape[] {
         count += 1;
       }
     }
-    // ≥2 atomic faces contained in this raw shape, whose areas tile it = the raw
-    // shape was subdivided by a crossing curve and must not be offered as a profile.
-    if (count >= 2 && Math.abs(covered - rawArea) / rawArea < 0.03) {
+    // An unmatched raw shape that contains ≥2 atomic faces is never a minimal face,
+    // so Fusion would not offer it as a profile — only the atoms are valid. Two ways
+    // it arises:
+    //   • covered ≈ rawArea — the raw shape is tiled exactly by the atoms (a region
+    //     subdivided by a crossing curve), or
+    //   • covered <  rawArea — a greedy chain that wandered across branch vertices
+    //     (e.g. a square with triangles attached to its edges) produced an inflated
+    //     outer loop enclosing the faces PLUS non-face area.
+    // Atoms are disjoint and minimal, so a genuine face never contains another atom;
+    // that is why dropping here cannot remove a real profile. (`covered <= rawArea`
+    // also guards the impossible case of contained atoms exceeding the footprint.)
+    if (count >= 2 && covered <= rawArea * 1.03) {
       redundantRawIndices.add(i);
     }
   }
@@ -582,7 +600,31 @@ export function entitiesToShapes(
     });
 
     const hasInteriorSplit = splitTs.some((ts) => ts.some((t) => t > 1e-5 && t < 1 - 1e-5));
-    if (hasInteriorSplit) {
+    // A branch vertex (3+ segments meeting at one point) means the lines form a
+    // planar subdivision rather than a single loop — e.g. a square with triangles
+    // attached along its edges, where each shared corner joins 4 segments. The
+    // greedy chain assembler below can only trace ONE loop through such a graph, so
+    // the cycle-based face finder must run here too, not only when one line crosses
+    // another in its interior (hasInteriorSplit). Every vertex of an ordinary closed
+    // loop has degree 2, so this does not fire for normal profiles.
+    //
+    // Detect coincidence with a FINE tolerance, not the coarse `endpointKey`
+    // (which rounds to ~2% of the sketch extent): a curve re-emitted as a dense
+    // polyline — e.g. a circular hole from createProfileSketch — has many vertices
+    // closer together than the coarse grid, which would otherwise collapse into one
+    // bucket and read as a false high-degree branch. True shared corners coincide
+    // exactly; a smooth curve's consecutive points are spaced well above `tolerance`.
+    const fineKey = (p: { u: number; v: number }) =>
+      `${Math.round(p.u / tolerance)},${Math.round(p.v / tolerance)}`;
+    const fineDegree = new Map<string, number>();
+    for (const segment of validSplitSegments) {
+      const a = fineKey(segment.endpoints[0]);
+      const b = fineKey(segment.endpoints[1]);
+      fineDegree.set(a, (fineDegree.get(a) ?? 0) + 1);
+      fineDegree.set(b, (fineDegree.get(b) ?? 0) + 1);
+    }
+    const hasBranchVertex = Array.from(fineDegree.values()).some((d) => d >= 3);
+    if (hasInteriorSplit || hasBranchVertex) {
       const nodePoints = new Map<string, { u: number; v: number }>();
       const graph = new Map<string, Set<string>>();
       const addGraphEdge = (a: string, b: string, pa: { u: number; v: number }, pb: { u: number; v: number }) => {

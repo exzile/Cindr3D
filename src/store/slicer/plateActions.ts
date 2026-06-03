@@ -771,17 +771,57 @@ export function createPlateActions({
         const bedW = printer?.buildVolume?.x ?? 220;
         const bedD = printer?.buildVolume?.y ?? 220;
 
+        // Precompute the world-space XY footprint for each object so the packer
+        // uses the correct bed area even when the object has a rotation (e.g. a
+        // CAD body with rx=90° whose bed footprint is the local Z extent, not Y).
+        // worldMin{X,Y,Z} are the minimum world-space coordinates at position=(0,0,0);
+        // they are used both for packing size and for computing the translation needed
+        // to place the left/front/bottom edges at the packer's output coordinates.
+        type FootprintInfo = { w: number; d: number; wxMin: number; wyMin: number; worldMinZ: number };
+        const footprintCache = new Map<string, FootprintInfo>();
+        for (const o of plateObjects) {
+          if (o.locked || (o.modifierMeshRole && o.modifierMeshRole !== 'normal')) continue;
+          const osx = (o.scale?.x ?? 1) * (o.mirrorX ? -1 : 1);
+          const osy = (o.scale?.y ?? 1) * (o.mirrorY ? -1 : 1);
+          const osz = (o.scale?.z ?? 1) * (o.mirrorZ ? -1 : 1);
+          const orx = o.rotation?.x ?? 0;
+          const ory = o.rotation?.y ?? 0;
+          const orz = o.rotation?.z ?? 0;
+          const fRotMat = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(orx, ory, orz));
+          const fv = new THREE.Vector3();
+          let wxMin = Infinity, wxMax = -Infinity, wyMin = Infinity, wyMax = -Infinity, fWorldMinZ = Infinity;
+          for (const [cx, cy, cz] of [
+            [o.boundingBox.min.x, o.boundingBox.min.y, o.boundingBox.min.z],
+            [o.boundingBox.max.x, o.boundingBox.min.y, o.boundingBox.min.z],
+            [o.boundingBox.min.x, o.boundingBox.max.y, o.boundingBox.min.z],
+            [o.boundingBox.max.x, o.boundingBox.max.y, o.boundingBox.min.z],
+            [o.boundingBox.min.x, o.boundingBox.min.y, o.boundingBox.max.z],
+            [o.boundingBox.max.x, o.boundingBox.min.y, o.boundingBox.max.z],
+            [o.boundingBox.min.x, o.boundingBox.max.y, o.boundingBox.max.z],
+            [o.boundingBox.max.x, o.boundingBox.max.y, o.boundingBox.max.z],
+          ] as [number, number, number][]) {
+            fv.set(cx * osx, cy * osy, cz * osz).applyMatrix4(fRotMat);
+            if (fv.x < wxMin) wxMin = fv.x; if (fv.x > wxMax) wxMax = fv.x;
+            if (fv.y < wyMin) wyMin = fv.y; if (fv.y > wyMax) wyMax = fv.y;
+            if (fv.z < fWorldMinZ) fWorldMinZ = fv.z;
+          }
+          footprintCache.set(o.id, {
+            w: isFinite(wxMax - wxMin) && wxMax > wxMin ? wxMax - wxMin : 50,
+            d: isFinite(wyMax - wyMin) && wyMax > wyMin ? wyMax - wyMin : 50,
+            wxMin: isFinite(wxMin) ? wxMin : 0,
+            wyMin: isFinite(wyMin) ? wyMin : 0,
+            worldMinZ: isFinite(fWorldMinZ) ? fWorldMinZ : 0,
+          });
+        }
+
         const inputs = plateObjects
           .filter((o) => !o.locked && (!o.modifierMeshRole || o.modifierMeshRole === 'normal'))
           .map((o) => {
-            const sx = o.scale?.x ?? 1;
-            const sy = o.scale?.y ?? 1;
-            const w = (o.boundingBox.max.x - o.boundingBox.min.x) * sx;
-            const d = (o.boundingBox.max.y - o.boundingBox.min.y) * sy;
+            const fp = footprintCache.get(o.id);
             return {
               id: o.id,
-              w: isFinite(w) && w > 0 ? w : 50,
-              h: isFinite(d) && d > 0 ? d : 50,
+              w: fp ? fp.w : 50,
+              h: fp ? fp.d : 50,
               fallback: { x: o.position.x, y: o.position.y },
             };
           });
@@ -822,42 +862,17 @@ export function createPlateActions({
         const arranged = plateObjects.map((o) => {
           const p = placementById.get(o.id);
           if (!p) return o;
-          const sx = (o.scale?.x ?? 1) * (o.mirrorX ? -1 : 1);
-          const sy = (o.scale?.y ?? 1) * (o.mirrorY ? -1 : 1);
-          const sz = (o.scale?.z ?? 1) * (o.mirrorZ ? -1 : 1);
-          const rx = o.rotation?.x ?? 0;
-          const ry = o.rotation?.y ?? 0;
-          const rz = o.rotation?.z ?? 0;
-          const minX = (o.boundingBox.min.x ?? 0) * Math.abs(sx);
-          const minY = (o.boundingBox.min.y ?? 0) * Math.abs(sy);
-          // Compute world-space minimum Z by transforming all 8 bbox corners
-          // through rotation + scale so rotated objects land correctly on the bed.
-          const rotMat = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(rx, ry, rz));
-          const corners: [number, number, number][] = [
-            [o.boundingBox.min.x, o.boundingBox.min.y, o.boundingBox.min.z],
-            [o.boundingBox.max.x, o.boundingBox.min.y, o.boundingBox.min.z],
-            [o.boundingBox.min.x, o.boundingBox.max.y, o.boundingBox.min.z],
-            [o.boundingBox.max.x, o.boundingBox.max.y, o.boundingBox.min.z],
-            [o.boundingBox.min.x, o.boundingBox.min.y, o.boundingBox.max.z],
-            [o.boundingBox.max.x, o.boundingBox.min.y, o.boundingBox.max.z],
-            [o.boundingBox.min.x, o.boundingBox.max.y, o.boundingBox.max.z],
-            [o.boundingBox.max.x, o.boundingBox.max.y, o.boundingBox.max.z],
-          ];
-          const v = new THREE.Vector3();
-          let worldMinZ = Infinity;
-          for (const [cx, cy, cz] of corners) {
-            v.set(cx * sx, cy * sy, cz * sz).applyMatrix4(rotMat);
-            if (v.z < worldMinZ) worldMinZ = v.z;
-          }
+          const fp = footprintCache.get(o.id);
+          if (!fp) return o;
           // The rotated case (90°) implies the bin packer wants the object turned,
           // but rotating the mesh changes its slicing — out of scope for the
           // arrange action. Treat `rotated:true` as a hint we ignore.
           return {
             ...o,
             position: {
-              x: p.x - minX,
-              y: p.y - minY,
-              z: isFinite(worldMinZ) ? -worldMinZ : 0,
+              x: p.x - fp.wxMin,
+              y: p.y - fp.wyMin,
+              z: -fp.worldMinZ,
             },
           };
         });
