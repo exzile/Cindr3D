@@ -25,9 +25,10 @@ function worldObb(obj: PlateObject): ObjectObb | null {
   const sx = (obj.scale?.x ?? 1) * (obj.mirrorX ? -1 : 1);
   const sy = (obj.scale?.y ?? 1) * (obj.mirrorY ? -1 : 1);
   const sz = (obj.scale?.z ?? 1) * (obj.mirrorZ ? -1 : 1);
-  const rx = ((obj.rotation?.x ?? 0) * Math.PI) / 180;
-  const ry = ((obj.rotation?.y ?? 0) * Math.PI) / 180;
-  const rz = ((obj.rotation?.z ?? 0) * Math.PI) / 180;
+  // rotation is stored in radians throughout the slicer store
+  const rx = obj.rotation?.x ?? 0;
+  const ry = obj.rotation?.y ?? 0;
+  const rz = obj.rotation?.z ?? 0;
   const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz));
   const minLocal = new THREE.Vector3(obj.boundingBox.min.x, obj.boundingBox.min.y, obj.boundingBox.min.z);
   const maxLocal = new THREE.Vector3(obj.boundingBox.max.x, obj.boundingBox.max.y, obj.boundingBox.max.z);
@@ -104,9 +105,10 @@ function worldAabb(obj: PlateObject): ObjectAabb | null {
   const sx = (obj.scale?.x ?? 1) * (obj.mirrorX ? -1 : 1);
   const sy = (obj.scale?.y ?? 1) * (obj.mirrorY ? -1 : 1);
   const sz = (obj.scale?.z ?? 1) * (obj.mirrorZ ? -1 : 1);
-  const rx = ((obj.rotation?.x ?? 0) * Math.PI) / 180;
-  const ry = ((obj.rotation?.y ?? 0) * Math.PI) / 180;
-  const rz = ((obj.rotation?.z ?? 0) * Math.PI) / 180;
+  // rotation is stored in radians throughout the slicer store
+  const rx = obj.rotation?.x ?? 0;
+  const ry = obj.rotation?.y ?? 0;
+  const rz = obj.rotation?.z ?? 0;
   const mat = new THREE.Matrix4().compose(
     new THREE.Vector3(obj.position.x, obj.position.y, obj.position.z),
     new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)),

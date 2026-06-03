@@ -10,7 +10,7 @@ import {
 } from '../types/slicer';
 import type { PlateObject } from '../types/slicer';
 import { createProfilePatchForKey, getProfileValue } from '../utils/profileDiff';
-import { normalizeRotationDegreesToRadians, normalizeScale } from '../utils/slicerTransforms';
+import { normalizeRotationRadians, normalizeScale } from '../utils/slicerTransforms';
 import { createPreviewActions } from './slicer/actions/preview';
 import { slicerPersistConfig } from './slicer/persistConfig';
 import { deserializeGeom, type SerializedGeom } from './slicer/persistence';
@@ -448,7 +448,7 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
       if (!posAttr) continue;
 
       const pos = (obj.position as { x: number; y: number; z?: number });
-      const rot = normalizeRotationDegreesToRadians((obj as { rotation?: unknown }).rotation);
+      const rot = normalizeRotationRadians((obj as { rotation?: unknown }).rotation);
       const rawScl = normalizeScale((obj as { scale?: unknown }).scale);
       // Mirror flags bake into the scale so the slicer worker receives the
       // already-flipped geometry. An odd number of mirrors inverts the
@@ -471,7 +471,7 @@ export const useSlicerStore = create<SlicerStore>()(persist((set, get) => ({
         const source = state.plateObjects.find((candidate) => candidate.id === obj.modifierSourceObjectId);
         if (source) {
           const sourcePos = (source.position as { x: number; y: number; z?: number });
-          const sourceRot = normalizeRotationDegreesToRadians((source as { rotation?: unknown }).rotation);
+          const sourceRot = normalizeRotationRadians((source as { rotation?: unknown }).rotation);
           const sourceRawScale = normalizeScale((source as { scale?: unknown }).scale);
           const sourceMir = source as { mirrorX?: boolean; mirrorY?: boolean; mirrorZ?: boolean };
           const sourceScale = new THREE.Vector3(

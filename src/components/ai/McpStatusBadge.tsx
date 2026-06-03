@@ -12,6 +12,7 @@ import './McpStatusBadge.css';
 const HEARTBEAT_MS = 5_000;
 
 export default function McpStatusBadge() {
+  const enabled = import.meta.env.DEV;
   const copiedTimerRef = useRef<number | null>(null);
   const mountedRef = useRef(true);
   const [status, setStatus] = useState<Cindr3dMcpStatus | null>(null);
@@ -21,6 +22,7 @@ export default function McpStatusBadge() {
   const [auditOpen, setAuditOpen] = useState(false);
 
   useEffect(() => {
+    if (!enabled) return undefined;
     mountedRef.current = true;
     let cancelled = false;
     const sync = async () => {
@@ -49,10 +51,10 @@ export default function McpStatusBadge() {
       window.removeEventListener('beforeunload', stopCindr3dMcpOnUnload);
       window.removeEventListener('pagehide', stopCindr3dMcpOnUnload);
     };
-  }, []);
+  }, [enabled]);
 
   const copyPairingLine = useCallback(async () => {
-    if (!status) return;
+    if (!enabled || !status) return;
     await navigator.clipboard.writeText(status.pairingLine);
     if (!mountedRef.current) return;
     setCopied(true);
@@ -61,9 +63,10 @@ export default function McpStatusBadge() {
       copiedTimerRef.current = null;
       setCopied(false);
     }, 1500);
-  }, [status]);
+  }, [enabled, status]);
 
   const rotateToken = useCallback(async () => {
+    if (!enabled) return;
     try {
       const nextStatus = await cindr3dMcpClient.rotateToken();
       if (!mountedRef.current) return;
@@ -72,9 +75,10 @@ export default function McpStatusBadge() {
     } catch (err) {
       if (mountedRef.current) setError(errorMessage(err, 'Unknown error'));
     }
-  }, []);
+  }, [enabled]);
 
   const toggleAudit = useCallback(async () => {
+    if (!enabled) return;
     const nextOpen = !auditOpen;
     setAuditOpen(nextOpen);
     if (!nextOpen) return;
@@ -86,9 +90,10 @@ export default function McpStatusBadge() {
     } catch (err) {
       if (mountedRef.current) setError(errorMessage(err, 'Unknown error'));
     }
-  }, [auditOpen]);
+  }, [auditOpen, enabled]);
 
   const clearAudit = useCallback(async () => {
+    if (!enabled) return;
     try {
       await cindr3dMcpClient.clearAudit();
       if (!mountedRef.current) return;
@@ -97,11 +102,13 @@ export default function McpStatusBadge() {
     } catch (err) {
       if (mountedRef.current) setError(errorMessage(err, 'Unknown error'));
     }
-  }, []);
+  }, [enabled]);
 
   const title = error
     ? `AI Assistant MCP error: ${error}`
     : status?.pairingLine ?? 'Starting AI Assistant MCP';
+
+  if (!enabled) return null;
 
   return (
     <span className="mcp-status-wrap">
