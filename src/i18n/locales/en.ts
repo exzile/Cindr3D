@@ -5,6 +5,7 @@ export const en = {
   'app.workspace.design': 'Design',
   'app.workspace.prepare': 'Prepare',
   'app.workspace.preparePrint': 'Prepare (3D Print)',
+  'app.workspace.slicer': 'Slicer',
   'app.workspace.printer': '3D Printer',
   'app.workspace.selector': 'Workspace selector',
   'app.workspace.designRibbonTabs': 'Design ribbon tabs',

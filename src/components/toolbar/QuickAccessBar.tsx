@@ -5,6 +5,7 @@ import { useComponentStore } from '../../store/componentStore';
 import { useThemeStore } from '../../store/themeStore';
 import { usePrinterStore } from '../../store/printerStore';
 import { useAiAssistantStore } from '../../store/aiAssistantStore';
+import { useDesignFileStore } from '../../store/designFileStore';
 import { errorMessage } from '../../utils/errorHandling';
 import {
   downloadProfileSpoolSyncPayload,
@@ -26,6 +27,16 @@ import { GlobalSettingsModal } from './quickAccess/GlobalSettingsModal';
 import { useDesignFileIO } from './quickAccess/useDesignFileIO';
 
 import type { RefObject, ChangeEvent } from 'react';
+
+const DEFAULT_AUTO_SAVE_INTERVAL_SECONDS = 30;
+const AUTO_SAVE_INTERVAL_OPTIONS_SECONDS = new Set([15, 30, 60, 120, 300]);
+
+function normalizeAutoSaveInterval(value: unknown): number {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  return AUTO_SAVE_INTERVAL_OPTIONS_SECONDS.has(numeric)
+    ? numeric
+    : DEFAULT_AUTO_SAVE_INTERVAL_SECONDS;
+}
 
 interface QuickAccessBarProps {
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -82,13 +93,14 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
   const [saveAsOpen, setSaveAsOpen] = useState(false);
   const [saveAsDraft, setSaveAsDraft] = useState('design');
   const [overwritePrompt, setOverwritePrompt] = useState(false);
-  // Tracks the last-saved/loaded filename (without extension) so Save re-populates it
-  const [currentDesignFile, setCurrentDesignFile] = useState<string | null>(null);
+  // Tracks the last-saved/loaded filename (without extension) so Save re-populates it.
+  const currentDesignFile = useDesignFileStore((s) => s.currentDesignFile);
+  const setCurrentDesignFile = useDesignFileStore((s) => s.setCurrentDesignFile);
   const [autoSave, setAutoSave] = useState(() => {
     try { return localStorage.getItem('dznd-autosave') === 'true'; } catch { return false; }
   });
   const [autoSaveInterval, setAutoSaveInterval] = useState<number>(() => {
-    try { return Number(localStorage.getItem('dznd-autosave-interval') || '30'); } catch { return 30; }
+    try { return normalizeAutoSaveInterval(localStorage.getItem('dznd-autosave-interval')); } catch { return DEFAULT_AUTO_SAVE_INTERVAL_SECONDS; }
   });
 
   const saveAsThenRef = useRef<(() => void) | null>(null);
@@ -422,8 +434,9 @@ export function QuickAccessBar({ fileInputRef, loadFileInputRef, onImport }: Qui
           isDesign={isDesign}
           autoSaveInterval={autoSaveInterval}
           onAutoSaveIntervalChange={(v) => {
-            setAutoSaveInterval(v);
-            try { localStorage.setItem('dznd-autosave-interval', String(v)); } catch {
+            const next = normalizeAutoSaveInterval(v);
+            setAutoSaveInterval(next);
+            try { localStorage.setItem('dznd-autosave-interval', String(next)); } catch {
               // Local storage can be unavailable in restricted browser contexts.
             }
           }}

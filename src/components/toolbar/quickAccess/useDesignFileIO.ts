@@ -13,6 +13,12 @@
  */
 import { useCallback, useEffect, useRef } from 'react';
 import { useCADStore } from '../../../store/cadStore';
+import {
+  attachDesignRecentFileHandle,
+  designFileBaseName,
+  designRecentFileId,
+  useDesignFileStore,
+} from '../../../store/designFileStore';
 
 type FSHandleWithPerms = FileSystemFileHandle & {
   queryPermission(opts: { mode: string }): Promise<PermissionState>;
@@ -39,9 +45,7 @@ export function useDesignFileIO(deps: DesignFileIODeps) {
   const saveToFile = useCADStore((s) => s.saveToFile);
   const loadFromFile = useCADStore((s) => s.loadFromFile);
 
-  // Stored file handle for true in-place overwrite via File System Access API.
-  // Set when user opens via showOpenFilePicker or saves via showSaveFilePicker.
-  const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
+  const autoSaveInFlightRef = useRef(false);
 
   // Returns true if written, false if write permission isn't yet granted
   // (silently skips so auto-save never triggers a browser permission dialog).
@@ -67,8 +71,15 @@ export function useDesignFileIO(deps: DesignFileIODeps) {
         const file = await handle.getFile();
         const text = await file.text();
         loadFromFile(text);
-        fileHandleRef.current = handle;
-        setCurrentDesignFile(file.name.replace(/\.(dznd|json)$/i, '') || null);
+        const recentId = designRecentFileId('picker', file.name);
+        useDesignFileStore.getState().setFileHandle(handle);
+        setCurrentDesignFile(designFileBaseName(file.name));
+        attachDesignRecentFileHandle(recentId, handle);
+        useDesignFileStore.getState().addRecentFile({
+          id: recentId,
+          name: file.name,
+          source: 'picker',
+        });
         // Pre-request write permission while the user gesture (file picker) is
         // still active so auto-save can overwrite without a browser dialog.
         try {
@@ -94,9 +105,16 @@ export function useDesignFileIO(deps: DesignFileIODeps) {
         });
         const wrote = await writeToHandle(handle);
         if (!wrote) { setStatusMessage('Save failed — write permission not granted'); return false; }
-        fileHandleRef.current = handle;
+        const recentId = designRecentFileId('save', `${baseName}.dznd`);
+        useDesignFileStore.getState().setFileHandle(handle);
         setStatusMessage(`Design saved: ${baseName}.dznd`);
         setCurrentDesignFile(baseName);
+        attachDesignRecentFileHandle(recentId, handle);
+        useDesignFileStore.getState().addRecentFile({
+          id: recentId,
+          name: `${baseName}.dznd`,
+          source: 'save',
+        });
         return true;
       } catch (err) {
         if (!(err instanceof Error && err.name === 'AbortError')) setStatusMessage('Save failed');
@@ -105,13 +123,14 @@ export function useDesignFileIO(deps: DesignFileIODeps) {
     } else {
       saveToFile(baseName);
       setCurrentDesignFile(baseName);
+      useDesignFileStore.getState().setFileHandle(null);
       return true;
     }
   }, [saveToFile, setCurrentDesignFile, setStatusMessage, writeToHandle]);
 
   /** Drops the file handle + clears the current-file name. Call from File → New. */
   const resetFileState = useCallback(() => {
-    fileHandleRef.current = null;
+    useDesignFileStore.getState().setFileHandle(null);
     setCurrentDesignFile(null);
   }, [setCurrentDesignFile]);
 
@@ -122,7 +141,13 @@ export function useDesignFileIO(deps: DesignFileIODeps) {
       const text = evt.target?.result as string;
       if (text) {
         loadFromFile(text);
-        setCurrentDesignFile(file.name.replace(/\.dznd$/i, '').replace(/\.json$/i, '') || null);
+        useDesignFileStore.getState().setFileHandle(null);
+        setCurrentDesignFile(designFileBaseName(file.name));
+        useDesignFileStore.getState().addRecentFile({
+          id: designRecentFileId('upload', file.name),
+          name: file.name,
+          source: 'upload',
+        });
       }
     };
     reader.onerror = () => setStatusMessage('Failed to read design file');
@@ -133,22 +158,30 @@ export function useDesignFileIO(deps: DesignFileIODeps) {
   // falls back to a browser download only if no handle exists.
   useEffect(() => {
     if (!autoSave || !isDesign) return;
+    if (!Number.isFinite(autoSaveInterval) || autoSaveInterval <= 0) return;
+    const intervalMs = autoSaveInterval * 1000;
     const id = setInterval(async () => {
-      const handle = fileHandleRef.current;
-      const name = currentDesignFile ?? 'design';
-      if (handle) {
-        try {
-          const wrote = await writeToHandle(handle);
-          if (wrote) setStatusMessage(`Auto-saved: ${name}.dznd`);
-          // If !wrote, write permission wasn't granted — skip silently (no browser dialog)
-        } catch {
-          setStatusMessage('Auto-save failed — file may have been moved or deleted');
+      if (autoSaveInFlightRef.current) return;
+      autoSaveInFlightRef.current = true;
+      try {
+        const handle = useDesignFileStore.getState().fileHandle;
+        const name = currentDesignFile ?? 'design';
+        if (handle) {
+          try {
+            const wrote = await writeToHandle(handle);
+            if (wrote) setStatusMessage(`Auto-saved: ${name}.dznd`);
+            // If !wrote, write permission wasn't granted — skip silently (no browser dialog)
+          } catch {
+            setStatusMessage('Auto-save failed — file may have been moved or deleted');
+          }
+        } else if (currentDesignFile) {
+          saveToFile(currentDesignFile);
+          setStatusMessage(`Auto-saved: ${currentDesignFile}.dznd`);
         }
-      } else if (currentDesignFile) {
-        saveToFile(currentDesignFile);
-        setStatusMessage(`Auto-saved: ${currentDesignFile}.dznd`);
+      } finally {
+        autoSaveInFlightRef.current = false;
       }
-    }, autoSaveInterval * 1000);
+    }, intervalMs);
     return () => clearInterval(id);
   }, [autoSave, autoSaveInterval, currentDesignFile, isDesign, saveToFile, setStatusMessage, writeToHandle]);
 
@@ -158,7 +191,7 @@ export function useDesignFileIO(deps: DesignFileIODeps) {
     const handleKeyDown = async (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        const handle = fileHandleRef.current;
+        const handle = useDesignFileStore.getState().fileHandle;
         const name = currentDesignFile ?? 'design';
         if (handle) {
           try {
