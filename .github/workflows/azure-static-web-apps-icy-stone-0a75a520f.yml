@@ -41,6 +41,8 @@ jobs:
         run: npm run check:wasm-budget
       - name: Build app
         run: npm run build
+      - name: Deploy config and production smoke test
+        run: npm run deploy:check
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1

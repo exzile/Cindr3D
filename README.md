@@ -78,6 +78,7 @@ npm run typecheck   # TS composite build check
 npm run lint        # ESLint
 npm run test:run    # Vitest once
 npm run build       # Full production build
+npm run deploy:check # Static Web Apps config + production CSP smoke test
 ```
 
 </details>
@@ -268,6 +269,7 @@ docs/              Help, AI/MCP, deployment, and technical docs
 | `npm run dev` | Start Vite development server |
 | `npm run dev:fresh` | Clear Vite cache then start dev server |
 | `npm run build` | Typecheck, build static files, and generate SEO pages |
+| `npm run deploy:check` | Verify built deploy config and run a production CSP smoke test |
 | `npm run typecheck` | Run the composite TypeScript build check |
 | `npm run lint` | Run ESLint |
 | `npm run test:run` | Run Vitest once |

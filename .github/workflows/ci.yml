@@ -68,6 +68,9 @@ jobs:
       - name: Vite bundle
         run: npx vite build
 
+      - name: Deploy config and production smoke test
+        run: npm run deploy:check
+
       - name: Bundle size report
         run: |
           echo "### Bundle sizes" >> $GITHUB_STEP_SUMMARY

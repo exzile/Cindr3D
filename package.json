@@ -11,6 +11,7 @@
     "dev": "vite",
     "dev:fresh": "rimraf node_modules/.vite && vite",
     "build": "tsc -b && vite build && node scripts/generate-seo-pages.mjs",
+    "deploy:check": "node scripts/check-deploy-build.mjs && node scripts/smoke-production-preview.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "clean": "npx rimraf dist",
