@@ -49,6 +49,13 @@ function saveRecentFiles(files: DesignRecentFile[]) {
   }
 }
 
+function pruneRecentFileHandles(files: DesignRecentFile[]) {
+  const retainedIds = new Set(files.map((file) => file.id));
+  for (const id of recentFileHandles.keys()) {
+    if (!retainedIds.has(id)) recentFileHandles.delete(id);
+  }
+}
+
 export function designFileBaseName(filename: string): string {
   return filename.replace(/\.(dznd|json)$/i, '') || 'design';
 }
@@ -83,11 +90,13 @@ export const useDesignFileStore = create<DesignFileStore>((set) => ({
       ...state.recentFiles.filter((entry) => entry.id !== nextFile.id),
     ].slice(0, MAX_RECENT_FILES);
     saveRecentFiles(next);
+    pruneRecentFileHandles(next);
     return { recentFiles: next };
   }),
 
   clearRecentFiles: () => {
     saveRecentFiles([]);
+    recentFileHandles.clear();
     set({ recentFiles: [] });
   },
 }));

@@ -23,10 +23,10 @@
     "test:run": "vitest run",
     "i18n:extract": "node scripts/extract-ui-strings.mjs",
     "i18n:check": "node scripts/extract-ui-strings.mjs --check",
-    "graph:analyze": "npx gitnexus analyze",
-    "graph:list": "npx gitnexus list",
-    "graph:mcp": "npx gitnexus mcp",
-    "graph:serve": "npx gitnexus serve"
+    "graph:analyze": "npx --yes gitnexus analyze",
+    "graph:list": "npx --yes gitnexus list",
+    "graph:mcp": "npx --yes gitnexus mcp",
+    "graph:serve": "npx --yes gitnexus serve"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",

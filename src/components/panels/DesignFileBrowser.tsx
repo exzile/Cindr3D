@@ -13,6 +13,7 @@ import { useCADStore } from '../../store/cadStore';
 import {
   attachDesignRecentFileHandle,
   designFileBaseName,
+  type DesignRecentFileSource,
   designRecentFileId,
   getDesignRecentFileHandle,
   useDesignFileStore,
@@ -31,6 +32,10 @@ interface FolderFileEntry {
 }
 
 const DESIGN_FILE_PATTERN = /\.(dznd|json)$/i;
+type HandleOpenSource = Exclude<DesignRecentFileSource, 'upload'>;
+type FileHandleWithPermissions = FileSystemFileHandle & {
+  requestPermission?: (descriptor?: { mode?: 'read' | 'readwrite' }) => Promise<PermissionState>;
+};
 
 function formatFileSize(size: number): string {
   if (size < 1024) return `${size} B`;
@@ -41,6 +46,14 @@ function formatFileSize(size: number): string {
 function formatRecentTime(timestamp: number): string {
   const date = new Date(timestamp);
   return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+async function requestWritePermission(handle: FileSystemFileHandle) {
+  try {
+    await (handle as FileHandleWithPermissions).requestPermission?.({ mode: 'readwrite' });
+  } catch {
+    // Read-only folder grants are still useful for opening; saving will fall back to Save As.
+  }
 }
 
 export function DesignFileBrowser() {
@@ -66,10 +79,11 @@ export function DesignFileBrowser() {
 
   const openHandle = async (
     handle: FileSystemFileHandle,
-    source: 'picker' | 'folder',
+    source: HandleOpenSource,
     displayPath?: string,
   ) => {
     try {
+      await requestWritePermission(handle);
       const file = await handle.getFile();
       const text = await file.text();
       loadFromFile(text);
@@ -179,9 +193,12 @@ export function DesignFileBrowser() {
       return;
     }
     const recent = recentFiles.find((file) => file.id === id);
+    const source = recent?.source === 'folder' || recent?.source === 'save'
+      ? recent.source
+      : 'picker';
     await openHandle(
       handle,
-      recent?.source === 'folder' ? 'folder' : 'picker',
+      source,
       recent?.displayPath,
     );
   };

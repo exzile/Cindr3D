@@ -29,7 +29,7 @@ import { useDesignFileIO } from './quickAccess/useDesignFileIO';
 import type { RefObject, ChangeEvent } from 'react';
 
 const DEFAULT_AUTO_SAVE_INTERVAL_SECONDS = 30;
-const AUTO_SAVE_INTERVAL_OPTIONS_SECONDS = new Set([15, 30, 60]);
+const AUTO_SAVE_INTERVAL_OPTIONS_SECONDS = new Set([15, 30, 60, 120, 300]);
 
 function normalizeAutoSaveInterval(value: unknown): number {
   const numeric = typeof value === 'number' ? value : Number(value);
